@@ -5,8 +5,12 @@ import torch
 # Путь к вашему изображению
 image_path = '../test.png'
 
-# Загрузить изображение и преобразовать его в оттенки серого
-image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+# Загрузить цветное изображение
+image = cv2.imread(image_path)
+
+# Преобразовать BGR в RGB
+image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
 
 # Преобразовать изображение в тензор и нормализовать его
 transform = transforms.Compose([
