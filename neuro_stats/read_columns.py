@@ -18,7 +18,9 @@ img_without_lines = cv2.subtract(binary_img, detected_lines)
 
 # Находим области с текстом
 dilated_img = cv2.dilate(img_without_lines, None, iterations=2)
-contours, _ = cv2.findContours(dilated_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+# Края
+edges = cv2.Canny(dilated_img, 50, 200)
+contours, _ = cv2.findContours(edges, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
 
 img_color = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
@@ -26,8 +28,8 @@ img_color = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 for cnt in contours:
     x, y, w, h = cv2.boundingRect(cnt)
 
-    # Отсечение слишком маленьких контуров, которые могут быть шумом
-    if w * h > 100:
+    # Отсечение слишком маленьких и слишком больших контуров
+    if w * h > 100 and w * h < 1200: # измените числа в соответствии с вашими потребностями
         cv2.rectangle(img_color, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
 # Отображение изображения
