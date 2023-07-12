@@ -131,6 +131,11 @@ for epoch in range(n_epochs):
     model.eval()
     print("Working...")
 
+torch.save(model, "modelf28.pth")
+
+#import sys
+#sys.exit()
+
 p = Image.open("../test.png")
 px = np.array(p)
 #px = px[734:734+28, 474:474+28, 0]
@@ -143,6 +148,8 @@ plt.show()
 
 t = torch.from_numpy(px)
 t2 = t.reshape(-1, 784).float() / 255.0
+
+print(t2.shape, "T2 SHAPE")
 y_pred = model(t2)
 print(y_pred)
 print(torch.max(y_pred, 1))
