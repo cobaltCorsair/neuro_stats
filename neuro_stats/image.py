@@ -2,7 +2,11 @@ import cv2
 import numpy as np
 import os
 from PIL import Image
+import torch
+import matplotlib.pyplot as plt
 
+model = torch.jit.load("d:/dev/pythonProjects/neuro_stats/neuro_stats/LeNet5_full_28.pt")
+model.eval()
 
 # Функция для вырезки и изменения размера символов до 28x28
 def extract_and_resize_to_28x28(file_path):
@@ -29,6 +33,8 @@ def extract_and_resize_to_28x28(file_path):
             # Вырезаем символ из исходного изображения
             digit = img[y:y + h, x:x + w]
 
+            digit = cv2.bitwise_not(digit)
+
             # Если изображение символа больше 28x28, уменьшаем его
             if max(digit.shape) > 28:
                 digit = cv2.resize(digit, (28, 28))
@@ -46,6 +52,14 @@ def extract_and_resize_to_28x28(file_path):
             # Сохраняем символ в файл
             output_file = f"symbol_{i}.png"
             #cv2.imwrite(output_file, new_img)
+            padded = new_img.astype("float32") / 255.0
+            chars1 = torch.from_numpy(padded)
+            chars2 = torch.zeros((1, 1, 28, 28))
+            chars2[0, 0, :, :] = chars1
+            a = model(chars2)
+            print(a, torch.argmax(a, 1))
+            plt.imshow(padded)
+            plt.show()
 
     # Сохраняем исходное изображение с контурами
     cv2.imwrite(f"contours/contours_{os.path.basename(file_path)}", img_color)
