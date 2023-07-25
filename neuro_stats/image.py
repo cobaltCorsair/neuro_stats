@@ -29,12 +29,23 @@ def extract_and_resize_to_28x28(file_path):
             # Вырезаем символ из исходного изображения
             digit = img[y:y + h, x:x + w]
 
-            # Изменяем размер символа до 28x28
-            resized_digit = cv2.resize(digit, (28, 28))
+            # Если изображение символа больше 28x28, уменьшаем его
+            if max(digit.shape) > 28:
+                digit = cv2.resize(digit, (28, 28))
+
+            # Создаем новое черное изображение размером 28x28
+            new_img = np.zeros((28, 28), dtype=np.uint8)
+
+            # Вычисляем координаты для центрирования изображения символа
+            x_offset = (28 - digit.shape[1]) // 2
+            y_offset = (28 - digit.shape[0]) // 2
+
+            # Копируем изображение символа в центр нового изображения
+            new_img[y_offset:y_offset+digit.shape[0], x_offset:x_offset+digit.shape[1]] = digit
 
             # Сохраняем символ в файл
             output_file = f"symbol_{i}.png"
-            #cv2.imwrite(output_file, resized_digit)
+            #cv2.imwrite(output_file, new_img)
 
     # Сохраняем исходное изображение с контурами
     cv2.imwrite(f"contours/contours_{os.path.basename(file_path)}", img_color)
