@@ -2,8 +2,6 @@ import os
 import cv2
 import fitz  # PyMuPDF
 import numpy as np
-from PIL import Image
-
 
 def is_white_page(np_img, threshold=5):
     # Adjust this threshold as per definition of "white page"
@@ -91,8 +89,7 @@ for page_number in range(len(doc)):
     page = doc.load_page(page_number)
     image_matrix = page.get_pixmap(matrix=fitz.Matrix(100 / 72, 100 / 72))
     # Convert the pixmap into an image object
-    image = Image.frombytes("RGB", [image_matrix.width, image_matrix.height], image_matrix.samples)
-    img = np.array(image)
+    img = np.frombuffer(image_matrix.samples, np.uint8).reshape(image_matrix.height, image_matrix.width, 3)
     img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
     temp_file_name = "temp_image.png"
     cv2.imwrite(temp_file_name, img)
