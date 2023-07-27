@@ -2,8 +2,40 @@ import os
 import cv2
 import fitz  # PyMuPDF
 import numpy as np
+import json
 
-def is_white_page(np_img, threshold=5):
+
+def save_cell_info(cell_info, filename):
+    with open(filename, 'w') as f:
+        json.dump(cell_info, f)
+
+
+def count_rows_cols(boundingBoxes, width_threshold=50, height_threshold=50):
+    # Initialize row and column counts
+    row_count = 1
+    col_count = 1
+
+    # Initialize current position
+    current_x = boundingBoxes[0][0]
+    current_y = boundingBoxes[0][1]
+
+    for bbox in boundingBoxes[1:]:
+        x, y, _, _ = bbox
+
+        # If x coordinate changes significantly, increment column count
+        if abs(x - current_x) > width_threshold:
+            col_count += 1
+            current_x = x
+
+        # If y coordinate changes significantly, increment row count
+        if abs(y - current_y) > height_threshold:
+            row_count += 1
+            current_y = y
+
+    return row_count, col_count
+
+
+def is_white_page(np_img, threshold=0):
     # Adjust this threshold as per definition of "white page"
     return np_img.std() < threshold
 
@@ -64,20 +96,34 @@ def box_extraction(img_for_box_extraction_path, cropped_dir_path):
     # Sort contours
     (contours, boundingBoxes) = sort_contours(contours, method="top-to-bottom")
 
+    # Initialize cell info list
+    cell_info_list = []
+
     idx = 0
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
 
         # If the box is a rectangle and not a square and has a certain minimum size, then save it
-        if (w > 80 and h > 20) and w > 3 * h:
+        if (w > 80 and h > 20) and w > 2 * h:
             idx += 1
             new_img = img[y:y + h, x:x + w]
             if not is_white_page(new_img):
                 output_file = os.path.join(cropped_dir_path, f'{idx}.png')
                 cv2.imwrite(output_file, new_img)
 
+                # Save cell info
+                cell_info = {'x': x, 'y': y, 'w': w, 'h': h, 'img_file': output_file.split('\\')[1]}
+                cell_info_list.append(cell_info)
+
     cv2.drawContours(img, contours, -1, (0, 0, 255), 3)
     cv2.imwrite("output/img_contour.jpg", img)
+
+    # Calculate row and column counts
+    row_count, col_count = count_rows_cols(boundingBoxes)
+
+    # Save cell info to file
+    cell_info_file = os.path.join(cropped_dir_path, 'cell_info.json')
+    save_cell_info({'row_count': row_count, 'col_count': col_count, 'cells': cell_info_list}, cell_info_file)
 
 
 # Open the PDF document
