@@ -18,6 +18,14 @@ def image_to_text(img_path, lang="ru"):
     results = []
     handler = make_request_handler(results)
     vision_request = Vision.VNRecognizeTextRequest.alloc().initWithCompletionHandler_(handler)
+
+    # Настройка для распознавания текста
+    vision_request.recognitionLevel = Vision.VNRequestTextRecognitionLevelAccurate
+    vision_request.usesLanguageCorrection = True
+
+    # Устанавливаем язык распознавания текста
+    vision_request.recognitionLanguages = [lang]
+
     error = vision_handler.performRequests_error_([vision_request], None)
 
     return results
