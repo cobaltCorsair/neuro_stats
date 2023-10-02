@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 
 # Открытие PDF файла
-doc = fitz.open("../test.pdf")
+doc = fitz.open("../../test.pdf")
 
 # Итерация по страницам
 for page_number in range(len(doc)):

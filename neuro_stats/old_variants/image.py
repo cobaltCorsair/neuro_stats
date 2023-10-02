@@ -1,7 +1,12 @@
 import cv2
 import numpy as np
 import os
+from PIL import Image
+import torch
+import matplotlib.pyplot as plt
 
+model = torch.jit.load("d:/dev/pythonProjects/neuro_stats/neuro_stats/LeNet5_full_28.pt")
+model.eval()
 
 # Функция для вырезки и изменения размера символов до 28x28
 def extract_and_resize_to_28x28(file_path):
@@ -34,12 +39,6 @@ def extract_and_resize_to_28x28(file_path):
             if max(digit.shape) > 28:
                 digit = cv2.resize(digit, (28, 28))
 
-            # Увеличение резкости
-            kernel = np.array([[0, -1, 0],
-                               [-1, 5, -1],
-                               [0, -1, 0]])
-            digit = cv2.filter2D(digit, -1, kernel)
-
             # Создаем новое черное изображение размером 28x28
             new_img = np.zeros((28, 28), dtype=np.uint8)
 
@@ -48,17 +47,26 @@ def extract_and_resize_to_28x28(file_path):
             y_offset = (28 - digit.shape[0]) // 2
 
             # Копируем изображение символа в центр нового изображения
-            new_img[y_offset:y_offset + digit.shape[0], x_offset:x_offset + digit.shape[1]] = digit
+            new_img[y_offset:y_offset+digit.shape[0], x_offset:x_offset+digit.shape[1]] = digit
+
             # Сохраняем символ в файл
             output_file = f"symbol_{i}.png"
-            # cv2.imwrite(output_file, new_img)
+            #cv2.imwrite(output_file, new_img)
+            padded = new_img.astype("float32") / 255.0
+            chars1 = torch.from_numpy(padded)
+            chars2 = torch.zeros((1, 1, 28, 28))
+            chars2[0, 0, :, :] = chars1
+            a = model(chars2)
+            print(a, torch.argmax(a, 1))
+            plt.imshow(padded)
+            plt.show()
 
     # Сохраняем исходное изображение с контурами
     cv2.imwrite(f"contours/contours_{os.path.basename(file_path)}", img_color)
 
 
 # Путь к директории с изображениями
-directory_path = 'output'
+directory_path = '../output'
 
 # Итерация по файлам в директории
 for filename in os.listdir(directory_path):

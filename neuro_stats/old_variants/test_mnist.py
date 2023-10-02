@@ -61,16 +61,16 @@ if True:
     print(X_train.shape)
 
     # Save model
-    torch.save(model.state_dict(), 'model.pth')
+    torch.save(model.state_dict(), '../model.pth')
 
 
 # Load model
 
 model = Baseline()
-model.load_state_dict(torch.load('model.pth'))
+model.load_state_dict(torch.load('../model.pth'))
 model.eval()
 
-p = Image.open("../test.png")
+p = Image.open("../../test.png")
 px = np.array(p)
 px = px[472:472+28, 738:738+28, 0]
 plt.imshow(px)

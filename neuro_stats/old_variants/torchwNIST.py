@@ -136,7 +136,7 @@ torch.save(model, "modelf28.pth")
 #import sys
 #sys.exit()
 
-p = Image.open("../test.png")
+p = Image.open("../../test.png")
 px = np.array(p)
 #px = px[734:734+28, 474:474+28, 0]
 px = px[472:472+28, 738:738+28, 0]

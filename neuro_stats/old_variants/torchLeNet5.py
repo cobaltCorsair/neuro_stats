@@ -76,6 +76,6 @@ for epoch in range(n_epochs):
     print("Working...")
 
 
-torch.save(model, "LeNet5_full_28.pth")
+torch.save(model, "../LeNet5_full_28.pth")
 model_scripted = torch.jit.script(model)
 model_scripted.save("LeNet5_full_28.pt")

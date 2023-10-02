@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 # Загрузка изображения
-img = cv2.imread('../test.png', 0)
+img = cv2.imread('../../test.png', 0)
 
 # Бинаризация изображения
 _, binary_img = cv2.threshold(img, 150, 255, cv2.THRESH_BINARY_INV)
