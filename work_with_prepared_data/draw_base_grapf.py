@@ -79,6 +79,16 @@ class TumorDataVisualizer:
         plt.tight_layout()
         plt.show()
 
+    def get_mean_tumor_volumes(self) -> np.ndarray:
+        return np.nanmean(self.tumor_volumes, axis=0)
+
+    def get_relative_tumor_volumes(self) -> np.ndarray:
+        return np.array([[vol / volumes[0] for vol in volumes] for volumes in self.tumor_volumes])
+
+    def get_mean_relative_tumor_volumes(self) -> np.ndarray:
+        relative_volumes = self.get_relative_tumor_volumes()
+        return np.nanmean(relative_volumes, axis=0)
+
 
 # Используем с файлом данных
 file_path = './datas/n_7.2_p_25.2_2023.xlsx'

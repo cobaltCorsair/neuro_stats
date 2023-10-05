@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from draw_grapf import TumorDataVisualizer
+from draw_base_grapf import TumorDataVisualizer
 import numpy as np
 
 
@@ -30,7 +30,7 @@ class TumorDataComparator:
             plt.plot(self.visualizer2.time_data, volumes, marker='o', linestyle='--', label=f"Exp2: {label}")
 
         plt.title(
-            f"Сравнение экспериментов: \n{', '.join(self.visualizer1.experiment_params)} vs {', '.join(self.visualizer2.experiment_params)}",
+            f"Сравнение экспериментов \n\n Exp1: {', '.join(self.visualizer1.experiment_params)} vs Exp2: {', '.join(self.visualizer2.experiment_params)}",
             fontsize=16, y=1.02)
         plt.xticks(rotation=45)
         plt.xlabel("Время (дни, нормализованные)")
