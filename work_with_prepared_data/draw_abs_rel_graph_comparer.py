@@ -29,7 +29,7 @@ class TumorDataComparatorAdvanced:
         plt.title(
             f"Сравнение среднего объема опухоли\nExp1: {', '.join(self.visualizer1.experiment_params)} vs Exp2: {', '.join(self.visualizer2.experiment_params)}")
         plt.xticks(rotation=45)
-        plt.xlabel("Время (дни, нормализованные)")
+        plt.xlabel("Время (дни)")
         plt.ylabel("Средний объем опухоли")
         plt.grid(True)
         plt.legend()
@@ -48,7 +48,7 @@ class TumorDataComparatorAdvanced:
         plt.title(
             f"Сравнение среднего относительного объема опухоли\nExp1: {', '.join(self.visualizer1.experiment_params)} vs Exp2: {', '.join(self.visualizer2.experiment_params)}")
         plt.xticks(rotation=45)
-        plt.xlabel("Время (дни, нормализованные)")
+        plt.xlabel("Время (дни)")
         plt.ylabel("Средний относительный объем опухоли")
         plt.grid(True)
         plt.legend()
