@@ -35,7 +35,7 @@ class TumorDataVisualizer:
 
     def plot_tumor_volumes_single_graph(self):
         plt.figure(figsize=(15, 8))
-        plt.title(f"Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16, y=1.02)
+        plt.title(f"Абсолютные объемы опухоли, Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16, y=1.02)
 
         for label, volumes in zip(self.rat_labels, self.tumor_volumes):
             plt.plot(self.time_data, volumes, marker='o', linestyle='-', label=label)
@@ -43,6 +43,24 @@ class TumorDataVisualizer:
         plt.xticks(rotation=45)
         plt.xlabel("Время (дни)")
         plt.ylabel("Объем опухоли")
+        plt.grid(True)
+        plt.legend(title="Метка крысы")
+        plt.tight_layout()
+        plt.show()
+
+    def plot_relative_tumor_volumes_single_graph(self):
+        relative_volumes = self.get_relative_tumor_volumes()
+
+        plt.figure(figsize=(15, 8))
+        plt.title(f"Относительные объемы опухоли, Параметры эксперимента: {', '.join(self.experiment_params)}",
+                  fontsize=16, y=1.02)
+
+        for label, volumes in zip(self.rat_labels, relative_volumes):
+            plt.plot(self.time_data, volumes, marker='o', linestyle='-', label=label)
+
+        plt.xticks(rotation=45)
+        plt.xlabel("Время (дни)")
+        plt.ylabel("Относительный объем опухоли")
         plt.grid(True)
         plt.legend(title="Метка крысы")
         plt.tight_layout()
@@ -91,11 +109,15 @@ class TumorDataVisualizer:
 
 
 # Используем с файлом данных
-file_path = './datas/n_7.2_p_25.2_2023.xlsx'
+#file_path = './datas/n_7.2_p_25.2_2023.xlsx'
+file_path = './datas/p_25.2_n_7.2_2023.xlsx'
 visualizer = TumorDataVisualizer(file_path)
 
 # Сохраняем график для каждой крысы
 visualizer.plot_tumor_volumes_single_graph()
+
+# Сохраняем график относительных объемов для каждой крысы
+visualizer.plot_relative_tumor_volumes_single_graph()
 
 # Сохраняем график средних значений
 visualizer.plot_mean_tumor_volume()

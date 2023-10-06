@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Union
-from draw_base_grapf import TumorDataVisualizer
+from draw_base_grapfs import TumorDataVisualizer
 
 
 class TumorDataComparatorAdvanced:
@@ -55,9 +55,13 @@ class TumorDataComparatorAdvanced:
         plt.tight_layout()
         plt.show()
 
+# # Используем с файлом данных
+# file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
+# file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
+
 # Используем с файлом данных
 file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
-file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
+file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
 
 # Создаем объекты визуализатора для каждого файла данных
 visualizer1 = TumorDataVisualizer(file_path1)
@@ -65,5 +69,5 @@ visualizer2 = TumorDataVisualizer(file_path2)
 
 # Создаем объект сравнителя и сравниваем данные из двух экспериментов
 comparator = TumorDataComparatorAdvanced(visualizer1, visualizer2)
-comparator.compare_mean_volumes()
-comparator.compare_relative_volumes()
+comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
