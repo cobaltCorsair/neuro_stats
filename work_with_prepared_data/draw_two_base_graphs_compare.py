@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 from draw_base_grapfs import TumorDataVisualizer
 import numpy as np
@@ -7,6 +9,18 @@ class TumorDataComparator:
     def __init__(self, visualizer1: TumorDataVisualizer, visualizer2: TumorDataVisualizer):
         self.visualizer1 = visualizer1
         self.visualizer2 = visualizer2
+
+    def save_plot(self, comparison_type: str):
+        # Извлечение имен файлов без расширения и пути
+        file_name1 = os.path.splitext(os.path.basename(self.visualizer1.file_path))[0]
+        file_name2 = os.path.splitext(os.path.basename(self.visualizer2.file_path))[0]
+
+        # Сборка окончательного имени файла
+        file_name = f"{comparison_type}_{file_name1}_vs_{file_name2}.png"
+
+        # Сохранение изображения
+        plt.savefig(file_name, format='png', dpi=300)
+        print(f"Plot saved as {file_name}")
 
     def normalize_time_data(self):
         # Перевести временные метки в числовой формат и нормализовать их
@@ -38,6 +52,7 @@ class TumorDataComparator:
         plt.grid(True)
         plt.legend(title="Метка крысы")
         plt.tight_layout()
+        self.save_plot("compare_tumor_volumes")
         plt.show()
 
     def compare_relative_tumor_volumes(self):
@@ -63,16 +78,21 @@ class TumorDataComparator:
         plt.grid(True)
         plt.legend(title="Метка крысы")
         plt.tight_layout()
+        self.save_plot("compare_relative_tumor_volumes")
         plt.show()
 
 
 # # Используем с файлом данных
-# file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
-# file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
+file_path1 = './datas/n_7.2_p_25.2_2023_2.xlsx'
+file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
 
 # Используем с файлом данных
-file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
-file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
+# file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
+# file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
+
+# Используем с файлом данных
+# file_path1 = './datas/n_2.56_p_25.6_2019.xlsx'
+# file_path2 = './datas/p_25.6_n_2.56_2019.xlsx'
 
 # Создаем объекты визуализатора для каждого файла данных
 visualizer1 = TumorDataVisualizer(file_path1)

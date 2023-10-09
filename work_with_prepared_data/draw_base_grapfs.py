@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,6 +29,16 @@ class TumorDataVisualizer:
     def __init__(self, file_path: str):
         self.file_path = file_path
         self.experiment_params, self.time_data, self.rat_labels, self.tumor_volumes = self.process_excel()
+
+    def save_plot(self, plot_title: str, file_suffix: str):
+        # Извлечение имени файла без расширения и пути
+        file_name_base = os.path.splitext(os.path.basename(self.file_path))[0]
+
+        # Сборка окончательного имени файла
+        file_name = f"{file_name_base}_{plot_title.replace(' ', '_')}_{file_suffix}.png"
+
+        plt.savefig(file_name, format='png', dpi=300)
+        print(f"Plot saved as {file_name}")
 
     def process_excel(self) -> Tuple[List[str], List[str], List[str], List[List[float]]]:
         data = pd.read_excel(self.file_path, header=None)
@@ -68,6 +80,7 @@ class TumorDataVisualizer:
         plt.grid(True)
         plt.legend(title="Метка крысы")
         plt.tight_layout()
+        self.save_plot(f"{', '.join(self.experiment_params)}_absolute_volumes", "single_graph")
         plt.show()
 
     def plot_relative_tumor_volumes_single_graph(self):
@@ -86,6 +99,7 @@ class TumorDataVisualizer:
         plt.grid(True)
         plt.legend(title="Метка крысы")
         plt.tight_layout()
+        self.save_plot(f"{', '.join(self.experiment_params)}_relative_volumes", "single_graph_rel")
         plt.show()
 
     def plot_mean_tumor_volume(self):
@@ -106,6 +120,7 @@ class TumorDataVisualizer:
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
+        self.save_plot(f"{', '.join(self.experiment_params)}_mean_volumes", "mean_volume")
         plt.show()
 
     def plot_average_relative_tumor_volume(self):
@@ -128,6 +143,7 @@ class TumorDataVisualizer:
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
+        self.save_plot(f"{', '.join(self.experiment_params)}_average_relative_volumes", "mean_relative_volume")
         plt.show()
 
     def get_mean_tumor_volumes(self) -> np.ndarray:
@@ -142,8 +158,13 @@ class TumorDataVisualizer:
 
 
 # Используем с файлом данных
-# file_path = './datas/n_7.2_p_25.2_2023.xlsx'
-file_path = './datas/p_25.2_n_7.2_2023.xlsx'
+file_path = './datas/n_7.2_p_25.2_2023.xlsx'
+#file_path = './datas/p_25.2_n_7.2_2023.xlsx'
+#file_path = './datas/p_25.2_n_7.2_2023_2.xlsx'
+#file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
+#file_path = './datas/n_2.56_p_25.6_2019.xlsx'
+#file_path = './datas/p_25.6_n_2.56_2019.xlsx'
+
 visualizer = TumorDataVisualizer(file_path)
 
 # Сохраняем график для каждой крысы
