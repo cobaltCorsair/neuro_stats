@@ -95,7 +95,7 @@ class TumorDataVisualizer:
 
         plt.xticks(rotation=45)
         plt.xlabel("Время (дни)")
-        plt.ylabel("Относительный объем опухоли")
+        plt.ylabel("Объем опухоли")
         plt.grid(True)
         plt.legend(title="Метка крысы")
         plt.tight_layout()
@@ -116,7 +116,7 @@ class TumorDataVisualizer:
 
         plt.xticks(rotation=45)
         plt.xlabel("Время (дни)")
-        plt.ylabel("Средний объем опухоли")
+        plt.ylabel("Объем опухоли")
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
@@ -139,11 +139,43 @@ class TumorDataVisualizer:
 
         plt.xticks(rotation=45)
         plt.xlabel("Время (дни)")
-        plt.ylabel("Средний относительный объем опухоли")
+        plt.ylabel("Объем опухоли")
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
         self.save_plot(f"{', '.join(self.experiment_params)}_average_relative_volumes", "mean_relative_volume")
+        plt.show()
+
+    def plot_mean_relative_mean_tumor_volume(self):
+        plt.figure(figsize=(15, 8))
+        plt.title(f"(V отн. ср.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
+
+        # Получение средних объемов опухоли
+        mean_volumes = self.get_mean_tumor_volumes()
+
+        # Вычисление среднего относительного объема опухоли
+        relative_mean_volumes = mean_volumes / mean_volumes[0]
+
+        # Расчет стандартного отклонения
+        std_dev_rel_mean = SupportingFunctions.calculate_std_dev(self, relative_mean_volumes,
+                                                                 np.nanmean(relative_mean_volumes))
+
+        # Расчет доверительного интервала
+        error_margin_rel_mean = SupportingFunctions.calculate_error_margin(self, std_dev_rel_mean,
+                                                                           len(relative_mean_volumes))
+
+        plt.plot(self.time_data, relative_mean_volumes, marker='o', linestyle='-', color='b', label='M/V отн. ср.')
+        plt.fill_between(self.time_data,
+                         relative_mean_volumes - error_margin_rel_mean,
+                         relative_mean_volumes + error_margin_rel_mean, color='b', alpha=0.2)
+
+        plt.xticks(rotation=45)
+        plt.xlabel("Время (дни)")
+        plt.ylabel("Объем опухоли")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        self.save_plot(f"{', '.join(self.experiment_params)}_mean_relative_mean_volumes", "mean_relative_mean_volume")
         plt.show()
 
     def get_mean_tumor_volumes(self) -> np.ndarray:
@@ -153,8 +185,19 @@ class TumorDataVisualizer:
         return np.array([[vol / volumes[0] for vol in volumes] for volumes in self.tumor_volumes])
 
     def get_mean_relative_tumor_volumes(self) -> np.ndarray:
-        relative_volumes = self.get_relative_tumor_volumes()
-        return np.nanmean(relative_volumes, axis=0)
+        """
+        Возвращает средний относительный объем опухоли.
+
+        Returns:
+            mean_rel_volumes: Средний относительный объем опухоли.
+        """
+        # Получение средних объемов опухоли
+        mean_volumes = self.get_mean_tumor_volumes()
+
+        # Вычисление среднего относительного объема опухоли
+        mean_rel_volumes = mean_volumes / mean_volumes[0]
+
+        return mean_rel_volumes
 
 
 # Используем с файлом данных
@@ -178,3 +221,6 @@ visualizer.plot_mean_tumor_volume()
 
 # Сохраняем график среднего относительного объема опухоли
 visualizer.plot_average_relative_tumor_volume()
+
+# Сохраняем график среднего относительного среднего объема опухоли
+visualizer.plot_mean_relative_mean_tumor_volume()

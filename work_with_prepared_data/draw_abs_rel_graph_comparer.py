@@ -74,10 +74,31 @@ class TumorDataComparatorAdvanced:
         self.normalize_time_data()
         plt.figure(figsize=(15, 8))
 
-        plt.plot(self.visualizer1.time_data, self.visualizer1.get_mean_relative_tumor_volumes(),
+        # Для первого визуализатора
+        mean_rel_volumes1 = self.visualizer1.get_mean_relative_tumor_volumes()
+        std_dev1 = [SupportingFunctions.calculate_std_dev(self, volumes, mean_volume)
+                    for volumes, mean_volume in zip(np.transpose(self.visualizer1.tumor_volumes), mean_rel_volumes1)]
+        error_margin1 = [SupportingFunctions.calculate_error_margin(self, std, len(self.visualizer1.tumor_volumes))
+                         for std in std_dev1]
+
+        plt.plot(self.visualizer1.time_data, mean_rel_volumes1,
                  marker='o', linestyle='-', label=f"Exp1: M/V отн.")
-        plt.plot(self.visualizer2.time_data, self.visualizer2.get_mean_relative_tumor_volumes(),
+        plt.fill_between(self.visualizer1.time_data,
+                         mean_rel_volumes1 - error_margin1,
+                         mean_rel_volumes1 + error_margin1, color='b', alpha=0.2)
+
+        # Для второго визуализатора
+        mean_rel_volumes2 = self.visualizer2.get_mean_relative_tumor_volumes()
+        std_dev2 = [SupportingFunctions.calculate_std_dev(self, volumes, mean_volume)
+                    for volumes, mean_volume in zip(np.transpose(self.visualizer2.tumor_volumes), mean_rel_volumes2)]
+        error_margin2 = [SupportingFunctions.calculate_error_margin(self, std, len(self.visualizer2.tumor_volumes))
+                         for std in std_dev2]
+
+        plt.plot(self.visualizer2.time_data, mean_rel_volumes2,
                  marker='o', linestyle='--', label=f"Exp2: M/V отн.")
+        plt.fill_between(self.visualizer2.time_data,
+                         mean_rel_volumes2 - error_margin2,
+                         mean_rel_volumes2 + error_margin2, color='g', alpha=0.2)
 
         plt.title(
             f"Сравнение среднего относительного объема опухоли\nExp1: {', '.join(self.visualizer1.experiment_params)} vs Exp2: {', '.join(self.visualizer2.experiment_params)}")
