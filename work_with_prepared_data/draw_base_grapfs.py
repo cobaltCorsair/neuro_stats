@@ -156,7 +156,7 @@ class TumorDataVisualizer:
         plt.figure(figsize=(15, 8))
         plt.title(f"(M/V абс.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
 
-        mean_volumes = np.nanmean(self.tumor_volumes, axis=0)
+        mean_volumes = self.get_mean_tumor_volumes()
         std_dev = [SupportingFunctions.calculate_std_dev(self, volumes, mean_volume) for volumes, mean_volume in
                    zip(np.transpose(self.tumor_volumes), mean_volumes)]
         error_margin = [SupportingFunctions.calculate_error_margin(self, std, len(self.tumor_volumes)) for std in
@@ -181,7 +181,7 @@ class TumorDataVisualizer:
         plt.figure(figsize=(15, 8))
         plt.title(f"(V отн.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
 
-        relative_tumor_volumes = np.array([[vol / volumes[0] for vol in volumes] for volumes in self.tumor_volumes])
+        relative_tumor_volumes = self.get_relative_tumor_volumes()
         mean_relative_volumes = np.nanmean(relative_tumor_volumes, axis=0)
         std_dev_rel = [SupportingFunctions.calculate_std_dev(self, volumes, mean_volume) for volumes, mean_volume in
                        zip(np.transpose(relative_tumor_volumes), mean_relative_volumes)]
@@ -208,11 +208,8 @@ class TumorDataVisualizer:
         plt.figure(figsize=(15, 8))
         plt.title(f"(V отн. ср.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
 
-        # Получение средних объемов опухоли
-        mean_volumes = self.get_mean_tumor_volumes()
-
         # Вычисление среднего относительного объема опухоли
-        relative_mean_volumes = mean_volumes / mean_volumes[0]
+        relative_mean_volumes = self.get_mean_relative_tumor_volumes()
 
         # Расчет стандартного отклонения
         std_dev_rel_mean = SupportingFunctions.calculate_std_dev(self, relative_mean_volumes,
@@ -256,7 +253,7 @@ class TumorDataVisualizer:
 
     def get_mean_relative_tumor_volumes(self) -> np.ndarray:
         """
-        Вычисляет средний относительный объем опухоли для всех крыс.
+        Вычисляет средний относительный усреднённый объем опухоли для всех крыс.
 
         Возвращает:
             np.ndarray: Массив средних относительных объемов опухоли.
@@ -292,5 +289,5 @@ visualizer.plot_mean_tumor_volume()
 # Сохраняем график среднего относительного объема опухоли
 visualizer.plot_average_relative_tumor_volume()
 
-# Сохраняем график среднего относительного среднего объема опухоли
+# Сохраняем график среднего относительного усреднённого объема опухоли
 visualizer.plot_mean_relative_mean_tumor_volume()

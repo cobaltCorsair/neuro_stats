@@ -161,12 +161,12 @@ class TumorDataComparatorAdvanced:
 # file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
 
 # Используем с файлом данных
-# file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
-# file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
+file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
+file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
 
 # Используем с файлом данных
-file_path1 = './datas/n_2.56_p_25.6_2019.xlsx'
-file_path2 = './datas/p_25.6_n_2.56_2019.xlsx'
+# file_path1 = './datas/n_2.56_p_25.6_2019.xlsx'
+# file_path2 = './datas/p_25.6_n_2.56_2019.xlsx'
 
 # Создаем объекты визуализатора для каждого файла данных
 visualizer1 = TumorDataVisualizer(file_path1)
