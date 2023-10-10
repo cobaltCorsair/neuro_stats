@@ -191,3 +191,25 @@ class SupportingFunctions:
         """
         return np.trapz(y, x) / 1000
 
+    @staticmethod
+    def trim_data_to_timepoint(time_data, values, last_timepoint):
+        """
+        Обрезает данные до указанной временной точки.
+
+        Parameters:
+            time_data (List): Список временных точек.
+            values (List): Список значений, соответствующих временным точкам.
+            last_timepoint (int): Последняя временная точка, до которой следует обрезать данные.
+
+        Returns:
+            Tuple[List, List]: Обрезанные списки временных точек и значений.
+        """
+        trimmed_time_data = []
+        trimmed_values = []
+
+        for t, v in zip(time_data, values):
+            if int(t) <= last_timepoint:
+                trimmed_time_data.append(t)
+                trimmed_values.append(v)
+
+        return trimmed_time_data, trimmed_values
