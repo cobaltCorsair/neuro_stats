@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Union
-from draw_base_grapfs import TumorDataVisualizer, SupportingFunctions
+from draw_base_grapfs import TumorDataVisualizer
+from work_with_prepared_data.support_stats_methods import SupportingFunctions
 
 
 class TumorDataComparatorAdvanced:

@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 
+from work_with_prepared_data.support_stats_methods import ExtractOutliers, SupportingFunctions
+
 
 class SkinReactionsVisualizer:
     def __init__(self, file_path: str):
@@ -84,8 +86,112 @@ class SkinReactionsVisualizer:
         self.save_plot(f"Skin_Reactions_{', '.join(self.experiment_params)}")
         plt.show()
 
+    def plot_mean_skin_reactions(self):
+        """
+        Визуализация средних кожных реакций.
+        """
+        plt.figure(figsize=(15, 8))
+        plt.title(f"Средние кожные реакции, Параметры эксперимента: {', '.join(self.experiment_params)}",
+                  fontsize=16, y=1.02)
+
+        mean_reactions, std_dev, error_margin = self.get_mean_skin_reactions()
+
+        plt.plot(self.time_data, mean_reactions, marker='o', linestyle='-', label='Среднее')
+        plt.fill_between(self.time_data,
+                         mean_reactions - error_margin,
+                         mean_reactions + error_margin, alpha=0.2)
+
+        plt.xticks(rotation=45)
+        plt.xlabel("Время (дни)")
+        plt.ylabel("Средние кожные реакции")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+
+        self.save_plot(f"Mean_Skin_Reactions_{', '.join(self.experiment_params)}")
+        plt.show()
+
+    def get_mean_skin_reactions(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Возвращает средние кожные реакции, их стандартное отклонение и ошибку среднего.
+        """
+        mean_reactions = np.nanmean(self.skin_reactions, axis=0)
+        std_dev = [self.calculate_std_dev(values, mean_value)
+                   for values, mean_value in zip(np.transpose(self.skin_reactions), mean_reactions)]
+        error_margin = [self.calculate_error_margin(std, len(self.skin_reactions))
+                        for std in std_dev]
+
+        return mean_reactions, np.array(std_dev), np.array(error_margin)
+
+    @staticmethod
+    def calculate_std_dev(values, mean_value):
+        """
+        Расчет стандартного отклонения по заданной формуле.
+        """
+        n = len(values)
+        sum_squared_deviations = sum((val - mean_value) ** 2 for val in values if not np.isnan(val))
+        return np.sqrt(sum_squared_deviations / (n - 1))
+
+    @staticmethod
+    def calculate_error_margin(std_dev, n):
+        """
+        Расчет предела погрешности.
+        """
+        return std_dev / np.sqrt(n)
+
+    @staticmethod
+    def plot_multiple_experiments(file_paths: List[str]):
+        plt.figure(figsize=(15, 8))
+        plt.title("Средние кожные реакции для множества экспериментов", fontsize=16, y=1.02)
+
+        # Определите общие временные точки, к которым вы хотите интерполировать данные
+        common_timepoints = list(range(0, 25))
+
+        for file_path in file_paths:
+            visualizer = SkinReactionsVisualizer(file_path)
+            mean_reactions, _, _ = visualizer.get_mean_skin_reactions()
+
+            # Интерполируйте данные к общим временным точкам
+            mean_reactions_interp = SupportingFunctions.interpolate_data_to_common_timepoints(
+                visualizer.time_data, mean_reactions, common_timepoints
+            )
+
+            label = ', '.join(visualizer.experiment_params)
+            plt.plot(common_timepoints, mean_reactions_interp, marker='o', linestyle='-', label=label)
+
+        plt.xticks(rotation=45)
+        plt.xlabel("Время (дни)")
+        plt.ylabel("Кожные реакции")
+        plt.grid(True)
+        plt.legend(title="Параметры эксперимента")
+        plt.tight_layout()
+
+        plt.savefig("multiple_experiments_mean_reactions.png", format='png', dpi=300)
+        print("Plot saved as multiple_experiments_mean_reactions.png")
+        plt.show()
+
 
 # Пример использования
-file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx'
-visualizer = SkinReactionsVisualizer(file_path)
-visualizer.plot_skin_reactions()
+# file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx'
+# file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx'
+# file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx'
+# file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
+
+# visualizer = SkinReactionsVisualizer(file_path)
+#
+# # Удаление выбросов
+# # ExtractOutliers(visualizer).remove_local_outliers()
+# ExtractOutliers(visualizer).exclude_rats(['б/м']) # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
+# ExtractOutliers(visualizer).exclude_rats(['г', 'х'])  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
+#
+# visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
+# visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
+
+# Отображения средних кожных реакций для нескольких экспериментов
+file_paths = [
+    'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
+    'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
+    'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
+    'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
+]
+SkinReactionsVisualizer.plot_multiple_experiments(file_paths)

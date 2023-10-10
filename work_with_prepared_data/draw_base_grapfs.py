@@ -3,40 +3,9 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
-
-class SupportingFunctions:
-
-    @staticmethod
-    def calculate_std_dev(self, values, mean_value):
-        """
-        Расчет стандартного отклонения для заданного набора значений.
-
-        Параметры:
-            values (list): Список значений, для которых вычисляется стандартное отклонение.
-            mean_value (float): Среднее значение данных значений.
-
-        Возвращает:
-            float: Стандартное отклонение.
-        """
-        n = len(values)
-        sum_squared_deviations = sum((val - mean_value) ** 2 for val in values if not np.isnan(val))
-        return np.sqrt(sum_squared_deviations / (n - 1))
-
-    @staticmethod
-    def calculate_error_margin(self, std_dev, n):
-        """
-        Расчет предела погрешности для заданного стандартного отклонения и размера выборки.
-
-        Параметры:
-            std_dev (float): Стандартное отклонение.
-            n (int): Размер выборки.
-
-        Возвращает:
-            float: Предел погрешности.
-        """
-        return std_dev / np.sqrt(n)
+from work_with_prepared_data.support_stats_methods import SupportingFunctions
 
 
 class TumorDataVisualizer:
