@@ -21,13 +21,13 @@ def save_page_as_image(pdf_path, page_number, image_path, zoom_x, zoom_y):
 
 
 # Пример использования функции:
-pdf_path = "rats_data/+23.05.2023_p25,2_n7,2.pdf"
-image_path = "skin_images/" + f'{pdf_path.split("/")[-1]}' + "_skin_image.jpg"
+pdf_path = "rats_data/n_p_only/16.03.2023_e36.pdf"
+image_path = "n_p_only_images/" + f'{pdf_path.split("/")[-1]}' + "_skin_image.jpg"
 zoom_x = 2  # Увеличение DPI в 2 раза по оси X
 zoom_y = 2  # Увеличение DPI в 2 раза по оси Y
 
 try:
-    save_page_as_image(pdf_path, 1, image_path, zoom_x, zoom_y)  # Страницы отсчитываются с 0
+    save_page_as_image(pdf_path, 0, image_path, zoom_x, zoom_y)  # Страницы отсчитываются с 0
     print(f"Image saved at {image_path}")
 except Exception as e:
     print(f"An error occurred: {str(e)}")
