@@ -129,7 +129,7 @@ class ExtractOutliers:
 class SupportingFunctions:
 
     @staticmethod
-    def calculate_std_dev(self, values, mean_value):
+    def calculate_std_dev(values, mean_value):
         """
         Расчет стандартного отклонения для заданного набора значений.
 
@@ -145,7 +145,7 @@ class SupportingFunctions:
         return np.sqrt(sum_squared_deviations / (n - 1))
 
     @staticmethod
-    def calculate_error_margin(self, std_dev, n):
+    def calculate_error_margin(std_dev, n):
         """
         Расчет предела погрешности для заданного стандартного отклонения и размера выборки.
 
@@ -172,4 +172,18 @@ class SupportingFunctions:
             List[float]: Интерполированные данные о кожных реакциях.
         """
         return np.interp(common_timepoints, time_data, skin_reactions)
+
+    @staticmethod
+    def calculate_auc(x, y):
+        """
+        Вычисляет площадь под кривой, используя метод трапеций.
+
+        Parameters:
+            x (list): Координаты x точек данных.
+            y (list): Координаты y точек данных.
+
+        Returns:
+            float: Площадь под кривой.
+        """
+        return np.trapz(y, x) / 1000
 

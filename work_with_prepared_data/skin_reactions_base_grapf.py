@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
+from matplotlib.lines import Line2D
 
 from work_with_prepared_data.support_stats_methods import ExtractOutliers, SupportingFunctions
 
@@ -116,54 +117,51 @@ class SkinReactionsVisualizer:
         Возвращает средние кожные реакции, их стандартное отклонение и ошибку среднего.
         """
         mean_reactions = np.nanmean(self.skin_reactions, axis=0)
-        std_dev = [self.calculate_std_dev(values, mean_value)
+        std_dev = [SupportingFunctions.calculate_std_dev(values, mean_value)
                    for values, mean_value in zip(np.transpose(self.skin_reactions), mean_reactions)]
-        error_margin = [self.calculate_error_margin(std, len(self.skin_reactions))
+        error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.skin_reactions))
                         for std in std_dev]
 
         return mean_reactions, np.array(std_dev), np.array(error_margin)
-
-    @staticmethod
-    def calculate_std_dev(values, mean_value):
-        """
-        Расчет стандартного отклонения по заданной формуле.
-        """
-        n = len(values)
-        sum_squared_deviations = sum((val - mean_value) ** 2 for val in values if not np.isnan(val))
-        return np.sqrt(sum_squared_deviations / (n - 1))
-
-    @staticmethod
-    def calculate_error_margin(std_dev, n):
-        """
-        Расчет предела погрешности.
-        """
-        return std_dev / np.sqrt(n)
 
     @staticmethod
     def plot_multiple_experiments(file_paths: List[str]):
         plt.figure(figsize=(15, 8))
         plt.title("Средние кожные реакции для множества экспериментов", fontsize=16, y=1.02)
 
-        # Определите общие временные точки, к которым вы хотите интерполировать данные
         common_timepoints = list(range(0, 25))
+
+        aucs = []  # Список для хранения значений AUC
+        lines = []  # Список для хранения объектов Line2D
 
         for file_path in file_paths:
             visualizer = SkinReactionsVisualizer(file_path)
             mean_reactions, _, _ = visualizer.get_mean_skin_reactions()
 
-            # Интерполируйте данные к общим временным точкам
             mean_reactions_interp = SupportingFunctions.interpolate_data_to_common_timepoints(
                 visualizer.time_data, mean_reactions, common_timepoints
             )
 
+            auc = SupportingFunctions.calculate_auc(common_timepoints, mean_reactions_interp)
+            aucs.append(auc)  # Добавление AUC в список
+
             label = ', '.join(visualizer.experiment_params)
-            plt.plot(common_timepoints, mean_reactions_interp, marker='o', linestyle='-', label=label)
+            line, = plt.plot(common_timepoints, mean_reactions_interp, marker='o', linestyle='-',
+                             label=label)  # Запоминаем объект Line2D
+            lines.append(line)  # Добавление объекта Line2D в список
+
+        # Первая легенда
+        first_legend = plt.legend(title="Параметры эксперимента", loc='upper left')
+        plt.gca().add_artist(first_legend)  # Добавление первой легенды
+
+        # Вторая легенда
+        labels = [f'{auc:.2e} тыс.' for auc in aucs]
+        plt.legend(lines, labels, title="Общий уровень реакции", loc='upper right')
 
         plt.xticks(rotation=45)
         plt.xlabel("Время (дни)")
-        plt.ylabel("Кожные реакции")
+        plt.ylabel("Средние кожные реакции")
         plt.grid(True)
-        plt.legend(title="Параметры эксперимента")
         plt.tight_layout()
 
         plt.savefig("multiple_experiments_mean_reactions.png", format='png', dpi=300)
