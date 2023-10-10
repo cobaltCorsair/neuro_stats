@@ -179,9 +179,10 @@ class SkinReactionsVisualizer:
 #
 # # Удаление выбросов
 # # ExtractOutliers(visualizer).remove_local_outliers()
-# ExtractOutliers(visualizer).exclude_rats(['б/м']) # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
-# ExtractOutliers(visualizer).exclude_rats(['г', 'х'])  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
-#
+# Удаление точек
+# ExtractOutliers(visualizer).exclude_rats(['б/м'], 'tumor_volumes')  # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
+# ExtractOutliers(visualizer).exclude_rats(['г', 'х'], 'tumor_volumes')  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
+
 # visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
 # visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
 

@@ -109,12 +109,13 @@ class ExtractOutliers:
         self.base_class.skin_reactions = [reactions for i, reactions in enumerate(self.base_class.skin_reactions) if
                                           non_outlier_indices[i]]
 
-    def exclude_rats(self, excluded_rats: List[str]):
+    def exclude_rats(self, excluded_rats: List[str], data_attribute_name: str):
         """
         Исключает крыс с указанными метками из данных.
 
         Parameters:
             excluded_rats (List[str]): Список меток крыс, которые следует исключить.
+            data_attribute_name (str): Имя атрибута, который содержит данные для обработки.
         """
         # Получаем индексы крыс, которые необходимо исключить
         exclude_indices = [i for i, label in enumerate(self.base_class.rat_labels) if label in excluded_rats]
@@ -122,8 +123,11 @@ class ExtractOutliers:
         # Исключаем крыс по индексам из данных и меток
         self.base_class.rat_labels = [label for i, label in enumerate(self.base_class.rat_labels) if
                                       i not in exclude_indices]
-        self.base_class.skin_reactions = [reaction for i, reaction in enumerate(self.base_class.skin_reactions) if
-                                          i not in exclude_indices]
+
+        # Используем getattr и setattr для работы с динамическими атрибутами
+        data_attribute = getattr(self.base_class, data_attribute_name)
+        data_attribute = [data for i, data in enumerate(data_attribute) if i not in exclude_indices]
+        setattr(self.base_class, data_attribute_name, data_attribute)
 
 
 class SupportingFunctions:

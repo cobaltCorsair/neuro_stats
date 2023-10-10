@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 
-from work_with_prepared_data.support_stats_methods import SupportingFunctions
+from work_with_prepared_data.support_stats_methods import SupportingFunctions, ExtractOutliers
 
 
 class TumorDataVisualizer:
@@ -126,9 +126,9 @@ class TumorDataVisualizer:
         plt.title(f"(M/V абс.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
 
         mean_volumes = self.get_mean_tumor_volumes()
-        std_dev = [SupportingFunctions.calculate_std_dev(self, volumes, mean_volume) for volumes, mean_volume in
+        std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
                    zip(np.transpose(self.tumor_volumes), mean_volumes)]
-        error_margin = [SupportingFunctions.calculate_error_margin(self, std, len(self.tumor_volumes)) for std in
+        error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.tumor_volumes)) for std in
                         std_dev]
 
         plt.plot(self.time_data, mean_volumes, marker='o', linestyle='-', color='b', label='M/V абс.')
@@ -152,9 +152,9 @@ class TumorDataVisualizer:
 
         relative_tumor_volumes = self.get_relative_tumor_volumes()
         mean_relative_volumes = np.nanmean(relative_tumor_volumes, axis=0)
-        std_dev_rel = [SupportingFunctions.calculate_std_dev(self, volumes, mean_volume) for volumes, mean_volume in
+        std_dev_rel = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
                        zip(np.transpose(relative_tumor_volumes), mean_relative_volumes)]
-        error_margin_rel = [SupportingFunctions.calculate_error_margin(self, std, len(relative_tumor_volumes)) for std
+        error_margin_rel = [SupportingFunctions.calculate_error_margin(std, len(relative_tumor_volumes)) for std
                             in std_dev_rel]
 
         plt.plot(self.time_data, mean_relative_volumes, marker='o', linestyle='-', color='b', label='M/V отн.')
@@ -181,11 +181,11 @@ class TumorDataVisualizer:
         relative_mean_volumes = self.get_mean_relative_tumor_volumes()
 
         # Расчет стандартного отклонения
-        std_dev_rel_mean = SupportingFunctions.calculate_std_dev(self, relative_mean_volumes,
+        std_dev_rel_mean = SupportingFunctions.calculate_std_dev(relative_mean_volumes,
                                                                  np.nanmean(relative_mean_volumes))
 
         # Расчет доверительного интервала
-        error_margin_rel_mean = SupportingFunctions.calculate_error_margin(self, std_dev_rel_mean,
+        error_margin_rel_mean = SupportingFunctions.calculate_error_margin(std_dev_rel_mean,
                                                                            len(relative_mean_volumes))
 
         plt.plot(self.time_data, relative_mean_volumes, marker='o', linestyle='-', color='b', label='M/V отн. ср.')
@@ -237,14 +237,16 @@ class TumorDataVisualizer:
 
 
 # Используем с файлом данных
-file_path = './datas/n_7.2_p_25.2_2023.xlsx'
+# file_path = './datas/n_7.2_p_25.2_2023.xlsx'
 # file_path = './datas/p_25.2_n_7.2_2023.xlsx'
 # file_path = './datas/p_25.2_n_7.2_2023_2.xlsx'
-# file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
+file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
 # file_path = './datas/n_2.56_p_25.6_2019.xlsx'
 # file_path = './datas/p_25.6_n_2.56_2019.xlsx'
 
 visualizer = TumorDataVisualizer(file_path)
+# ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
+ExtractOutliers(visualizer).exclude_rats(['х'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
 
 # Сохраняем график для каждой крысы
 visualizer.plot_tumor_volumes_single_graph()
