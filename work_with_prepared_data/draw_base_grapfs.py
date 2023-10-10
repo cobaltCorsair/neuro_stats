@@ -11,7 +11,14 @@ class SupportingFunctions:
     @staticmethod
     def calculate_std_dev(self, values, mean_value):
         """
-        Расчет стандартного отклонения по заданной формуле.
+        Расчет стандартного отклонения для заданного набора значений.
+
+        Параметры:
+            values (list): Список значений, для которых вычисляется стандартное отклонение.
+            mean_value (float): Среднее значение данных значений.
+
+        Возвращает:
+            float: Стандартное отклонение.
         """
         n = len(values)
         sum_squared_deviations = sum((val - mean_value) ** 2 for val in values if not np.isnan(val))
@@ -20,17 +27,41 @@ class SupportingFunctions:
     @staticmethod
     def calculate_error_margin(self, std_dev, n):
         """
-        Расчет предела погрешности.
+        Расчет предела погрешности для заданного стандартного отклонения и размера выборки.
+
+        Параметры:
+            std_dev (float): Стандартное отклонение.
+            n (int): Размер выборки.
+
+        Возвращает:
+            float: Предел погрешности.
         """
         return std_dev / np.sqrt(n)
 
 
 class TumorDataVisualizer:
     def __init__(self, file_path: str):
+        """
+        Инициализация визуализатора данных опухоли.
+
+        Параметры:
+            file_path (str): Путь к файлу Excel с данными.
+        """
         self.file_path = file_path
         self.experiment_params, self.time_data, self.rat_labels, self.tumor_volumes = self.process_excel()
 
     def save_plot(self, plot_title: str, file_suffix: str):
+        """
+        Сохраняет текущий график в файл с заданным именем и суффиксом.
+
+        Параметры:
+            plot_title (str): Название графика, используемое для создания имени файла.
+            file_suffix (str): Суффикс для имени файла для уточнения типа графика.
+
+        Примечание:
+            Имя файла формируется с использованием базового имени файла данных,
+            plot_title и file_suffix.
+        """
         # Извлечение имени файла без расширения и пути
         file_name_base = os.path.splitext(os.path.basename(self.file_path))[0]
 
@@ -41,6 +72,16 @@ class TumorDataVisualizer:
         print(f"Plot saved as {file_name}")
 
     def process_excel(self) -> Tuple[List[str], List[str], List[str], List[List[float]]]:
+        """
+        Обрабатывает данные из файла Excel и извлекает необходимые данные.
+
+        Возвращает:
+            tuple: Кортеж, содержащий:
+                - experiment_params (List[str]): Параметры эксперимента.
+                - time_data (List[str]): Метки времени для каждого измерения.
+                - rat_labels (List[str]): Метки крыс.
+                - tumor_volumes (List[List[float]]): Объемы опухолей для каждой крысы на каждом временном интервале.
+        """
         data = pd.read_excel(self.file_path, header=None)
         experiment_params = data.iloc[0, :3].tolist()
         tumor_data = data.iloc[2:, :].copy()
@@ -67,6 +108,9 @@ class TumorDataVisualizer:
         return experiment_params, time_data, rat_labels, tumor_volumes
 
     def plot_tumor_volumes_single_graph(self):
+        """
+        Построение графика объемов опухолей для каждой крысы на одном графике.
+        """
         plt.figure(figsize=(15, 8))
         plt.title(f"Абсолютные объемы опухоли, Параметры эксперимента: {', '.join(self.experiment_params)}",
                   fontsize=16, y=1.02)
@@ -84,6 +128,9 @@ class TumorDataVisualizer:
         plt.show()
 
     def plot_relative_tumor_volumes_single_graph(self):
+        """
+        Построение графика относительных объемов опухолей для каждой крысы на одном графике.
+        """
         relative_volumes = self.get_relative_tumor_volumes()
 
         plt.figure(figsize=(15, 8))
@@ -103,13 +150,17 @@ class TumorDataVisualizer:
         plt.show()
 
     def plot_mean_tumor_volume(self):
+        """
+        Построение графика среднего объема опухоли со всеми крысами.
+        """
         plt.figure(figsize=(15, 8))
         plt.title(f"(M/V абс.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
 
         mean_volumes = np.nanmean(self.tumor_volumes, axis=0)
         std_dev = [SupportingFunctions.calculate_std_dev(self, volumes, mean_volume) for volumes, mean_volume in
                    zip(np.transpose(self.tumor_volumes), mean_volumes)]
-        error_margin = [SupportingFunctions.calculate_error_margin(self, std, len(self.tumor_volumes)) for std in std_dev]
+        error_margin = [SupportingFunctions.calculate_error_margin(self, std, len(self.tumor_volumes)) for std in
+                        std_dev]
 
         plt.plot(self.time_data, mean_volumes, marker='o', linestyle='-', color='b', label='M/V абс.')
         plt.fill_between(self.time_data, mean_volumes - error_margin, mean_volumes + error_margin, color='b', alpha=0.2)
@@ -124,6 +175,9 @@ class TumorDataVisualizer:
         plt.show()
 
     def plot_average_relative_tumor_volume(self):
+        """
+        Построение графика среднего относительного объема опухоли со всеми крысами.
+        """
         plt.figure(figsize=(15, 8))
         plt.title(f"(V отн.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
 
@@ -131,7 +185,8 @@ class TumorDataVisualizer:
         mean_relative_volumes = np.nanmean(relative_tumor_volumes, axis=0)
         std_dev_rel = [SupportingFunctions.calculate_std_dev(self, volumes, mean_volume) for volumes, mean_volume in
                        zip(np.transpose(relative_tumor_volumes), mean_relative_volumes)]
-        error_margin_rel = [SupportingFunctions.calculate_error_margin(self, std, len(relative_tumor_volumes)) for std in std_dev_rel]
+        error_margin_rel = [SupportingFunctions.calculate_error_margin(self, std, len(relative_tumor_volumes)) for std
+                            in std_dev_rel]
 
         plt.plot(self.time_data, mean_relative_volumes, marker='o', linestyle='-', color='b', label='M/V отн.')
         plt.fill_between(self.time_data, mean_relative_volumes - error_margin_rel,
@@ -147,6 +202,9 @@ class TumorDataVisualizer:
         plt.show()
 
     def plot_mean_relative_mean_tumor_volume(self):
+        """
+        Построение графика среднего относительного объема опухоли, усредненного по всем крысам.
+        """
         plt.figure(figsize=(15, 8))
         plt.title(f"(V отн. ср.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
 
@@ -179,17 +237,29 @@ class TumorDataVisualizer:
         plt.show()
 
     def get_mean_tumor_volumes(self) -> np.ndarray:
+        """
+        Вычисляет средний объем опухоли для всех крыс на каждом временном интервале.
+
+        Возвращает:
+            np.ndarray: Массив средних объемов опухоли.
+        """
         return np.nanmean(self.tumor_volumes, axis=0)
 
     def get_relative_tumor_volumes(self) -> np.ndarray:
+        """
+        Вычисляет относительные объемы опухолей для каждой крысы.
+
+        Возвращает:
+            np.ndarray: Массив относительных объемов опухолей.
+        """
         return np.array([[vol / volumes[0] for vol in volumes] for volumes in self.tumor_volumes])
 
     def get_mean_relative_tumor_volumes(self) -> np.ndarray:
         """
-        Возвращает средний относительный объем опухоли.
+        Вычисляет средний относительный объем опухоли для всех крыс.
 
-        Returns:
-            mean_rel_volumes: Средний относительный объем опухоли.
+        Возвращает:
+            np.ndarray: Массив средних относительных объемов опухоли.
         """
         # Получение средних объемов опухоли
         mean_volumes = self.get_mean_tumor_volumes()
@@ -202,11 +272,11 @@ class TumorDataVisualizer:
 
 # Используем с файлом данных
 file_path = './datas/n_7.2_p_25.2_2023.xlsx'
-#file_path = './datas/p_25.2_n_7.2_2023.xlsx'
-#file_path = './datas/p_25.2_n_7.2_2023_2.xlsx'
-#file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
-#file_path = './datas/n_2.56_p_25.6_2019.xlsx'
-#file_path = './datas/p_25.6_n_2.56_2019.xlsx'
+# file_path = './datas/p_25.2_n_7.2_2023.xlsx'
+# file_path = './datas/p_25.2_n_7.2_2023_2.xlsx'
+# file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
+# file_path = './datas/n_2.56_p_25.6_2019.xlsx'
+# file_path = './datas/p_25.6_n_2.56_2019.xlsx'
 
 visualizer = TumorDataVisualizer(file_path)
 
