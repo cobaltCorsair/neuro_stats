@@ -8,6 +8,19 @@ from draw_base_grapfs import TumorDataVisualizer
 from work_with_prepared_data.controls import ControlGroupVisualizer
 from work_with_prepared_data.support_stats_methods import SupportingFunctions
 
+# Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
+original_fill_between = plt.fill_between
+
+
+def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
+    # Ваша кастомная логика здесь
+    for xi, y1i, y2i in zip(x, y1, y2):
+        plt.plot([xi, xi], [y1i, y2i], color='grey', alpha=1)
+
+
+# Переопределяем функцию
+plt.fill_between = custom_fill_between
+
 
 class TumorDataComparatorAdvanced:
     def __init__(self, visualizer1: TumorDataVisualizer, visualizer2: TumorDataVisualizer):
@@ -240,12 +253,12 @@ class TumorDataComparatorAdvanced:
 
 
 # # Используем с файлом данных
-file_path1 = './datas/n_7.2_p_25.2_2023_2.xlsx'
-file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
+# file_path1 = './datas/n_7.2_p_25.2_2023_2.xlsx'
+# file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
 
 # Используем с файлом данных
-# file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
-# file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
+file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
+file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
 
 # Используем с файлом данных
 # file_path1 = './datas/n_2.56_p_25.6_2019.xlsx'

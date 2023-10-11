@@ -7,6 +7,18 @@ from typing import List, Tuple
 
 from work_with_prepared_data.support_stats_methods import SupportingFunctions, ExtractOutliers
 
+# Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
+original_fill_between = plt.fill_between
+
+
+def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
+    # Ваша кастомная логика здесь
+    for xi, y1i, y2i in zip(x, y1, y2):
+        plt.plot([xi, xi], [y1i, y2i], color='grey', alpha=1)
+
+
+# Переопределяем функцию
+plt.fill_between = custom_fill_between
 
 class TumorDataVisualizer:
     def __init__(self, file_path: str):
