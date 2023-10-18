@@ -213,22 +213,3 @@ class SupportingFunctions:
                 trimmed_values.append(v)
 
         return trimmed_time_data, trimmed_values
-
-    @staticmethod
-    def safe_str(obj):
-        """
-        Return the string representation of obj.
-        Replaces non-string or non-numeric values with an empty string.
-        """
-        if obj is np.nan:
-            return ''
-        try:
-            return str(obj)
-        except Exception:
-            return ''
-
-    @staticmethod
-    def join_params(params):
-        # Преобразование параметров в строку и исключение 'nan'
-        valid_params = [str(param) for param in params if str(param).lower() != 'nan']
-        return ', '.join(valid_params)
