@@ -20,6 +20,7 @@ def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
 
+
 class TumorDataVisualizer:
     def __init__(self, file_path: str):
         """
@@ -248,29 +249,30 @@ class TumorDataVisualizer:
         return mean_rel_volumes
 
 
-# Используем с файлом данных
-# file_path = './datas/n_7.2_p_25.2_2023.xlsx'
-# file_path = './datas/p_25.2_n_7.2_2023.xlsx'
-# file_path = './datas/p_25.2_n_7.2_2023_2.xlsx'
-file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
-# file_path = './datas/n_2.56_p_25.6_2019.xlsx'
-# file_path = './datas/p_25.6_n_2.56_2019.xlsx'
+if __name__ == '__main__':
+    # Используем с файлом данных
+    # file_path = './datas/n_7.2_p_25.2_2023.xlsx'
+    # file_path = './datas/p_25.2_n_7.2_2023.xlsx'
+    # file_path = './datas/p_25.2_n_7.2_2023_2.xlsx'
+    file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
+    # file_path = './datas/n_2.56_p_25.6_2019.xlsx'
+    # file_path = './datas/p_25.6_n_2.56_2019.xlsx'
 
-visualizer = TumorDataVisualizer(file_path)
-# ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
-ExtractOutliers(visualizer).exclude_rats(['х'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
+    visualizer = TumorDataVisualizer(file_path)
+    # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
+    ExtractOutliers(visualizer).exclude_rats(['х'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
 
-# Сохраняем график для каждой крысы
-visualizer.plot_tumor_volumes_single_graph()
+    # Сохраняем график для каждой крысы
+    visualizer.plot_tumor_volumes_single_graph()
 
-# Сохраняем график относительных объемов для каждой крысы
-visualizer.plot_relative_tumor_volumes_single_graph()
+    # Сохраняем график относительных объемов для каждой крысы
+    visualizer.plot_relative_tumor_volumes_single_graph()
 
-# Сохраняем график средних значений
-visualizer.plot_mean_tumor_volume()
+    # Сохраняем график средних значений
+    visualizer.plot_mean_tumor_volume()
 
-# Сохраняем график среднего относительного объема опухоли
-visualizer.plot_average_relative_tumor_volume()
+    # Сохраняем график среднего относительного объема опухоли
+    visualizer.plot_average_relative_tumor_volume()
 
-# Сохраняем график среднего относительного усреднённого объема опухоли
-visualizer.plot_mean_relative_mean_tumor_volume()
+    # Сохраняем график среднего относительного усреднённого объема опухоли
+    visualizer.plot_mean_relative_mean_tumor_volume()

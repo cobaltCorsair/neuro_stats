@@ -98,27 +98,30 @@ class TumorDataComparator:
         self.save_plot("compare_relative_tumor_volumes")
         plt.show()
 
-# Используем с файлом данных
-# file_path1 = './datas/n_7.2_p_25.2_2023_2.xlsx'
-# file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
+if __name__ == "__main__":
+    # Используем с файлом данных
+    # file_path1 = './datas/n_7.2_p_25.2_2023_2.xlsx'
+    # file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
 
-# Используем с файлом данных
-# file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
-# file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
+    # Используем с файлом данных
+    # file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
+    # file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
 
-# Используем с файлом данных
-# file_path1 = './datas/n_2.56_p_25.6_2019.xlsx'
-# file_path2 = './datas/p_25.6_n_2.56_2019.xlsx'
+    # Используем с файлом данных
+    # file_path1 = './datas/n_2.56_p_25.6_2019.xlsx'
+    # file_path2 = './datas/p_25.6_n_2.56_2019.xlsx'
 
-# Используем с файлом данных
-file_path1 = './datas/control/02.02.2023_n_12.xlsx'
-file_path2 = './datas/control/02.02.2023_n_18.xlsx'
-file_path3 = './datas/control/16.03.2023_n_22.xlsx'
+    # Используем с файлом данных
+    file_path1 = './datas/control/02.02.2023_n_12.xlsx'
+    file_path2 = './datas/control/02.02.2023_n_18.xlsx'
+    file_path3 = './datas/control/16.03.2023_n_22.xlsx'
 
-# Создаем объекты визуализатора для каждого файла данных
-visualizers = [TumorDataVisualizer(file_path) for file_path in [file_path1, file_path2, file_path3]]
-# visualizers = [TumorDataVisualizer(file_path) for file_path in [file_path1, file_path2]]
-# Создаем объект сравнителя и сравниваем данные из всех экспериментов
-comparator = TumorDataComparator(*visualizers)
-comparator.compare_tumor_volumes()  # Сравниваем абсолютные объемы
-comparator.compare_relative_tumor_volumes()  # Сравниваем относительные объемы
+    # Создаем объекты визуализатора для каждого файла данных
+    visualizers = [TumorDataVisualizer(file_path) for file_path in [file_path1, file_path2, file_path3]]
+
+    # visualizers = [TumorDataVisualizer(file_path) for file_path in [file_path1, file_path2]]
+
+    # Создаем объект сравнителя и сравниваем данные из всех экспериментов
+    comparator = TumorDataComparator(*visualizers)
+    comparator.compare_tumor_volumes()  # Сравниваем абсолютные объемы
+    comparator.compare_relative_tumor_volumes()  # Сравниваем относительные объемы

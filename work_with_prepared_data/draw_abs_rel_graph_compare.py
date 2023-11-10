@@ -13,9 +13,15 @@ original_fill_between = plt.fill_between
 
 
 def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
-    # Ваша кастомная логика здесь
+    # Перерисовывает доверительный интервал на чёрточки
+    horizontal_line_length = 0.2  # Длина горизонтальных линий на концах
     for xi, y1i, y2i in zip(x, y1, y2):
-        plt.plot([xi, xi], [y1i, y2i], color='grey', alpha=1)
+        # Вертикальные линии
+        plt.plot([xi, xi], [y1i, y2i], color='grey', alpha=1, zorder=1)
+
+        # Горизонтальные линии на концах
+        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color='grey', alpha=1, zorder=1)
+        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color='grey', alpha=1, zorder=1)
 
 
 # Переопределяем функцию
@@ -23,16 +29,14 @@ plt.fill_between = custom_fill_between
 
 
 class TumorDataComparatorAdvanced:
-    def __init__(self, visualizer1: TumorDataVisualizer, visualizer2: TumorDataVisualizer):
+    def __init__(self, *visualizers: List[TumorDataVisualizer]):
         """
-        Инициализатор класса для сравнения данных двух экспериментов.
+        Инициализатор класса для сравнения данных произвольного количества экспериментов.
 
         Parameters:
-            visualizer1 (TumorDataVisualizer): Первый объект визуализатора данных опухоли.
-            visualizer2 (TumorDataVisualizer): Второй объект визуализатора данных опухоли.
+            *visualizers (List[TumorDataVisualizer]): Произвольное количество объектов TumorDataVisualizer.
         """
-        self.visualizer1 = visualizer1
-        self.visualizer2 = visualizer2
+        self.visualizers = visualizers
 
     def save_plot(self, comparison_type: str):
         """
@@ -41,72 +45,67 @@ class TumorDataComparatorAdvanced:
         Parameters:
             comparison_type (str): Тип сравнения, используется для формирования имени файла.
         """
-        # Извлечение имен файлов без расширения и пути
-        file_name1 = os.path.splitext(os.path.basename(self.visualizer1.file_path))[0]
-        file_name2 = os.path.splitext(os.path.basename(self.visualizer2.file_path))[0]
-
-        # Сборка окончательного имени файла
-        file_name = f"{comparison_type}_{file_name1}_vs_{file_name2}.png"
-
-        # Сохранение изображения
+        file_names = [os.path.splitext(os.path.basename(v.file_path))[0] for v in self.visualizers]
+        file_name = f"{comparison_type}_{'_vs_'.join(file_names)}.png"
         plt.savefig(file_name, format='png', dpi=300)
         print(f"Plot saved as {file_name}")
 
     def normalize_time_data(self):
         """
-        Нормализует временные данные для двух объектов визуализатора.
+        Нормализует временные данные для всех объектов визуализатора.
         """
-        # Перевести временные метки в числовой формат и нормализовать их
-        self.visualizer1.time_data = [int(time) - int(self.visualizer1.time_data[0]) for time in
-                                      self.visualizer1.time_data]
-        self.visualizer2.time_data = [int(time) - int(self.visualizer2.time_data[0]) for time in
-                                      self.visualizer2.time_data]
+        # Находим минимальную начальную точку времени среди всех экспериментов
+        min_start_time = min([int(v.time_data[0]) for v in self.visualizers])
+
+        # Выравниваем все временные ряды, вычитая минимальную начальную точку
+        for visualizer in self.visualizers:
+            visualizer.time_data = [int(time) - min_start_time for time in visualizer.time_data]
+
+    def format_experiment_params(self, params):
+        """
+        Форматирует параметры эксперимента для отображения в легенде.
+
+        Parameters:
+            params (list): Список параметров эксперимента.
+
+        Returns:
+            str: Отформатированная строка параметров эксперимента.
+        """
+        # Удаляем пустые строки и значения 'nan'
+        cleaned_params = [str(param).replace('nan', '').strip() for param in params if str(param).strip()]
+        # Преобразуем список в строку, исключая квадратные скобки
+        return ', '.join(cleaned_params)
 
     def compare_mean_volumes(self):
         """
-        Сравнивает средние объемы опухолей для двух экспериментов и строит график.
+        Сравнивает средние объемы опухолей для всех экспериментов и строит график.
         """
         self.normalize_time_data()
         plt.figure(figsize=(15, 8))
 
-        # Для первого визуализатора
-        mean_volumes1 = self.visualizer1.get_mean_tumor_volumes()
-        std_dev1 = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                    for volumes, mean_volume in zip(np.transpose(self.visualizer1.tumor_volumes), mean_volumes1)]
-        error_margin1 = [SupportingFunctions.calculate_error_margin(std, len(self.visualizer1.tumor_volumes))
-                         for std in std_dev1]
+        for visualizer in self.visualizers:
+            mean_volumes = visualizer.get_mean_tumor_volumes()
+            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
+                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_volumes)]
+            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
+                            for std in std_dev]
 
-        plt.plot(
-            self.visualizer1.time_data,
-            mean_volumes1,
-            marker='o',
-            linestyle='-',
-            label="Exp1: M/V абс.",
-        )
-        plt.fill_between(self.visualizer1.time_data,
-                         mean_volumes1 - error_margin1,
-                         mean_volumes1 + error_margin1, color='b', alpha=0.2)
+            # Использование format_experiment_params для форматирования параметров эксперимента
+            formatted_params = self.format_experiment_params(visualizer.experiment_params)
 
-        # Для второго визуализатора
-        mean_volumes2 = self.visualizer2.get_mean_tumor_volumes()
-        std_dev2 = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                    for volumes, mean_volume in zip(np.transpose(self.visualizer2.tumor_volumes), mean_volumes2)]
-        error_margin2 = [SupportingFunctions.calculate_error_margin(std, len(self.visualizer2.tumor_volumes))
-                         for std in std_dev2]
+            plt.plot(
+                visualizer.time_data,
+                mean_volumes,
+                marker='o',
+                linestyle='-',
+                zorder=2,
+                label=f"{formatted_params}: M/V абс."
+            )
+            plt.fill_between(visualizer.time_data,
+                             [mean - err for mean, err in zip(mean_volumes, error_margin)],
+                             [mean + err for mean, err in zip(mean_volumes, error_margin)], alpha=0.2)
 
-        plt.plot(
-            self.visualizer2.time_data,
-            mean_volumes2,
-            marker='o',
-            linestyle='-',
-            label="Exp2: M/V абс.",
-        )
-        plt.fill_between(self.visualizer2.time_data,
-                         mean_volumes2 - error_margin2,
-                         mean_volumes2 + error_margin2, color='g', alpha=0.2)
-
-        plt.title(
-            f"Сравнение среднего объема опухоли\nExp1: {', '.join(self.visualizer1.experiment_params)} vs Exp2: {', '.join(self.visualizer2.experiment_params)}")
+        plt.title("Сравнение среднего объема опухолей")
         plt.xticks(rotation=45)
         plt.xlabel("Время (дни)")
         plt.ylabel("Средний объем опухоли")
@@ -118,165 +117,178 @@ class TumorDataComparatorAdvanced:
 
     def compare_relative_volumes(self):
         """
-        Сравнивает средние относительные объемы опухолей для двух экспериментов и строит график.
+        Сравнивает средние относительные объемы опухолей для всех экспериментов и строит график.
         """
         self.normalize_time_data()
         plt.figure(figsize=(15, 8))
 
-        # Определение минимальной последней временной точки из обоих экспериментов
-        min_last_timepoint = min(int(self.visualizer1.time_data[-1]), int(self.visualizer2.time_data[-1]))
+        # Инициализация списка для хранения объектов линий и AUC
+        lines = []
+        aucs = []
 
-        # Обрезка данных до минимальной последней временной точки
-        time_data_1, mean_rel_volumes1 = SupportingFunctions.trim_data_to_timepoint(self.visualizer1.time_data,
-                                                                                    self.visualizer1.get_mean_relative_tumor_volumes(),
-                                                                                    min_last_timepoint)
-        time_data_2, mean_rel_volumes2 = SupportingFunctions.trim_data_to_timepoint(self.visualizer2.time_data,
-                                                                                    self.visualizer2.get_mean_relative_tumor_volumes(),
-                                                                                    min_last_timepoint)
-        # Для первого визуализатора
-        std_dev1 = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                    for volumes, mean_volume in zip(np.transpose(self.visualizer1.tumor_volumes), mean_rel_volumes1)]
-        error_margin1 = [SupportingFunctions.calculate_error_margin(std, len(self.visualizer1.tumor_volumes))
-                         for std in std_dev1]
+        for visualizer in self.visualizers:
+            mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
+            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
+                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
+            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
+                            for std in std_dev]
 
-        # Создание графика и сохранение объекта линии для первого эксперимента
-        line1, = plt.plot(
-            time_data_1,
-            mean_rel_volumes1,
-            marker='o',
-            linestyle='-',
-            label=f"Exp1: {', '.join(self.visualizer1.experiment_params)}",
-        )
-        plt.fill_between(time_data_1,
-                         [mean - err for mean, err in zip(mean_rel_volumes1, error_margin1)],
-                         [mean + err for mean, err in zip(mean_rel_volumes1, error_margin1)],
-                         color='b', alpha=0.2)
+            # Использование format_experiment_params для форматирования параметров эксперимента
+            formatted_params = self.format_experiment_params(visualizer.experiment_params)
 
-        # Для второго визуализатора
-        std_dev2 = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                    for volumes, mean_volume in zip(np.transpose(self.visualizer2.tumor_volumes), mean_rel_volumes2)]
-        error_margin2 = [SupportingFunctions.calculate_error_margin(std, len(self.visualizer2.tumor_volumes))
-                         for std in std_dev2]
+            # Создание графика и сохранение объекта линии для каждого эксперимента
+            line, = plt.plot(
+                visualizer.time_data,
+                mean_rel_volumes,
+                marker='o',
+                linestyle='-',
+                zorder=2,
+                label=formatted_params
+            )
+            plt.fill_between(visualizer.time_data,
+                             [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
+                             [mean + err for mean, err in zip(mean_rel_volumes, error_margin)], alpha=0.2)
+            lines.append(line)
+            aucs.append(np.trapz(mean_rel_volumes, visualizer.time_data))
 
-        # Создание графика и сохранение объекта линии для второго эксперимента
-        line2, = plt.plot(
-            time_data_2,
-            mean_rel_volumes2,
-            marker='o',
-            linestyle='--',
-            label=f"Exp2: {', '.join(self.visualizer2.experiment_params)}",
-        )
-        plt.fill_between(time_data_2,
-                         [mean - err for mean, err in zip(mean_rel_volumes2, error_margin2)],
-                         [mean + err for mean, err in zip(mean_rel_volumes2, error_margin2)],
-                         color='g', alpha=0.2)
-
-        # Вычислить AUC
-        auc1 = np.trapz(mean_rel_volumes1, time_data_1)
-        auc2 = np.trapz(mean_rel_volumes2, time_data_2)
-
-        plt.title(
-            f"Сравнение среднего относительного объема опухоли\n"
-            f"Exp1: {', '.join(self.visualizer1.experiment_params)} "
-            f"vs Exp2: {', '.join(self.visualizer2.experiment_params)}"
-        )
+        plt.title("Сравнение среднего относительного объема опухолей")
         plt.xticks(rotation=45)
         plt.xlabel("Время (дни)")
         plt.ylabel("Средний относительный объем опухоли")
         plt.grid(True)
 
-        # Добавление первой легенды
-        first_legend = plt.legend(handles=[line1, line2], title="Параметры эксперимента", loc='upper left')
+        # Добавление первой легенды с параметрами экспериментов
+        first_legend = plt.legend(handles=lines, title="Параметры эксперимента", loc='upper left')
         plt.gca().add_artist(first_legend)  # Добавление первой легенды на график
 
-        # Добавление второй легенды
-        labels = [f"ур. знач.: {auc:.2f}" for auc in [auc1, auc2]]
-        plt.legend([line1, line2], labels, title="Площадь под кривой", loc='upper right')
+        # Добавление второй легенды с AUC
+        auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
+        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper right')
 
         plt.tight_layout()
         self.save_plot("compare_relative_volumes")
         plt.show()
 
-    def compare_control_and_experiment(self, control_visualizer, experiment_visualizer):
-        self.normalize_time_data()
+    def compare_control_and_experiment(self, control_visualizers):
+        """
+        Сравнивает средние относительные объемы опухолей между контрольными и экспериментальными группами и строит график.
+
+        Parameters:
+            control_visualizers (list): Список визуализаторов для контрольных групп.
+        """
+        all_visualizers = list(self.visualizers) + control_visualizers
+        for viz in all_visualizers:
+            viz.time_data = [int(time) - int(viz.time_data[0]) for time in viz.time_data]
+
         plt.figure(figsize=(15, 8))
 
-        # Для контрольной группы
-        mean_rel_volumes_control = control_visualizer.get_mean_relative_tumor_volumes()
+        # Списки для хранения объектов линий и значений AUC
+        lines = []
+        aucs = []
 
-        std_dev_control = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                           for volumes, mean_volume in
-                           zip(np.transpose(control_visualizer.tumor_volumes), mean_rel_volumes_control)]
-        error_margin_control = [SupportingFunctions.calculate_error_margin(std, len(control_visualizer.tumor_volumes))
-                                for std in std_dev_control]
+        # Визуализация для контрольных групп
+        for visualizer in control_visualizers:
+            mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
+            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
+                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
+            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
+                            for std in std_dev]
+            formatted_params = self.format_experiment_params(visualizer.experiment_params)
 
-        plt.plot(
-            control_visualizer.time_data,
-            mean_rel_volumes_control,
-            marker='o',
-            linestyle='-',
-            label=f"Контроль: {', '.join(control_visualizer.experiment_params)}",
-        )
-        plt.fill_between(control_visualizer.time_data,
-                         mean_rel_volumes_control - error_margin_control,
-                         mean_rel_volumes_control + error_margin_control, color='b', alpha=0.2)
+            line, = plt.plot(
+                visualizer.time_data,
+                mean_rel_volumes,
+                marker='o',
+                linestyle='-',
+                zorder=2,
+                label=f"Контроль: {''.join(formatted_params)}",
+            )
+            plt.fill_between(visualizer.time_data,
+                             [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
+                             [mean + err for mean, err in zip(mean_rel_volumes, error_margin)], alpha=0.2)
+            lines.append(line)
+            aucs.append(np.trapz(mean_rel_volumes, visualizer.time_data))
 
-        # Для экспериментальной группы
-        mean_rel_volumes_exp = experiment_visualizer.get_mean_relative_tumor_volumes()
+        # Визуализация для экспериментальных групп
+        for visualizer in self.visualizers:
+            mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
+            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
+                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
+            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
+                            for std in std_dev]
+            formatted_params = self.format_experiment_params(visualizer.experiment_params)
 
-        std_dev_exp = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                       for volumes, mean_volume in
-                       zip(np.transpose(experiment_visualizer.tumor_volumes), mean_rel_volumes_exp)]
-        error_margin_exp = [SupportingFunctions.calculate_error_margin(std, len(experiment_visualizer.tumor_volumes))
-                            for std in std_dev_exp]
+            line, = plt.plot(
+                visualizer.time_data,
+                mean_rel_volumes,
+                marker='o',
+                linestyle='-',
+                zorder=2,
+                label=f"Эксперимент: {''.join(formatted_params)}",
+            )
+            plt.fill_between(visualizer.time_data,
+                             [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
+                             [mean + err for mean, err in zip(mean_rel_volumes, error_margin)], alpha=0.2)
+            lines.append(line)
+            aucs.append(np.trapz(mean_rel_volumes, visualizer.time_data))
 
-        plt.plot(
-            experiment_visualizer.time_data,
-            mean_rel_volumes_exp,
-            marker='o',
-            linestyle='--',
-            label=f"Эксперимент: {', '.join(experiment_visualizer.experiment_params)}",
-        )
-        plt.fill_between(experiment_visualizer.time_data,
-                         mean_rel_volumes_exp - error_margin_exp,
-                         mean_rel_volumes_exp + error_margin_exp, color='g', alpha=0.2)
-
-        plt.title("Сравнение с контрольной группой")
+        plt.title("Сравнение контрольных и экспериментальных групп")
         plt.xticks(rotation=45)
         plt.xlabel("Время (дни)")
         plt.ylabel("Средний относительный объем опухоли")
         plt.grid(True)
-        plt.legend()
+
+        # Добавление первой легенды с параметрами экспериментов
+        first_legend = plt.legend(handles=lines, title="Параметры эксперимента", loc='upper left')
+        plt.gca().add_artist(first_legend)  # Добавление первой легенды на график
+
+        # Добавление второй легенды с AUC
+        auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
+        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper right')
+
         plt.tight_layout()
-        self.save_plot("compare_relative_volumes_with_control")
+        self.save_plot("compare_control_and_experiment")
         plt.show()
 
+if __name__ == "__main__":
+    # # Используем с файлом данных
+    # file_path1 = './datas/n_7.2_p_25.2_2023_2.xlsx'
+    # file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
 
-# # Используем с файлом данных
-# file_path1 = './datas/n_7.2_p_25.2_2023_2.xlsx'
-# file_path2 = './datas/p_25.2_n_7.2_2023_2.xlsx'
+    # Используем с файлом данных
+    # file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
+    # file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
 
-# Используем с файлом данных
-file_path1 = './datas/n_7.2_p_25.2_2023.xlsx'
-file_path2 = './datas/p_25.2_n_7.2_2023.xlsx'
+    # Используем с файлом данных
+    # file_path1 = './datas/n_2.56_p_25.6_2019.xlsx'
+    # file_path2 = './datas/p_25.6_n_2.56_2019.xlsx'
 
-# Используем с файлом данных
-# file_path1 = './datas/n_2.56_p_25.6_2019.xlsx'
-# file_path2 = './datas/p_25.6_n_2.56_2019.xlsx'
+    # Контроль
+    # control_path = './datas/control/16.03.2023_e_36.xlsx'
+    # control_path = './datas/control/08.10.2021_p32_прострел.xlsx'
 
-# control_path = './datas/control/16.03.2023_e_36.xlsx'
+    # Пути к файлам данных для контрольных и экспериментальных групп
+    control_paths = [
+        './datas/control/control.xlsx',
+    ]
+    experiment_paths = [
+        './datas/control/02.02.2023_n_12.xlsx',
+        './datas/control/02.02.2023_n_18.xlsx',
+        './datas/control/16.03.2023_n_22.xlsx',
+        './datas/control/30.03.2022_p_36_прострел.xlsx',
+    ]
 
-# Создаем объекты визуализатора для каждого файла данных
-visualizer1 = TumorDataVisualizer(file_path1)
-visualizer2 = TumorDataVisualizer(file_path2)
+    # Создание объектов визуализатора для контрольных групп
+    control_visualizers = [ControlGroupVisualizer(path) for path in control_paths]
 
-# Контроль
-# visualizer2 = ControlGroupVisualizer(control_path)
+    # Создание объектов визуализатора для экспериментальных групп
+    experiment_visualizers = [TumorDataVisualizer(path) for path in experiment_paths]
 
-# Создаем объект сравнителя и сравниваем данные из двух экспериментов
-comparator = TumorDataComparatorAdvanced(visualizer1, visualizer2)
-# comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    # Создание объекта сравнителя
+    comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-# Контроль
-# comparator.compare_control_and_experiment(visualizer2, visualizer1)  # Сравниваем с контролем
+    # comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+
+    # Сравнение контрольных и экспериментальных групп
+    # comparator.compare_control_and_experiment(control_visualizers)
