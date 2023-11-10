@@ -286,10 +286,14 @@ if __name__ == "__main__":
         './datas/control/control.xlsx',
     ]
     experiment_paths = [
-        './datas/control/02.02.2023_n_12.xlsx',
-        './datas/control/02.02.2023_n_18.xlsx',
-        './datas/control/16.03.2023_n_22.xlsx',
-        './datas/control/30.03.2022_p_36_прострел.xlsx',
+        #'./datas/control/02.02.2023_n_12.xlsx',
+        #'./datas/control/02.02.2023_n_18.xlsx',
+        #'./datas/control/16.03.2023_n_22.xlsx',
+        #'./datas/control/30.03.2022_p_36_прострел.xlsx',
+        # './datas/n_7.2_p_25.2_2023.xlsx',
+        # './datas/p_25.2_n_7.2_2023.xlsx',
+        './datas/n_7.2_p_25.2_2023_2.xlsx',
+        './datas/p_25.2_n_7.2_2023_2.xlsx',
     ]
 
     # Создание объектов визуализатора для контрольных групп
@@ -305,4 +309,4 @@ if __name__ == "__main__":
     comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
-    # comparator.compare_control_and_experiment(control_visualizers)
+    #comparator.compare_control_and_experiment(control_visualizers)

@@ -6,6 +6,18 @@ from matplotlib.lines import Line2D
 
 from work_with_prepared_data.support_stats_methods import ExtractOutliers, SupportingFunctions
 
+# Увеличение размера фигуры
+plt.figure(figsize=(15, 8))  # Увеличение размера фигуры
+
+# Глобальное изменение размеров шрифтов
+plt.rcParams.update({
+    'font.size': 16,           # Размер основного шрифта
+    'axes.titlesize': 18,      # Размер заголовка
+    'axes.labelsize': 16,      # Размер подписей осей
+    'xtick.labelsize': 14,     # Размер меток на оси X
+    'ytick.labelsize': 14,     # Размер меток на оси Y
+    'legend.fontsize': 14      # Размер шрифта в легенде
+})
 
 class SkinReactionsVisualizer:
     def __init__(self, file_path: str):
@@ -168,29 +180,29 @@ class SkinReactionsVisualizer:
         print("Plot saved as multiple_experiments_mean_reactions.png")
         plt.show()
 
+if __name__ == '__main__':
+    # Пример использования
+    # file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx'
+    # file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx'
+    # file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx'
+    # file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
 
-# Пример использования
-# file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx'
-# file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx'
-# file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx'
-# file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
+    # visualizer = SkinReactionsVisualizer(file_path)
+    #
+    # # Удаление выбросов
+    # # ExtractOutliers(visualizer).remove_local_outliers()
+    # Удаление точек
+    # ExtractOutliers(visualizer).exclude_rats(['б/м'], 'tumor_volumes')  # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
+    # ExtractOutliers(visualizer).exclude_rats(['г', 'х'], 'tumor_volumes')  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
 
-# visualizer = SkinReactionsVisualizer(file_path)
-#
-# # Удаление выбросов
-# # ExtractOutliers(visualizer).remove_local_outliers()
-# Удаление точек
-# ExtractOutliers(visualizer).exclude_rats(['б/м'], 'tumor_volumes')  # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
-# ExtractOutliers(visualizer).exclude_rats(['г', 'х'], 'tumor_volumes')  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
+    # visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
+    # visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
 
-# visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
-# visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
-
-# Отображения средних кожных реакций для нескольких экспериментов
-file_paths = [
-    'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
-    'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
-    'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
-    'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
-]
-SkinReactionsVisualizer.plot_multiple_experiments(file_paths)
+    # Отображения средних кожных реакций для нескольких экспериментов
+    file_paths = [
+        # 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
+        # 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
+        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
+        'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
+    ]
+    SkinReactionsVisualizer.plot_multiple_experiments(file_paths)
