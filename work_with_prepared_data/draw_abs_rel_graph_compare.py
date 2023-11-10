@@ -28,6 +28,20 @@ def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
 plt.fill_between = custom_fill_between
 
 
+# Увеличение размера фигуры
+plt.figure(figsize=(15, 8))  # Увеличение размера фигуры
+
+# Глобальное изменение размеров шрифтов
+plt.rcParams.update({
+    'font.size': 16,           # Размер основного шрифта
+    'axes.titlesize': 18,      # Размер заголовка
+    'axes.labelsize': 16,      # Размер подписей осей
+    'xtick.labelsize': 14,     # Размер меток на оси X
+    'ytick.labelsize': 14,     # Размер меток на оси Y
+    'legend.fontsize': 14      # Размер шрифта в легенде
+})
+
+
 class TumorDataComparatorAdvanced:
     def __init__(self, *visualizers: List[TumorDataVisualizer]):
         """
