@@ -64,7 +64,7 @@ class TumorDataVisualizer:
                 - tumor_volumes (List[List[float]]): Объемы опухолей для каждой крысы на каждом временном интервале.
         """
         data = pd.read_excel(self.file_path, header=None)
-        experiment_params = data.iloc[0, :3].tolist()
+        experiment_params = data.iloc[0, :3].astype(str).replace('nan', '').tolist()
         tumor_data = data.iloc[2:, :].copy()
         time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in data.iloc[1, 1:]]
 
