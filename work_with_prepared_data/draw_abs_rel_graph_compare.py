@@ -13,17 +13,18 @@ original_fill_between = plt.fill_between
 
 
 def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
-    # Перерисовывает доверительный интервал на чёрточки
     horizontal_line_length = 0.2  # Длина горизонтальных линий на концах
+    line_color = color if color is not None else 'blue'  # Используйте заданный цвет, если он предоставлен
+
     for xi, y1i, y2i in zip(x, y1, y2):
         # Вертикальные линии
-        plt.plot([xi, xi], [y1i, y2i], color='blue', alpha=1, zorder=1)
+        plt.plot([xi, xi], [y1i, y2i], color=line_color, alpha=1, zorder=1)
 
         # Горизонтальные линии на концах
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color='grey', alpha=1,
-                 zorder=1)
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color='grey', alpha=1,
-                 zorder=1)
+        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color=line_color,
+                 alpha=1, zorder=1)
+        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color=line_color,
+                 alpha=1, zorder=1)
 
 
 # Переопределяем функцию
@@ -142,9 +143,10 @@ class TumorDataComparatorAdvanced:
 
         # Список маркеров
         markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
+        marker_index = 0
         marker_size = 12  # Установка размера маркера
 
-        for i, visualizer in enumerate(self.visualizers):
+        for visualizer in self.visualizers:
             mean_volumes = visualizer.get_mean_tumor_volumes()
             std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
                        for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_volumes)]
@@ -154,18 +156,22 @@ class TumorDataComparatorAdvanced:
             # Использование format_experiment_params для форматирования параметров эксперимента
             formatted_params = self.format_experiment_params(visualizer.experiment_params)
 
-            plt.plot(
+            line, = plt.plot(
                 visualizer.time_data,
                 mean_volumes,
-                marker=markers[i % len(markers)],
+                marker=markers[marker_index % len(markers)],
                 markersize=marker_size,
                 linestyle='-',
                 zorder=2,
                 label=f"{formatted_params}: M/V абс."
             )
-            plt.fill_between(visualizer.time_data,
-                             [mean - err for mean, err in zip(mean_volumes, error_margin)],
-                             [mean + err for mean, err in zip(mean_volumes, error_margin)], alpha=0.2)
+            line_color = line.get_color()
+            custom_fill_between(visualizer.time_data,
+                                [mean - err for mean, err in zip(mean_volumes, error_margin)],
+                                [mean + err for mean, err in zip(mean_volumes, error_margin)],
+                                color=line_color, alpha=0.2)
+
+            marker_index += 1
 
         plt.title("Сравнение среднего объема опухолей")
         max_time = max([max(v.time_data) for v in self.visualizers])
@@ -187,9 +193,10 @@ class TumorDataComparatorAdvanced:
 
         # Список маркеров
         markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
+        marker_index = 0
         marker_size = 12  # Установка размера маркера
 
-        for i, visualizer in enumerate(self.visualizers):
+        for visualizer in self.visualizers:
             mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
             std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
                        for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
@@ -199,18 +206,22 @@ class TumorDataComparatorAdvanced:
             # Использование format_experiment_params для форматирования параметров эксперимента
             formatted_params = self.format_experiment_params(visualizer.experiment_params)
 
-            plt.plot(
+            line, = plt.plot(
                 visualizer.time_data,
                 mean_rel_volumes,
-                marker=markers[i % len(markers)],
+                marker=markers[marker_index % len(markers)],
                 markersize=marker_size,
                 linestyle='-',
                 zorder=2,
                 label=formatted_params
             )
-            plt.fill_between(visualizer.time_data,
-                             [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
-                             [mean + err for mean, err in zip(mean_rel_volumes, error_margin)], alpha=0.2)
+            line_color = line.get_color()
+            custom_fill_between(visualizer.time_data,
+                                [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
+                                [mean + err for mean, err in zip(mean_rel_volumes, error_margin)],
+                                color=line_color, alpha=0.2)
+
+            marker_index += 1
 
         max_time = max([max(v.time_data) for v in self.visualizers])
         plt.xticks(ticks=range(0, max_time + 1, 3), rotation=0)
@@ -262,40 +273,46 @@ class TumorDataComparatorAdvanced:
                 zorder=2,
                 label=f"Контроль: {'без облучения'}",
             )
-            plt.fill_between(visualizer.time_data,
-                             [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
-                             [mean + err for mean, err in zip(mean_rel_volumes, error_margin)], alpha=0.2)
+            line_color = line.get_color()
+            custom_fill_between(visualizer.time_data,
+                                [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
+                                [mean + err for mean, err in zip(mean_rel_volumes, error_margin)],
+                                color=line_color, alpha=0.2)
             lines.append(line)
             aucs.append(np.trapz(mean_rel_volumes, visualizer.time_data))
 
-            # Визуализация для экспериментальных групп
-        # Визуализация для экспериментальных групп
-        for visualizer in self.visualizers:
-            mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
-            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                           for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
-            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
-                                for std in std_dev]
-            formatted_params = self.format_experiment_params(visualizer.experiment_params)
-
-            line, = plt.plot(
-                visualizer.time_data,
-                mean_rel_volumes,
-                marker=markers[marker_index % len(markers)],
-                linestyle='-',
-                markersize=marker_size,
-                zorder=2,
-                label=f"Эксперимент: {''.join(formatted_params)}",
-                )
             marker_index += 1
 
-            plt.fill_between(visualizer.time_data,
-                             [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
-                             [mean + err for mean, err in zip(mean_rel_volumes, error_margin)], alpha=0.2)
-            lines.append(line)
-            aucs.append(np.trapz(mean_rel_volumes, visualizer.time_data))
+            # Визуализация для экспериментальных групп
+            for visualizer in self.visualizers:
+                mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
+                std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
+                           for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
+                error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
+                                for std in std_dev]
+                formatted_params = self.format_experiment_params(visualizer.experiment_params)
 
-        #plt.title("Сравнение контрольных и экспериментальных групп")
+                line, = plt.plot(
+                    visualizer.time_data,
+                    mean_rel_volumes,
+                    marker=markers[marker_index % len(markers)],
+                    linestyle='-',
+                    markersize=marker_size,
+                    zorder=2,
+                    label=f"Эксперимент: {''.join(formatted_params)}",
+                )
+                line_color = line.get_color()
+                custom_fill_between(visualizer.time_data,
+                                    [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
+                                    [mean + err for mean, err in zip(mean_rel_volumes, error_margin)],
+                                    color=line_color, alpha=0.2)
+
+                lines.append(line)
+                aucs.append(np.trapz(mean_rel_volumes, visualizer.time_data))
+
+                marker_index += 1
+
+        # plt.title("Сравнение контрольных и экспериментальных групп")
         # Установка меток на оси X
         max_time = max([max(v.time_data) for v in self.visualizers])  # Находим максимальное время из всех экспериментов
         plt.xticks(ticks=range(0, max_time + 1, 3), rotation=0)  # Устанавливаем метки каждые 3 дня, без поворота
@@ -304,13 +321,13 @@ class TumorDataComparatorAdvanced:
         plt.grid(True)
 
         # Добавление первой легенды с параметрами экспериментов
-        #first_legend = plt.legend(handles=lines, title="Параметры эксперимента", loc='upper left')
+        # first_legend = plt.legend(handles=lines, title="Параметры эксперимента", loc='upper left')
         first_legend = plt.legend(handles=lines, title="", loc='upper left')
         plt.gca().add_artist(first_legend)  # Добавление первой легенды на график
 
         # Добавление второй легенды с AUC
-        #auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
-        #plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper right')
+        # auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
+        # plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper right')
 
         plt.tight_layout()
         self.save_plot("compare_control_and_experiment")
@@ -358,7 +375,7 @@ if __name__ == "__main__":
     # Создание объекта сравнителя
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-    # comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    #comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
     #comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
