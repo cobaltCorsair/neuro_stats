@@ -141,7 +141,7 @@ class SkinReactionsVisualizer:
         plt.gca().add_artist(first_legend)
         labels = [f'{auc:.2e} тыс.' for auc in aucs]
         plt.xticks(np.arange(25)[::3], rotation=0)
-        plt.xlabel("Время (сут.)")
+        plt.xlabel("Время, сут.")
         plt.ylabel("Кожные реакции, отн. ед.")
         plt.grid(True)
         plt.tight_layout()

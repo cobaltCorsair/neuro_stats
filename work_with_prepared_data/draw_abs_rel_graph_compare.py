@@ -176,7 +176,7 @@ class TumorDataComparatorAdvanced:
         plt.title("Сравнение среднего объема опухолей")
         max_time = max([max(v.time_data) for v in self.visualizers])
         plt.xticks(ticks=range(0, max_time + 1, 3), rotation=0)
-        plt.xlabel("Время (сут.)")
+        plt.xlabel("Время, сут.")
         plt.ylabel("Средний объем опухоли")
         plt.grid(True)
         plt.legend()
@@ -225,7 +225,7 @@ class TumorDataComparatorAdvanced:
 
         max_time = max([max(v.time_data) for v in self.visualizers])
         plt.xticks(ticks=range(0, max_time + 1, 3), rotation=0)
-        plt.xlabel("Время (сут.)")
+        plt.xlabel("Время, сут.")
         plt.ylabel("Относительный объем опухоли, отн. ед.")
         plt.grid(True)
         plt.legend()
@@ -316,7 +316,7 @@ class TumorDataComparatorAdvanced:
         # Установка меток на оси X
         max_time = max([max(v.time_data) for v in self.visualizers])  # Находим максимальное время из всех экспериментов
         plt.xticks(ticks=range(0, max_time + 1, 3), rotation=0)  # Устанавливаем метки каждые 3 дня, без поворота
-        plt.xlabel("Время (сут.)")
+        plt.xlabel("Время, сут.")
         plt.ylabel("Относительный объем опухоли, отн. ед.")
         plt.grid(True)
 
