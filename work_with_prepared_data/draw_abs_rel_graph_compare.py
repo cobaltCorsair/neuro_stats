@@ -64,6 +64,8 @@ class TumorDataComparatorAdvanced:
         """
         file_names = [os.path.splitext(os.path.basename(v.file_path))[0] for v in self.visualizers]
         file_name = f"{comparison_type}_{'_vs_'.join(file_names)}.png"
+        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
+        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
         plt.savefig(file_name, format='png', dpi=300)
         print(f"Plot saved as {file_name}")
 
@@ -123,14 +125,15 @@ class TumorDataComparatorAdvanced:
 
         # Формирование строки для легенды
         formatted_params = []
-        for key in sequence:
-            if key in rad_values:
-                formatted_params.append(f"D{self.subscriptify(key.lower())} = {rad_values[key]} Гр")
 
         # Добавление стрелок, если есть более одного типа излучения
         if len(sequence) > 1:
             arrows = ' → '.join(sequence)
             formatted_params.append(arrows)
+
+        for key in sequence:
+            if key in rad_values:
+                formatted_params.append(f"D{self.subscriptify(key.lower())} = {rad_values[key]} Гр")
 
         return ', '.join(formatted_params)
 
@@ -182,6 +185,8 @@ class TumorDataComparatorAdvanced:
         plt.legend()
         plt.tight_layout()
         self.save_plot("compare_mean_volumes")
+        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
+        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
         plt.show()
 
     def compare_relative_volumes(self):
@@ -231,6 +236,8 @@ class TumorDataComparatorAdvanced:
         plt.legend()
         plt.tight_layout()
         self.save_plot("compare_relative_volumes")
+        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
+        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
         plt.show()
 
     def compare_control_and_experiment(self, control_visualizers):
@@ -331,6 +338,8 @@ class TumorDataComparatorAdvanced:
 
         plt.tight_layout()
         self.save_plot("compare_control_and_experiment")
+        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
+        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
         plt.show()
 
 
@@ -356,12 +365,12 @@ if __name__ == "__main__":
         './datas/control/control.xlsx',
     ]
     experiment_paths = [
-        # './datas/control/02.02.2023_n_12.xlsx',
-        # './datas/control/02.02.2023_n_18.xlsx',
-        # './datas/control/16.03.2023_n_22.xlsx',
+        './datas/control/02.02.2023_n_12.xlsx',
+        './datas/control/02.02.2023_n_18.xlsx',
+        './datas/control/16.03.2023_n_22.xlsx',
         # './datas/control/30.03.2022_p_36_прострел.xlsx',
-        './datas/n_7.2_p_25.2_2023.xlsx',
-        './datas/p_25.2_n_7.2_2023.xlsx',
+        # './datas/n_7.2_p_25.2_2023.xlsx',
+        # './datas/p_25.2_n_7.2_2023.xlsx',
         # './datas/n_7.2_p_25.2_2023_2.xlsx',
         # './datas/p_25.2_n_7.2_2023_2.xlsx',
     ]
@@ -376,7 +385,7 @@ if __name__ == "__main__":
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
     #comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    #comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
-    comparator.compare_control_and_experiment(control_visualizers)
+    #comparator.compare_control_and_experiment(control_visualizers)

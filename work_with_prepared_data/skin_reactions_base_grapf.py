@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -42,13 +44,16 @@ class SkinReactionsVisualizer:
                 value = value.split()[0]
                 rad_values[key] = value.strip()
                 sequence.append(key)
+
         formatted_params = []
-        for key in sequence:
-            if key in rad_values:
-                formatted_params.append(f"D{self.subscriptify(key.lower())} = {rad_values[key]} Гр")
         if len(sequence) > 1:
             arrows = ' → '.join(sequence)
             formatted_params.append(arrows)
+
+        for key in sequence:
+            if key in rad_values:
+                formatted_params.append(f"D{self.subscriptify(key.lower())} = {rad_values[key]} Гр")
+
         return ', '.join(formatted_params)
 
     def process_excel(self):
@@ -63,6 +68,17 @@ class SkinReactionsVisualizer:
     def save_plot(self, plot_title: str):
         file_name_stub = self.file_path.split("/")[-1].replace(".xlsx", "")
         file_name = f"{plot_title.replace(' ', '_')}_{file_name_stub}.png"
+        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
+        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
+        plt.savefig(file_name, format='png', dpi=300)
+        print(f"Plot saved as {file_name}")
+
+    @staticmethod
+    @staticmethod
+    def save_plot_static(plot_title: str, base_file_name: str):
+        file_name = f"{plot_title}_{base_file_name}.png"
+        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
+        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
         plt.savefig(file_name, format='png', dpi=300)
         print(f"Plot saved as {file_name}")
 
@@ -137,16 +153,24 @@ class SkinReactionsVisualizer:
                              label=label)
             lines.append(line)
 
-        first_legend = plt.legend(title="", loc='lower center')
+        first_legend = plt.legend(title="", loc='lower right')
         plt.gca().add_artist(first_legend)
         labels = [f'{auc:.2e} тыс.' for auc in aucs]
         plt.xticks(np.arange(25)[::3], rotation=0)
         plt.xlabel("Время, сут.")
-        plt.ylabel("Кожные реакции, отн. ед.")
+        plt.ylabel("Кожные реакции, усл. ед.")
         plt.grid(True)
         plt.tight_layout()
-        plt.savefig("multiple_experiments_mean_reactions.png", format='png', dpi=300)
-        print("Plot saved as multiple_experiments_mean_reactions.png")
+
+        # Сбор частей имен файлов
+        file_name_parts = [os.path.splitext(os.path.basename(file_path))[0] for file_path in file_paths]
+        base_file_name = '_'.join(file_name_parts)
+
+        # Использование статического метода для сохранения графика
+        SkinReactionsVisualizer.save_plot_static("multiple_experiments", base_file_name)
+
+        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
+        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
         plt.show()
 
 if __name__ == '__main__':
@@ -169,9 +193,9 @@ if __name__ == '__main__':
 
     # Отображения средних кожных реакций для нескольких экспериментов
     file_paths = [
-        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
-        'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
-        # 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
-        # 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
+        # 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
+        # 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
+        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
+        'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
     ]
     SkinReactionsVisualizer.plot_multiple_experiments(file_paths)
