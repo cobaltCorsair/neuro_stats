@@ -342,6 +342,100 @@ class TumorDataComparatorAdvanced:
         plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
         plt.show()
 
+    def compare_tumor_growth_inhibition_with_multiple_experiments(self, control_visualizer, experiment_visualizers):
+        """
+        Сравнивает торможение роста опухоли между одной контрольной и несколькими экспериментальными группами.
+        """
+        plt.figure(figsize=(12, 7))
+
+        markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
+        marker_index = 0
+        marker_size = 12
+
+        # Нормализация временных рядов
+        all_visualizers = [control_visualizer] + experiment_visualizers
+
+        # Преобразуем строки в целые числа и находим минимальное начальное время
+        min_start_time = min([min([int(time) for time in visualizer.time_data]) for visualizer in all_visualizers])
+
+        # Находим минимальную длину временного ряда
+        min_length = min([len(visualizer.time_data) for visualizer in all_visualizers])
+
+        for visualizer in all_visualizers:
+            # Преобразуем строки в целые числа и вычитаем минимальное начальное время
+            visualizer.time_data = [int(time) - min_start_time for time in visualizer.time_data][:min_length]
+            # Обрезаем данные объема опухоли до минимальной длины
+            visualizer.mean_tumor_volumes = visualizer.get_mean_tumor_volumes()[:min_length]
+
+        # Расчет среднего объема опухоли для контрольной группы
+        control_mean_volumes = control_visualizer.get_mean_tumor_volumes()
+
+        for experiment_visualizer in experiment_visualizers:
+            # Расчет среднего объема опухоли для экспериментальной группы
+            experiment_mean_volumes = experiment_visualizer.get_mean_tumor_volumes()
+
+            # Расчет ТРО для каждого временного интервала
+            tumor_growth_inhibition = [(Vk - Vo) / Vk * 100 for Vk, Vo in
+                                       zip(control_mean_volumes, experiment_mean_volumes)]
+
+            # Использование format_experiment_params для форматирования параметров эксперимента
+            formatted_params = self.format_experiment_params(experiment_visualizer.experiment_params)
+
+            plt.plot(
+                experiment_visualizer.time_data,
+                tumor_growth_inhibition,
+                marker=markers[marker_index % len(markers)],
+                markersize=marker_size,
+                linestyle='-',
+                label=f"{formatted_params}"
+            )
+
+            marker_index += 1
+        # Установка меток на оси X
+        max_time = max([max(visualizer.time_data) for visualizer in all_visualizers])
+        plt.xticks(ticks=range(0, max_time + 1, 3))
+
+        plt.xlabel("Время, сут.")
+        plt.ylabel("Торможение роста опухоли, %")
+        #plt.title("Сравнение торможения роста опухоли")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        self.save_plot("compare_tumor_growth_inhibition_multiple_experiments")
+        plt.show()
+
+    def create_tumor_growth_inhibition_table(self, control_visualizer, experiment_visualizers):
+        # Получение временных данных и среднего объема опухоли для контрольной группы
+        control_time_data = control_visualizer.time_data
+        control_mean_volumes = control_visualizer.get_mean_tumor_volumes()
+
+        # Создание словаря для последующего создания DataFrame
+        data = {'Время (сут)': control_time_data}
+
+        for experiment_visualizer in experiment_visualizers:
+            # Получение среднего объема опухоли для экспериментальной группы
+            experiment_mean_volumes = experiment_visualizer.get_mean_tumor_volumes()
+
+            # Расчет ТРО для каждого временного интервала
+            tumor_growth_inhibition = [(Vk - Vo) / Vk * 100 for Vk, Vo in
+                                       zip(control_mean_volumes, experiment_mean_volumes)]
+
+            # Добавление данных в словарь
+            experiment_name = self.format_experiment_params(experiment_visualizer.experiment_params)
+            data[experiment_name] = tumor_growth_inhibition
+
+        # Создание DataFrame из словаря
+        df = pd.DataFrame(data)
+
+        # Установка формата чисел
+        pd.set_option('display.float_format', '{:.2f}'.format)
+
+        # Изменение индекса
+        df.set_index('Время (сут)', inplace=True)
+
+        # Печать таблицы
+        print(df)
+
 
 if __name__ == "__main__":
     # # Используем с файлом данных
@@ -365,18 +459,20 @@ if __name__ == "__main__":
         './datas/control/control.xlsx',
     ]
     experiment_paths = [
-        './datas/control/02.02.2023_n_12.xlsx',
-        './datas/control/02.02.2023_n_18.xlsx',
-        './datas/control/16.03.2023_n_22.xlsx',
+        # './datas/control/02.02.2023_n_12.xlsx',
+        # './datas/control/02.02.2023_n_18.xlsx',
+        # './datas/control/16.03.2023_n_22.xlsx',
         # './datas/control/30.03.2022_p_36_прострел.xlsx',
-        # './datas/n_7.2_p_25.2_2023.xlsx',
-        # './datas/p_25.2_n_7.2_2023.xlsx',
+        './datas/n_7.2_p_25.2_2023.xlsx',
+        './datas/p_25.2_n_7.2_2023.xlsx',
         # './datas/n_7.2_p_25.2_2023_2.xlsx',
         # './datas/p_25.2_n_7.2_2023_2.xlsx',
     ]
 
     # Создание объектов визуализатора для контрольных групп
     control_visualizers = [ControlGroupVisualizer(path) for path in control_paths]
+    # Создание объекта визуализатора для контрольной группы
+    control_visualizer = ControlGroupVisualizer(control_paths[0])
 
     # Создание объектов визуализатора для экспериментальных групп
     experiment_visualizers = [TumorDataVisualizer(path) for path in experiment_paths]
@@ -385,7 +481,11 @@ if __name__ == "__main__":
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
     #comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    #comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
     #comparator.compare_control_and_experiment(control_visualizers)
+
+    # Сравнение торможения роста опухоли между контрольной и несколькими экспериментальными группами
+    #comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
+    comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)
