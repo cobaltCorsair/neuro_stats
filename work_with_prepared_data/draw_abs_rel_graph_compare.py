@@ -196,10 +196,13 @@ class TumorDataComparatorAdvanced:
         self.normalize_time_data()
         plt.figure(figsize=(12, 7))
 
-        # Список маркеров
         markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
         marker_index = 0
-        marker_size = 12  # Установка размера маркера
+        marker_size = 12
+
+        # Списки для хранения объектов линий и значений AUC
+        lines = []
+        aucs = []
 
         for visualizer in self.visualizers:
             mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
@@ -208,7 +211,6 @@ class TumorDataComparatorAdvanced:
             error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
                             for std in std_dev]
 
-            # Использование format_experiment_params для форматирования параметров эксперимента
             formatted_params = self.format_experiment_params(visualizer.experiment_params)
 
             line, = plt.plot(
@@ -226,6 +228,11 @@ class TumorDataComparatorAdvanced:
                                 [mean + err for mean, err in zip(mean_rel_volumes, error_margin)],
                                 color=line_color, alpha=0.2)
 
+            # Расчет AUC и добавление в список
+            auc_value = np.trapz(mean_rel_volumes, visualizer.time_data)
+            aucs.append(auc_value)
+
+            lines.append(line)
             marker_index += 1
 
         max_time = max([max(v.time_data) for v in self.visualizers])
@@ -233,11 +240,19 @@ class TumorDataComparatorAdvanced:
         plt.xlabel("Время, сут.")
         plt.ylabel("Относительный объем опухоли, отн. ед.")
         plt.grid(True)
-        plt.legend()
+
+        # Первая легенда с названиями экспериментов
+        first_legend = plt.legend(handles=lines, loc='upper left')
+        plt.gca().add_artist(first_legend)
+
+        # Вторая легенда с AUC
+        auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
+        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper right')
+
         plt.tight_layout()
         self.save_plot("compare_relative_volumes")
-        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
-        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
+        plt.xlim(left=0)
+        plt.ylim(bottom=0)
         plt.show()
 
     def compare_control_and_experiment(self, control_visualizers):
@@ -467,6 +482,8 @@ if __name__ == "__main__":
         './datas/p_25.2_n_7.2_2023.xlsx',
         # './datas/n_7.2_p_25.2_2023_2.xlsx',
         # './datas/p_25.2_n_7.2_2023_2.xlsx',
+        './datas/n_7.2_p_25.2_2023_3.xlsx',
+        './datas/p_25.2_n_7.2_2023_3.xlsx',
     ]
 
     # Создание объектов визуализатора для контрольных групп
@@ -481,11 +498,11 @@ if __name__ == "__main__":
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
     #comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    #comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
     #comparator.compare_control_and_experiment(control_visualizers)
 
     # Сравнение торможения роста опухоли между контрольной и несколькими экспериментальными группами
     #comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
-    comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)
+    #comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)

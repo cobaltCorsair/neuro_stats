@@ -153,7 +153,7 @@ class SkinReactionsVisualizer:
                              label=label)
             lines.append(line)
 
-        first_legend = plt.legend(title="", loc='lower right')
+        first_legend = plt.legend(title="", loc='lower center')
         plt.gca().add_artist(first_legend)
         labels = [f'{auc:.2e} тыс.' for auc in aucs]
         plt.xticks(np.arange(25)[::3], rotation=0)
@@ -161,6 +161,10 @@ class SkinReactionsVisualizer:
         plt.ylabel("Кожные реакции, усл. ед.")
         plt.grid(True)
         plt.tight_layout()
+
+        # Вторая легенда с AUC
+        auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
+        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper left')
 
         # Сбор частей имен файлов
         file_name_parts = [os.path.splitext(os.path.basename(file_path))[0] for file_path in file_paths]
@@ -193,9 +197,11 @@ if __name__ == '__main__':
 
     # Отображения средних кожных реакций для нескольких экспериментов
     file_paths = [
-        # 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
-        # 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
-        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
-        'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
+        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
+        'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
+        # 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
+        # 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
+        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_3.xlsx',
+        'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_3.xlsx'
     ]
     SkinReactionsVisualizer.plot_multiple_experiments(file_paths)
