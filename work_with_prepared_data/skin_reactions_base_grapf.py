@@ -74,7 +74,6 @@ class SkinReactionsVisualizer:
         print(f"Plot saved as {file_name}")
 
     @staticmethod
-    @staticmethod
     def save_plot_static(plot_title: str, base_file_name: str):
         file_name = f"{plot_title}_{base_file_name}.png"
         plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
@@ -131,6 +130,7 @@ class SkinReactionsVisualizer:
         common_timepoints = list(range(0, 25))
         aucs = []
         lines = []
+        time_ = []
 
         # Список маркеров
         markers = ['o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_']
@@ -145,6 +145,7 @@ class SkinReactionsVisualizer:
             auc = SupportingFunctions.calculate_auc(common_timepoints, mean_reactions_interp)
             aucs.append(auc)
             label = visualizer.format_experiment_params(visualizer.experiment_params)
+            time_.append(visualizer.experiment_params[-1])
             line, = plt.plot(common_timepoints,
                              mean_reactions_interp,
                              marker=marker,
@@ -153,7 +154,7 @@ class SkinReactionsVisualizer:
                              label=label)
             lines.append(line)
 
-        first_legend = plt.legend(title="", loc='lower center')
+        first_legend = plt.legend(title="", loc='lower right')
         plt.gca().add_artist(first_legend)
         labels = [f'{auc:.2e} тыс.' for auc in aucs]
         plt.xticks(np.arange(25)[::3], rotation=0)
@@ -163,8 +164,12 @@ class SkinReactionsVisualizer:
         plt.tight_layout()
 
         # Вторая легенда с AUC
-        auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
-        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper left')
+        # auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
+        # plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper left')
+
+        # Вторая легенда с AUC
+        time_labels = [f"{time1}" for time1 in time_]
+        plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='upper left')
 
         # Сбор частей имен файлов
         file_name_parts = [os.path.splitext(os.path.basename(file_path))[0] for file_path in file_paths]
@@ -197,11 +202,11 @@ if __name__ == '__main__':
 
     # Отображения средних кожных реакций для нескольких экспериментов
     file_paths = [
-        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
-        'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
-        # 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
-        # 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
+        #'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
+        #'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
+        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
+        #'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx',
         'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_3.xlsx',
-        'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_3.xlsx'
+        #'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_3.xlsx'
     ]
     SkinReactionsVisualizer.plot_multiple_experiments(file_paths)

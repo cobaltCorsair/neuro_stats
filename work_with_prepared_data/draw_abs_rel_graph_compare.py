@@ -203,6 +203,7 @@ class TumorDataComparatorAdvanced:
         # Списки для хранения объектов линий и значений AUC
         lines = []
         aucs = []
+        time_ = []
 
         for visualizer in self.visualizers:
             mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
@@ -212,7 +213,7 @@ class TumorDataComparatorAdvanced:
                             for std in std_dev]
 
             formatted_params = self.format_experiment_params(visualizer.experiment_params)
-
+            time_.append(visualizer.experiment_params[-1])
             line, = plt.plot(
                 visualizer.time_data,
                 mean_rel_volumes,
@@ -247,7 +248,11 @@ class TumorDataComparatorAdvanced:
 
         # Вторая легенда с AUC
         auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
-        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper right')
+        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='lower right')
+
+        # Время
+        time_labels = [f"{time1}" for time1 in time_]
+        plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='lower right')
 
         plt.tight_layout()
         self.save_plot("compare_relative_volumes")
@@ -477,13 +482,17 @@ if __name__ == "__main__":
         # './datas/control/02.02.2023_n_12.xlsx',
         # './datas/control/02.02.2023_n_18.xlsx',
         # './datas/control/16.03.2023_n_22.xlsx',
-        # './datas/control/30.03.2022_p_36_прострел.xlsx',
-        './datas/n_7.2_p_25.2_2023.xlsx',
-        './datas/p_25.2_n_7.2_2023.xlsx',
-        # './datas/n_7.2_p_25.2_2023_2.xlsx',
-        # './datas/p_25.2_n_7.2_2023_2.xlsx',
-        './datas/n_7.2_p_25.2_2023_3.xlsx',
-        './datas/p_25.2_n_7.2_2023_3.xlsx',
+        './datas/control/30.03.2022_p_36_прострел.xlsx',
+        # './datas/n_7.2_p_25.2_2023.xlsx',
+        # './datas/p_25.2_n_7.2_2023.xlsx',
+        #'./datas/n_7.2_p_25.2_2023_2.xlsx',
+        #'./datas/p_25.2_n_7.2_2023_2.xlsx',
+        # './datas/n_7.2_p_25.2_2023_3.xlsx',
+        # './datas/p_25.2_n_7.2_2023_3.xlsx',
+        # './datas/n_7.2_p_25.2_2023_compared.xlsx',
+        # './datas/p_25.2_n_7.2_2023_compared.xlsx',
+        './datas/y_32_2023.xlsx',
+        './datas/y_36_2023.xlsx',
     ]
 
     # Создание объектов визуализатора для контрольных групп
@@ -497,8 +506,8 @@ if __name__ == "__main__":
     # Создание объекта сравнителя
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-    #comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    #omparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
     #comparator.compare_control_and_experiment(control_visualizers)

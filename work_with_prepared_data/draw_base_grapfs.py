@@ -254,9 +254,11 @@ if __name__ == '__main__':
     # file_path = './datas/n_7.2_p_25.2_2023.xlsx'
     # file_path = './datas/p_25.2_n_7.2_2023.xlsx'
     # file_path = './datas/p_25.2_n_7.2_2023_2.xlsx'
-    file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
+    #file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
     # file_path = './datas/n_2.56_p_25.6_2019.xlsx'
     # file_path = './datas/p_25.6_n_2.56_2019.xlsx'
+    #file_path = './datas/y_32_2023.xlsx'
+    file_path ='./datas/y_36_2023.xlsx'
 
     visualizer = TumorDataVisualizer(file_path)
     # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx

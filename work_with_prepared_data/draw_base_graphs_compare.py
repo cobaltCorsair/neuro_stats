@@ -112,14 +112,18 @@ if __name__ == "__main__":
     # file_path2 = './datas/p_25.6_n_2.56_2019.xlsx'
 
     # Используем с файлом данных
-    file_path1 = './datas/control/02.02.2023_n_12.xlsx'
-    file_path2 = './datas/control/02.02.2023_n_18.xlsx'
-    file_path3 = './datas/control/16.03.2023_n_22.xlsx'
+    # file_path1 = './datas/control/02.02.2023_n_12.xlsx'
+    # file_path2 = './datas/control/02.02.2023_n_18.xlsx'
+    # file_path3 = './datas/control/16.03.2023_n_22.xlsx'
+
+    # Используем с файлом данных
+    file_path1 = './datas/y_32_2023.xlsx'
+    file_path2 = './datas/y_36_2023.xlsx'
 
     # Создаем объекты визуализатора для каждого файла данных
-    visualizers = [TumorDataVisualizer(file_path) for file_path in [file_path1, file_path2, file_path3]]
+    # visualizers = [TumorDataVisualizer(file_path) for file_path in [file_path1, file_path2, file_path3]]
 
-    # visualizers = [TumorDataVisualizer(file_path) for file_path in [file_path1, file_path2]]
+    visualizers = [TumorDataVisualizer(file_path) for file_path in [file_path1, file_path2]]
 
     # Создаем объект сравнителя и сравниваем данные из всех экспериментов
     comparator = TumorDataComparator(*visualizers)
