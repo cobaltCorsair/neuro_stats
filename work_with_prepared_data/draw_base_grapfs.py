@@ -173,7 +173,7 @@ class TumorDataVisualizer:
         # Список маркеров
         markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
         marker_index = 0
-        marker_size = 12  # Установка размера маркера
+        marker_size = 12
 
         # Очистка списка experiment_params от пустых строк и строк, состоящих только из пробелов
         cleaned_experiment_params = [param for param in self.experiment_params if param.strip()]
@@ -190,18 +190,26 @@ class TumorDataVisualizer:
             if not list(clean_volumes):
                 continue
 
-            # Нет необходимости в расчете среднего и диапазона ошибок, поскольку это относительные значения
+            mean_volume = np.mean(clean_volumes)
+            std_dev = SupportingFunctions.calculate_std_dev(clean_volumes, mean_volume)
+            error_margin = SupportingFunctions.calculate_error_margin(std_dev, len(clean_volumes))
+
             line, = plt.plot(clean_time_data, clean_volumes, marker=markers[marker_index % len(markers)],
                              markersize=marker_size, linestyle='-', label=label)
             marker_index += 1  # Переход к следующему маркеру для следующей крысы
             line_color = line.get_color()
 
-        # Настройка тиков оси X
+            # Настройка тиков оси X
+            plt.fill_between(clean_time_data,
+                             clean_volumes - error_margin,
+                             clean_volumes + error_margin,
+                             color=line_color, alpha=0.2)
+
         min_day = min(self.time_data)
         max_day = max(self.time_data)
         plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
 
-        plt.xlabel("Время (дни)", fontsize=24)
+        plt.xlabel("Время, сут.", fontsize=24)
         plt.ylabel("Относительный объем опухоли", fontsize=24)
         plt.grid(True)
         plt.legend(title="Метка крысы", fontsize=25)
@@ -377,6 +385,8 @@ if __name__ == '__main__':
     #file_path = './datas/y_32_2023.xlsx'
     #file_path ='./datas/y_36_2023.xlsx'
     file_path = './datas/control/02.02.2023_n_12.xlsx'
+    #file_path = './datas/control/02.02.2023_n_18.xlsx'
+    #file_path = './datas/control/16.03.2023_n_22.xlsx'
 
     visualizer = TumorDataVisualizer(file_path)
     # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
