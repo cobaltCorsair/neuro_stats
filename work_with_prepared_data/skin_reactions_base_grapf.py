@@ -1,4 +1,5 @@
 import os
+from itertools import cycle
 
 import pandas as pd
 import numpy as np
@@ -8,16 +9,42 @@ from matplotlib.lines import Line2D
 
 from work_with_prepared_data.support_stats_methods import ExtractOutliers, SupportingFunctions
 
-# Глобальное изменение размеров шрифтов и стиля
+# Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
+original_fill_between = plt.fill_between
+
+
+def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
+    horizontal_line_length = 0.2  # Длина горизонтальных линий на концах
+    line_color = color if color is not None else 'blue'  # Используйте заданный цвет, если он предоставлен
+
+    for xi, y1i, y2i in zip(x, y1, y2):
+        # Вертикальные линии
+        plt.plot([xi, xi], [y1i, y2i], color=line_color, alpha=1, zorder=1)
+
+        # Горизонтальные линии на концах
+        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color=line_color,
+                 alpha=1, zorder=1)
+        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color=line_color,
+                 alpha=1, zorder=1)
+
+
+# Переопределяем функцию
+plt.fill_between = custom_fill_between
+
+# Увеличение размера фигуры
+plt.figure(figsize=(15, 8))  # Увеличение размера фигуры
+
+# Глобальное изменение размеров шрифтов
 plt.rcParams.update({
     'font.family': 'Times New Roman',  # Установка семейства шрифтов
-    'font.size': 22,                   # Размер основного шрифта
-    'axes.titlesize': 24,              # Размер заголовка
-    'axes.labelsize': 24,              # Размер подписей осей
-    'xtick.labelsize': 20,             # Размер меток на оси X
-    'ytick.labelsize': 20,             # Размер меток на оси Y
-    'legend.fontsize': 25              # Размер шрифта в легенде
+    'font.size': 22,  # Размер основного шрифта
+    'axes.titlesize': 24,  # Размер заголовка
+    'axes.labelsize': 24,  # Размер подписей осей
+    'xtick.labelsize': 20,  # Размер меток на оси X
+    'ytick.labelsize': 20,  # Размер меток на оси Y
+    'legend.fontsize': 25  # Размер шрифта в легенде
 })
+
 
 class SkinReactionsVisualizer:
     def __init__(self, file_path: str):
@@ -103,17 +130,36 @@ class SkinReactionsVisualizer:
         plt.show()
 
     def plot_mean_skin_reactions(self):
+        # Преобразование self.time_data в числовые значения
+        self.time_data = [float(x) for x in self.time_data]
         plt.figure(figsize=(15, 8))
         formatted_params = self.format_experiment_params(self.experiment_params)
         plt.title(f"Средние кожные реакции, Параметры эксперимента: {formatted_params}", fontsize=24, y=1.02)
+
         mean_reactions, std_dev, error_margin = self.get_mean_skin_reactions()
-        plt.plot(self.time_data, mean_reactions, marker='o', linestyle='-', label='Среднее')
-        plt.fill_between(self.time_data, mean_reactions - error_margin, mean_reactions + error_margin, alpha=0.2)
-        plt.xticks(np.arange(len(self.time_data))[::3], rotation=45)
-        plt.xlabel("Время (дни)")
-        plt.ylabel("Средние кожные реакции")
+
+        # Используем первый маркер из списка для единообразия
+        marker = 'o'
+        marker_size = 12  # Установка размера маркера
+
+        # Отрисовка линии и сохранение её цвета
+        line, = plt.plot(self.time_data, mean_reactions, marker=marker, markersize=marker_size, linestyle='-',
+                         label='Среднее')
+        line_color = line.get_color()  # Получение цвета линии
+
+        # Использование цвета линии для доверительных интервалов
+        plt.fill_between(self.time_data, mean_reactions - error_margin, mean_reactions + error_margin, color=line_color,
+                         alpha=0.2)
+
+        # Настройка тиков оси X для отображения каждые 3 дня
+        min_day = min(self.time_data)
+        max_day = max(self.time_data)
+        plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
+
+        plt.xlabel("Время, сут.", fontsize=24)
+        plt.ylabel("Средние кожные реакции", fontsize=24)
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=25)
         plt.tight_layout()
         self.save_plot(f"Mean_Skin_Reactions_{formatted_params}")
         plt.show()
@@ -138,10 +184,15 @@ class SkinReactionsVisualizer:
 
         for file_path, marker in zip(file_paths, markers):
             visualizer = SkinReactionsVisualizer(file_path)
-            mean_reactions, _, _ = visualizer.get_mean_skin_reactions()
+            mean_reactions, std_dev, _ = visualizer.get_mean_skin_reactions()
             mean_reactions_interp = SupportingFunctions.interpolate_data_to_common_timepoints(
                 visualizer.time_data, mean_reactions, common_timepoints
             )
+            std_dev_interp = SupportingFunctions.interpolate_data_to_common_timepoints(
+                visualizer.time_data, std_dev, common_timepoints  # Предполагаемая интерполяция стандартного отклонения
+            )
+            error_margin = std_dev_interp / np.sqrt(len(file_paths))  # Предполагаемый расчет доверительного интервала
+
             auc = SupportingFunctions.calculate_auc(common_timepoints, mean_reactions_interp)
             aucs.append(auc)
             label = visualizer.format_experiment_params(visualizer.experiment_params)
@@ -153,6 +204,10 @@ class SkinReactionsVisualizer:
                              markersize=marker_size,
                              label=label)
             lines.append(line)
+            plt.fill_between(common_timepoints,
+                             mean_reactions_interp - error_margin,
+                             mean_reactions_interp + error_margin,
+                             alpha=0.2, color=line.get_color())
 
         first_legend = plt.legend(title="", loc='lower right')
         plt.gca().add_artist(first_legend)
@@ -164,12 +219,12 @@ class SkinReactionsVisualizer:
         plt.tight_layout()
 
         # Вторая легенда с AUC
-        # auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
-        # plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper left')
+        auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
+        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper left')
 
-        # Вторая легенда с AUC
-        time_labels = [f"{time1}" for time1 in time_]
-        plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='upper left')
+        # Вторая легенда с интервалом облучения
+        #time_labels = [f"{time1}" for time1 in time_]
+        #plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='upper left')
 
         # Сбор частей имен файлов
         file_name_parts = [os.path.splitext(os.path.basename(file_path))[0] for file_path in file_paths]
@@ -187,9 +242,9 @@ if __name__ == '__main__':
     # file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx'
     # file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx'
     # file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx'
-    # file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
+    file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
 
-    # visualizer = SkinReactionsVisualizer(file_path)
+    visualizer = SkinReactionsVisualizer(file_path)
     #
     # # Удаление выбросов
     # # ExtractOutliers(visualizer).remove_local_outliers()
