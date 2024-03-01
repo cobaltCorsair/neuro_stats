@@ -168,17 +168,43 @@ class TumorDataVisualizer:
         relative_volumes = self.get_relative_tumor_volumes()
 
         plt.figure(figsize=(15, 8))
-        plt.title(f"Относительные объемы опухоли, Параметры эксперимента: {', '.join(self.experiment_params)}",
-                  fontsize=16, y=1.02)
+        self.time_data = [float(x) for x in self.time_data]
+
+        # Список маркеров
+        markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
+        marker_index = 0
+        marker_size = 12  # Установка размера маркера
+
+        # Очистка списка experiment_params от пустых строк и строк, состоящих только из пробелов
+        cleaned_experiment_params = [param for param in self.experiment_params if param.strip()]
+
+        plt.title(f"Относительные объемы опухоли, Параметры эксперимента: {', '.join(cleaned_experiment_params)}",
+                  fontsize=24, y=1.02)
+
+        relative_volumes = self.get_relative_tumor_volumes()
 
         for label, volumes in zip(self.rat_labels, relative_volumes):
-            plt.plot(self.time_data, volumes, marker='o', linestyle='-', label=label)
+            clean_volumes = np.array(volumes)[~np.isnan(volumes)]
+            clean_time_data = np.array(self.time_data)[~np.isnan(volumes)]
 
-        plt.xticks(rotation=45)
-        plt.xlabel("Время (дни)")
-        plt.ylabel("Объем опухоли")
+            if not list(clean_volumes):
+                continue
+
+            # Нет необходимости в расчете среднего и диапазона ошибок, поскольку это относительные значения
+            line, = plt.plot(clean_time_data, clean_volumes, marker=markers[marker_index % len(markers)],
+                             markersize=marker_size, linestyle='-', label=label)
+            marker_index += 1  # Переход к следующему маркеру для следующей крысы
+            line_color = line.get_color()
+
+        # Настройка тиков оси X
+        min_day = min(self.time_data)
+        max_day = max(self.time_data)
+        plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
+
+        plt.xlabel("Время (дни)", fontsize=24)
+        plt.ylabel("Относительный объем опухоли", fontsize=24)
         plt.grid(True)
-        plt.legend(title="Метка крысы")
+        plt.legend(title="Метка крысы", fontsize=25)
         plt.tight_layout()
         self.save_plot(f"{', '.join(self.experiment_params)}_relative_volumes", "single_graph_rel")
         plt.show()
@@ -188,24 +214,37 @@ class TumorDataVisualizer:
         Построение графика среднего объема опухоли со всеми крысами.
         """
         plt.figure(figsize=(15, 8))
-        plt.title(f"(M/V абс.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
+
+        # Очистка списка experiment_params от пустых строк и строк, состоящих только из пробелов
+        cleaned_experiment_params = [param for param in self.experiment_params if param.strip()]
+
+        plt.title(f"(M/V абс.), Параметры эксперимента: {', '.join(cleaned_experiment_params)}", fontsize=24)
 
         mean_volumes = self.get_mean_tumor_volumes()
         std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
                    zip(np.transpose(self.tumor_volumes), mean_volumes)]
-        error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.tumor_volumes)) for std in
-                        std_dev]
+        error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.tumor_volumes)) for std in std_dev]
 
-        plt.plot(self.time_data, mean_volumes, marker='o', linestyle='-', color='b', label='M/V абс.')
+        self.time_data = [float(x) for x in self.time_data]
+        # Используем первый маркер из списка для единообразия
+        marker = 'o'
+        marker_size = 12  # Установка размера маркера
+
+        plt.plot(self.time_data, mean_volumes, marker=marker, markersize=marker_size, linestyle='-', color='b',
+                 label='M/V абс.')
         plt.fill_between(self.time_data, mean_volumes - error_margin, mean_volumes + error_margin, color='b', alpha=0.2)
 
-        plt.xticks(rotation=45)
-        plt.xlabel("Время (дни)")
-        plt.ylabel("Объем опухоли")
+        # Настройка тиков оси X с шагом в 3 дня
+        min_day = min(self.time_data)
+        max_day = max(self.time_data)
+        plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
+
+        plt.xlabel("Время, сут.", fontsize=24)
+        plt.ylabel("Объем опухоли", fontsize=24)
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=25)
         plt.tight_layout()
-        self.save_plot(f"{', '.join(self.experiment_params)}_mean_volumes", "mean_volume")
+        self.save_plot(f"{', '.join(cleaned_experiment_params)}_mean_volumes", "mean_volume")
         plt.show()
 
     def plot_average_relative_tumor_volume(self):
@@ -213,26 +252,40 @@ class TumorDataVisualizer:
         Построение графика среднего относительного объема опухоли со всеми крысами.
         """
         plt.figure(figsize=(15, 8))
-        plt.title(f"(V отн.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
+
+        # Очистка списка experiment_params от пустых строк и строк, состоящих только из пробелов
+        cleaned_experiment_params = [param for param in self.experiment_params if param.strip()]
+
+        plt.title(f"(V отн.), Параметры эксперимента: {', '.join(cleaned_experiment_params)}", fontsize=24)
 
         relative_tumor_volumes = self.get_relative_tumor_volumes()
         mean_relative_volumes = np.nanmean(relative_tumor_volumes, axis=0)
         std_dev_rel = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
                        zip(np.transpose(relative_tumor_volumes), mean_relative_volumes)]
-        error_margin_rel = [SupportingFunctions.calculate_error_margin(std, len(relative_tumor_volumes)) for std
-                            in std_dev_rel]
+        error_margin_rel = [SupportingFunctions.calculate_error_margin(std, len(relative_tumor_volumes)) for std in
+                            std_dev_rel]
 
-        plt.plot(self.time_data, mean_relative_volumes, marker='o', linestyle='-', color='b', label='M/V отн.')
+        self.time_data = [float(x) for x in self.time_data]
+        # Используем первый маркер из списка для единообразия
+        marker = 'o'
+        marker_size = 12  # Установка размера маркера
+
+        plt.plot(self.time_data, mean_relative_volumes, marker=marker, markersize=marker_size, linestyle='-', color='b',
+                 label='M/V отн.')
         plt.fill_between(self.time_data, mean_relative_volumes - error_margin_rel,
                          mean_relative_volumes + error_margin_rel, color='b', alpha=0.2)
 
-        plt.xticks(rotation=45)
-        plt.xlabel("Время (дни)")
-        plt.ylabel("Объем опухоли")
+        # Настройка тиков оси X с шагом в 3 дня
+        min_day = min(self.time_data)
+        max_day = max(self.time_data)
+        plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
+
+        plt.xlabel("Время, сут.", fontsize=24)
+        plt.ylabel("Относительный объем опухоли", fontsize=24)
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=25)
         plt.tight_layout()
-        self.save_plot(f"{', '.join(self.experiment_params)}_average_relative_volumes", "mean_relative_volume")
+        self.save_plot(f"{', '.join(cleaned_experiment_params)}_average_relative_volumes", "mean_relative_volume")
         plt.show()
 
     def plot_mean_relative_mean_tumor_volume(self):
@@ -240,31 +293,43 @@ class TumorDataVisualizer:
         Построение графика среднего относительного объема опухоли, усредненного по всем крысам.
         """
         plt.figure(figsize=(15, 8))
-        plt.title(f"(V отн. ср.), Параметры эксперимента: {', '.join(self.experiment_params)}", fontsize=16)
+
+        # Очистка списка experiment_params от пустых строк и строк, состоящих только из пробелов
+        cleaned_experiment_params = [param for param in self.experiment_params if param.strip()]
+
+        plt.title(f"(V отн. ср.), Параметры эксперимента: {', '.join(cleaned_experiment_params)}", fontsize=24)
 
         # Вычисление среднего относительного объема опухоли
         relative_mean_volumes = self.get_mean_relative_tumor_volumes()
 
-        # Расчет стандартного отклонения
+        # Расчет стандартного отклонения и доверительного интервала
         std_dev_rel_mean = SupportingFunctions.calculate_std_dev(relative_mean_volumes,
                                                                  np.nanmean(relative_mean_volumes))
+        error_margin_rel_mean = SupportingFunctions.calculate_error_margin(std_dev_rel_mean, len(relative_mean_volumes))
 
-        # Расчет доверительного интервала
-        error_margin_rel_mean = SupportingFunctions.calculate_error_margin(std_dev_rel_mean,
-                                                                           len(relative_mean_volumes))
+        self.time_data = [float(x) for x in self.time_data]
+        # Используем первый маркер из списка для единообразия
+        marker = 'o'
+        marker_size = 12  # Установка размера маркера
 
-        plt.plot(self.time_data, relative_mean_volumes, marker='o', linestyle='-', color='b', label='M/V отн. ср.')
+        plt.plot(self.time_data, relative_mean_volumes, marker=marker, markersize=marker_size, linestyle='-', color='b',
+                 label='M/V отн. ср.')
         plt.fill_between(self.time_data,
                          relative_mean_volumes - error_margin_rel_mean,
                          relative_mean_volumes + error_margin_rel_mean, color='b', alpha=0.2)
 
-        plt.xticks(rotation=45)
-        plt.xlabel("Время (дни)")
-        plt.ylabel("Объем опухоли")
+        # Настройка тиков оси X с шагом в 3 дня
+        min_day = min(self.time_data)
+        max_day = max(self.time_data)
+        plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
+
+        plt.xlabel("Время, сут.", fontsize=24)
+        plt.ylabel("Относительный объем опухоли", fontsize=24)
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=25)
         plt.tight_layout()
-        self.save_plot(f"{', '.join(self.experiment_params)}_mean_relative_mean_volumes", "mean_relative_mean_volume")
+        self.save_plot(f"{', '.join(cleaned_experiment_params)}_mean_relative_mean_volumes",
+                       "mean_relative_mean_volume")
         plt.show()
 
     def get_mean_tumor_volumes(self) -> np.ndarray:
@@ -321,13 +386,13 @@ if __name__ == '__main__':
     visualizer.plot_tumor_volumes_single_graph()
 
     # Сохраняем график относительных объемов для каждой крысы
-    #visualizer.plot_relative_tumor_volumes_single_graph()
+    visualizer.plot_relative_tumor_volumes_single_graph()
 
     # Сохраняем график средних значений
-    #visualizer.plot_mean_tumor_volume()
+    visualizer.plot_mean_tumor_volume()
 
     # Сохраняем график среднего относительного объема опухоли
-    #visualizer.plot_average_relative_tumor_volume()
+    visualizer.plot_average_relative_tumor_volume()
 
     # Сохраняем график среднего относительного усреднённого объема опухоли
-    #visualizer.plot_mean_relative_mean_tumor_volume()
+    visualizer.plot_mean_relative_mean_tumor_volume()
