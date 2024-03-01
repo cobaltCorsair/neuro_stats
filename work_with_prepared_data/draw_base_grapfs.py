@@ -11,15 +11,35 @@ from work_with_prepared_data.support_stats_methods import SupportingFunctions, E
 original_fill_between = plt.fill_between
 
 
+# Custom fill_between function
 def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
-    # Ваша кастомная логика здесь
+    horizontal_line_length = 0.2  # Длина горизонтальных линий на концах
+    line_color = color if color is not None else 'blue'  # Используйте заданный цвет, если он предоставлен
+
     for xi, y1i, y2i in zip(x, y1, y2):
-        plt.plot([xi, xi], [y1i, y2i], color='grey', alpha=1)
+        # Вертикальные линии
+        plt.plot([xi, xi], [y1i, y2i], color=line_color, alpha=1, zorder=1)
+
+        # Горизонтальные линии на концах
+        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color=line_color,
+                 alpha=1, zorder=1)
+        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color=line_color,
+                 alpha=1, zorder=1)
 
 
-# Переопределяем функцию
+# Overriding the function
 plt.fill_between = custom_fill_between
 
+# Global matplotlib parameters for consistent visual styling
+plt.rcParams.update({
+    'font.family': 'Times New Roman',
+    'font.size': 22,
+    'axes.titlesize': 24,
+    'axes.labelsize': 24,
+    'xtick.labelsize': 20,
+    'ytick.labelsize': 20,
+    'legend.fontsize': 25
+})
 
 class TumorDataVisualizer:
     def __init__(self, file_path: str):
@@ -94,17 +114,49 @@ class TumorDataVisualizer:
         Построение графика объемов опухолей для каждой крысы на одном графике.
         """
         plt.figure(figsize=(15, 8))
-        plt.title(f"Абсолютные объемы опухоли, Параметры эксперимента: {', '.join(self.experiment_params)}",
-                  fontsize=16, y=1.02)
+        self.time_data = [float(x) for x in self.time_data]
+
+        # Список маркеров
+        markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
+        marker_index = 0
+        marker_size = 12  # Установка размера маркера
+
+        # Очистка списка experiment_params от пустых строк и строк, состоящих только из пробелов
+        cleaned_experiment_params = [param for param in self.experiment_params if param.strip()]
+
+        plt.title(f"Абсолютные объемы опухоли, Параметры эксперимента: {', '.join(cleaned_experiment_params)}",
+                  fontsize=24, y=1.02)
 
         for label, volumes in zip(self.rat_labels, self.tumor_volumes):
-            plt.plot(self.time_data, volumes, marker='o', linestyle='-', label=label)
+            clean_volumes = np.array(volumes)[~np.isnan(volumes)]
+            clean_time_data = np.array(self.time_data)[~np.isnan(volumes)]
 
-        plt.xticks(rotation=45)
-        plt.xlabel("Время (дни)")
-        plt.ylabel("Объем опухоли")
+            if not list(clean_volumes):
+                continue
+
+            mean_volume = np.mean(clean_volumes)
+            std_dev = SupportingFunctions.calculate_std_dev(clean_volumes, mean_volume)
+            error_margin = SupportingFunctions.calculate_error_margin(std_dev, len(clean_volumes))
+
+            line, = plt.plot(clean_time_data, clean_volumes, marker=markers[marker_index % len(markers)],
+                             markersize=marker_size, linestyle='-', label=label)
+            marker_index += 1
+            line_color = line.get_color()
+
+            custom_fill_between(clean_time_data,
+                                clean_volumes - error_margin,
+                                clean_volumes + error_margin,
+                                color=line_color, alpha=0.2)
+
+        # Настройка тиков оси X
+        min_day = min(self.time_data)
+        max_day = max(self.time_data)
+        plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
+
+        plt.xlabel("Время, сут.", fontsize=24)
+        plt.ylabel("Объем опухоли", fontsize=24)
         plt.grid(True)
-        plt.legend(title="Метка крысы")
+        plt.legend(title="Метка крысы", fontsize=25)
         plt.tight_layout()
         self.save_plot(f"{', '.join(self.experiment_params)}_absolute_volumes", "single_graph")
         plt.show()
@@ -258,7 +310,8 @@ if __name__ == '__main__':
     # file_path = './datas/n_2.56_p_25.6_2019.xlsx'
     # file_path = './datas/p_25.6_n_2.56_2019.xlsx'
     #file_path = './datas/y_32_2023.xlsx'
-    file_path ='./datas/y_36_2023.xlsx'
+    #file_path ='./datas/y_36_2023.xlsx'
+    file_path = './datas/control/02.02.2023_n_12.xlsx'
 
     visualizer = TumorDataVisualizer(file_path)
     # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
@@ -268,13 +321,13 @@ if __name__ == '__main__':
     visualizer.plot_tumor_volumes_single_graph()
 
     # Сохраняем график относительных объемов для каждой крысы
-    visualizer.plot_relative_tumor_volumes_single_graph()
+    #visualizer.plot_relative_tumor_volumes_single_graph()
 
     # Сохраняем график средних значений
-    visualizer.plot_mean_tumor_volume()
+    #visualizer.plot_mean_tumor_volume()
 
     # Сохраняем график среднего относительного объема опухоли
-    visualizer.plot_average_relative_tumor_volume()
+    #visualizer.plot_average_relative_tumor_volume()
 
     # Сохраняем график среднего относительного усреднённого объема опухоли
-    visualizer.plot_mean_relative_mean_tumor_volume()
+    #visualizer.plot_mean_relative_mean_tumor_volume()
