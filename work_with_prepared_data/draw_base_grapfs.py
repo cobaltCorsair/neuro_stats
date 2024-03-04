@@ -41,6 +41,7 @@ plt.rcParams.update({
     'legend.fontsize': 25
 })
 
+
 class TumorDataVisualizer:
     def __init__(self, file_path: str):
         """
@@ -109,6 +110,63 @@ class TumorDataVisualizer:
 
         return experiment_params, time_data, rat_labels, tumor_volumes
 
+    def subscriptify(self, text):
+        """
+        Converts text to subscript format using Unicode characters.
+
+        Parameters:
+            text (str): Text to be converted.
+
+        Returns:
+            str: Text in subscript format.
+        """
+        subscript_map = {
+            '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+            '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+            'n': 'ₙ', 'p': 'ₚ', 'e': 'ₑ', 'a': 'ₐ', 'b': 'ᵦ', 'y': 'ᵧ'
+            # Add more if available
+        }
+        return ''.join(subscript_map.get(char, char) for char in text)
+
+    def format_experiment_params(self, params):
+        """
+        Форматирует параметры эксперимента для отображения в легенде.
+
+        Parameters:
+            params (list): Список параметров эксперимента.
+
+        Returns:
+            str: Отформатированная строка параметров эксперимента.
+        """
+        # Удаляем пустые строки и значения 'nan'
+        cleaned_params = [str(param).replace('nan', '').strip() for param in params if str(param).strip()]
+
+        # Разбиваем параметры на ключ и значение
+        rad_values = {}
+        sequence = []  # Сохраняем порядок ключей
+        for param in cleaned_params:
+            if '=' in param and not param.startswith('t'):
+                key, value = param.split('=')
+                key = key.strip()
+                value = value.split()[0]  # Берём только первую часть, исключая "Гр."
+                rad_values[key] = value.strip()
+
+                sequence.append(key)
+
+        # Формирование строки для легенды
+        formatted_params = []
+
+        # Добавление стрелок, если есть более одного типа излучения
+        if len(sequence) > 1:
+            arrows = ' → '.join(sequence)
+            formatted_params.append(arrows)
+
+        for key in sequence:
+            if key in rad_values:
+                formatted_params.append(f"D{self.subscriptify(key.lower())} = {rad_values[key]} Гр")
+
+        return ', '.join(formatted_params)
+
     def plot_tumor_volumes_single_graph(self):
         """
         Построение графика объемов опухолей для каждой крысы на одном графике.
@@ -121,11 +179,9 @@ class TumorDataVisualizer:
         marker_index = 0
         marker_size = 12  # Установка размера маркера
 
-        # Очистка списка experiment_params от пустых строк и строк, состоящих только из пробелов
-        cleaned_experiment_params = [param for param in self.experiment_params if param.strip()]
-
-        plt.title(f"Абсолютные объемы опухоли, Параметры эксперимента: {', '.join(cleaned_experiment_params)}",
-                  fontsize=24, y=1.02)
+        # Используем функцию для форматирования параметров эксперимента
+        formatted_params = self.format_experiment_params(self.experiment_params)
+        plt.title(f"Абсолютные объемы опухоли", fontsize=24, y=1.02)
 
         for label, volumes in zip(self.rat_labels, self.tumor_volumes):
             clean_volumes = np.array(volumes)[~np.isnan(volumes)]
@@ -143,21 +199,26 @@ class TumorDataVisualizer:
             marker_index += 1
             line_color = line.get_color()
 
-            custom_fill_between(clean_time_data,
-                                clean_volumes - error_margin,
-                                clean_volumes + error_margin,
-                                color=line_color, alpha=0.2)
+            plt.fill_between(clean_time_data,
+                             clean_volumes - error_margin,
+                             clean_volumes + error_margin,
+                             color=line_color, alpha=0.2)
 
-        # Настройка тиков оси X
-        min_day = min(self.time_data)
-        max_day = max(self.time_data)
-        plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
-
+        plt.xticks(np.arange(min(self.time_data), max(self.time_data) + 1, 3), fontsize=20)
         plt.xlabel("Время, сут.", fontsize=24)
         plt.ylabel("Объем опухоли", fontsize=24)
         plt.grid(True)
-        plt.legend(title="Метка крысы", fontsize=25)
+
+        # Первая легенда
+        custom_lines = [plt.Line2D([0], [0], color="none", marker="None", label=formatted_params)]
+        first_legend = plt.legend(handles=custom_lines, loc='upper center', fontsize=24, handlelength=0, handletextpad=0,
+                                  title_fontsize=16)
+        plt.gca().add_artist(first_legend)
+
+        # Вторая легенда с метками крыс
+        plt.legend(title="Метка крысы", fontsize=25, loc='upper left')
         plt.tight_layout()
+
         self.save_plot(f"{', '.join(self.experiment_params)}_absolute_volumes", "single_graph")
         plt.show()
 
@@ -379,14 +440,14 @@ if __name__ == '__main__':
     # file_path = './datas/n_7.2_p_25.2_2023.xlsx'
     # file_path = './datas/p_25.2_n_7.2_2023.xlsx'
     # file_path = './datas/p_25.2_n_7.2_2023_2.xlsx'
-    #file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
+    # file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
     # file_path = './datas/n_2.56_p_25.6_2019.xlsx'
     # file_path = './datas/p_25.6_n_2.56_2019.xlsx'
-    #file_path = './datas/y_32_2023.xlsx'
-    #file_path ='./datas/y_36_2023.xlsx'
+    # file_path = './datas/y_32_2023.xlsx'
+    # file_path ='./datas/y_36_2023.xlsx'
     file_path = './datas/control/02.02.2023_n_12.xlsx'
-    #file_path = './datas/control/02.02.2023_n_18.xlsx'
-    #file_path = './datas/control/16.03.2023_n_22.xlsx'
+    # file_path = './datas/control/02.02.2023_n_18.xlsx'
+    # file_path = './datas/control/16.03.2023_n_22.xlsx'
 
     visualizer = TumorDataVisualizer(file_path)
     # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
