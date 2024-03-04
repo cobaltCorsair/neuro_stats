@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 
+from matplotlib.ticker import FuncFormatter
+
 from work_with_prepared_data.support_stats_methods import SupportingFunctions, ExtractOutliers
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
@@ -236,11 +238,10 @@ class TumorDataVisualizer:
         marker_index = 0
         marker_size = 12
 
-        # Очистка списка experiment_params от пустых строк и строк, состоящих только из пробелов
-        cleaned_experiment_params = [param for param in self.experiment_params if param.strip()]
+        # Используем функцию для форматирования параметров эксперимента
+        formatted_params = self.format_experiment_params(self.experiment_params)
 
-        plt.title(f"Относительные объемы опухоли, Параметры эксперимента: {', '.join(cleaned_experiment_params)}",
-                  fontsize=24, y=1.02)
+        plt.title("Относительные объемы опухоли", fontsize=24, y=1.02)
 
         relative_volumes = self.get_relative_tumor_volumes()
 
@@ -266,15 +267,23 @@ class TumorDataVisualizer:
                              clean_volumes + error_margin,
                              color=line_color, alpha=0.2)
 
-        min_day = min(self.time_data)
-        max_day = max(self.time_data)
-        plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
+        plt.xticks(np.arange(min(self.time_data), max(self.time_data) + 1, 3), fontsize=20)
 
         plt.xlabel("Время, сут.", fontsize=24)
-        plt.ylabel("Относительный объем опухоли", fontsize=24)
+        plt.ylabel("Объем опухоли", fontsize=24)
         plt.grid(True)
-        plt.legend(title="Метка крысы", fontsize=25)
+
+        # Создание "пустых" линий для легенды с параметрами эксперимента
+        custom_lines = [plt.Line2D([0], [0], color="none", marker="None", label=formatted_params)]
+        first_legend = plt.legend(handles=custom_lines, loc='upper center', fontsize=24,
+                                  handlelength=0, handletextpad=0)
+        plt.gca().add_artist(first_legend)
+        # Форматирование меток на оси Y без лишних нулей после точки
+
+        # Вторая легенда с метками крыс
+        plt.legend(title="Метка крысы", fontsize=25, loc='upper left')
         plt.tight_layout()
+
         self.save_plot(f"{', '.join(self.experiment_params)}_relative_volumes", "single_graph_rel")
         plt.show()
 
