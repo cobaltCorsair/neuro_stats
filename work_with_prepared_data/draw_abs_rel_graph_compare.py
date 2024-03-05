@@ -491,8 +491,9 @@ if __name__ == "__main__":
         # './datas/p_25.2_n_7.2_2023_3.xlsx',
         # './datas/n_7.2_p_25.2_2023_compared.xlsx',
         # './datas/p_25.2_n_7.2_2023_compared.xlsx',
-        './datas/y_32_2023.xlsx',
-        './datas/y_36_2023.xlsx',
+        #'./datas/y_32_2023.xlsx',
+        #'./datas/y_36_2023.xlsx',
+        './datas/control/02.02.2023_n_12.xlsx'
     ]
 
     # Создание объектов визуализатора для контрольных групп
@@ -506,12 +507,12 @@ if __name__ == "__main__":
     # Создание объекта сравнителя
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-    comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    #omparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    # comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    # omparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
-    #comparator.compare_control_and_experiment(control_visualizers)
+    comparator.compare_control_and_experiment(control_visualizers)
 
     # Сравнение торможения роста опухоли между контрольной и несколькими экспериментальными группами
-    #comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
-    #comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)
+    # comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
+    # comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)
