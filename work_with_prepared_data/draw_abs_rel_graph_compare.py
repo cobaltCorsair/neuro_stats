@@ -248,11 +248,11 @@ class TumorDataComparatorAdvanced:
 
         # Вторая легенда с AUC
         auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
-        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='lower right')
+        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper center')
 
         # Время
         time_labels = [f"{time1}" for time1 in time_]
-        plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='lower right')
+        #plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='lower right')
 
         plt.tight_layout()
         self.save_plot("compare_relative_volumes")
@@ -353,8 +353,8 @@ class TumorDataComparatorAdvanced:
         plt.gca().add_artist(first_legend)  # Добавление первой легенды на график
 
         # Добавление второй легенды с AUC
-        # auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
-        # plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper right')
+        auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
+        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='center left')
 
         plt.tight_layout()
         self.save_plot("compare_control_and_experiment")
@@ -415,6 +415,12 @@ class TumorDataComparatorAdvanced:
         max_time = max([max(visualizer.time_data) for visualizer in all_visualizers])
         plt.xticks(ticks=range(0, max_time + 1, 3))
 
+        # Для отладки: вывод длин временных рядов и объемов опухоли
+        print("Контрольная группа:", len(control_visualizer.time_data), len(control_mean_volumes))
+        for experiment_visualizer in experiment_visualizers:
+            print("Экспериментальная группа:", len(experiment_visualizer.time_data),
+                  len(experiment_visualizer.get_mean_tumor_volumes()))
+
         plt.xlabel("Время, сут.")
         plt.ylabel("Торможение роста опухоли, %")
         #plt.title("Сравнение торможения роста опухоли")
@@ -447,6 +453,11 @@ class TumorDataComparatorAdvanced:
         # Создание DataFrame из словаря
         df = pd.DataFrame(data)
 
+        # Расчет абсолютной и относительной разницы эффективности ТРО, а также среднее значение
+        df['Absolute Difference (%)'] = df.iloc[:, 1] - df.iloc[:, 2]
+        df['Relative Effectiveness from Proton (%)'] = ((df['Absolute Difference (%)'] / df.iloc[:, 1]) * 100)
+        relative_effectiveness_proton = df['Relative Effectiveness from Proton (%)'].mean()
+
         # Установка формата чисел
         pd.set_option('display.float_format', '{:.2f}'.format)
 
@@ -454,7 +465,14 @@ class TumorDataComparatorAdvanced:
         df.set_index('Время (сут)', inplace=True)
 
         # Печать таблицы
+        # Установка формата чисел и вывод всей таблицы без сокращений
+        pd.set_option('display.float_format', '{:.2f}'.format)
+        pd.set_option('display.max_rows', None)  # Установка для показа всех строк
+        pd.set_option('display.max_columns', None)  # Установка для показа всех столбцов
         print(df)
+
+        # Вывод среднего значения относительной эффективности
+        print(f"Средняя относительная эффективность от Dp = 36 Гр: {relative_effectiveness_proton:.2f}%")
 
 
 if __name__ == "__main__":
@@ -493,7 +511,9 @@ if __name__ == "__main__":
         # './datas/p_25.2_n_7.2_2023_compared.xlsx',
         #'./datas/y_32_2023.xlsx',
         #'./datas/y_36_2023.xlsx',
-        './datas/control/02.02.2023_n_12.xlsx'
+        './datas/control/02.02.2023_n_12.xlsx',
+        './datas/control/02.02.2023_n_18.xlsx',
+        './datas/control/16.03.2023_n_22.xlsx'
     ]
 
     # Создание объектов визуализатора для контрольных групп
@@ -508,11 +528,11 @@ if __name__ == "__main__":
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
     # comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    # omparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
-    comparator.compare_control_and_experiment(control_visualizers)
+    #comparator.compare_control_and_experiment(control_visualizers)
 
     # Сравнение торможения роста опухоли между контрольной и несколькими экспериментальными группами
-    # comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
-    # comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)
+    #comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
+    #comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)

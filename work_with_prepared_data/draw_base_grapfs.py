@@ -29,10 +29,10 @@ def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
                  alpha=1, zorder=1)
 
 
-# Overriding the function
+# Переопределяем функцию
 plt.fill_between = custom_fill_between
 
-# Global matplotlib parameters for consistent visual styling
+# Глобальное изменение размеров шрифтов
 plt.rcParams.update({
     'font.family': 'Times New Roman',
     'font.size': 22,
@@ -173,7 +173,7 @@ class TumorDataVisualizer:
         """
         Построение графика объемов опухолей для каждой крысы на одном графике.
         """
-        plt.figure(figsize=(15, 8))
+        plt.figure(figsize=(12, 7))
         self.time_data = [float(x) for x in self.time_data]
 
         # Список маркеров
@@ -230,7 +230,7 @@ class TumorDataVisualizer:
         """
         relative_volumes = self.get_relative_tumor_volumes()
 
-        plt.figure(figsize=(15, 8))
+        plt.figure(figsize=(12, 7))
         self.time_data = [float(x) for x in self.time_data]
 
         # Список маркеров
@@ -241,7 +241,7 @@ class TumorDataVisualizer:
         # Используем функцию для форматирования параметров эксперимента
         formatted_params = self.format_experiment_params(self.experiment_params)
 
-        plt.title("Относительные объемы опухоли", fontsize=24, y=1.02)
+        # plt.title("Относительные объемы опухоли", fontsize=24, y=1.02)
 
         relative_volumes = self.get_relative_tumor_volumes()
 
@@ -291,7 +291,7 @@ class TumorDataVisualizer:
         """
         Построение графика среднего объема опухоли со всеми крысами.
         """
-        plt.figure(figsize=(15, 8))
+        plt.figure(figsize=(12, 7))
         self.time_data = [float(x) for x in self.time_data]
 
         # Используем функцию для форматирования параметров эксперимента
@@ -333,7 +333,7 @@ class TumorDataVisualizer:
         """
         Построение графика среднего относительного объема опухоли со всеми крысами.
         """
-        plt.figure(figsize=(15, 8))
+        plt.figure(figsize=(12, 7))
         self.time_data = [float(x) for x in self.time_data]
 
         # Используем функцию для форматирования параметров эксперимента
@@ -379,13 +379,13 @@ class TumorDataVisualizer:
         """
         Построение графика среднего относительного объема опухоли, усредненного по всем крысам.
         """
-        plt.figure(figsize=(15, 8))
+        plt.figure(figsize=(12, 7))
         self.time_data = [float(x) for x in self.time_data]
 
         # Используем функцию для форматирования параметров эксперимента
         formatted_params = self.format_experiment_params(self.experiment_params)
 
-        plt.title("Средний относительный объем опухоли (V отн. ср.)", fontsize=24)
+        # plt.title("Средний относительный объем опухоли (V отн. ср.)", fontsize=24)
 
         # Вычисление среднего относительного объема опухоли
         relative_mean_volumes = self.get_mean_relative_tumor_volumes()
@@ -464,13 +464,13 @@ if __name__ == '__main__':
     # file_path = './datas/p_25.6_n_2.56_2019.xlsx'
     # file_path = './datas/y_32_2023.xlsx'
     # file_path ='./datas/y_36_2023.xlsx'
-    file_path = './datas/control/02.02.2023_n_12.xlsx'
+    # file_path = './datas/control/02.02.2023_n_12.xlsx'
     # file_path = './datas/control/02.02.2023_n_18.xlsx'
-    # file_path = './datas/control/16.03.2023_n_22.xlsx'
+    file_path = './datas/control/16.03.2023_n_22.xlsx'
 
     visualizer = TumorDataVisualizer(file_path)
     # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
-    ExtractOutliers(visualizer).exclude_rats(['х'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
+    # ExtractOutliers(visualizer).exclude_rats(['г- пл'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
 
     # Сохраняем график для каждой крысы
     visualizer.plot_tumor_volumes_single_graph()
