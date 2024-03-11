@@ -1,11 +1,11 @@
-import os
-
+# файл draw_base_grapfs.py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params, save_plot
-from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
-from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import process_tumor_data_excel
+from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params
+from utils.plot_saver import save_plot
+from stats_methods.support_stats_methods import SupportingFunctions
+from data_processing.excel_data_processor import process_tumor_data_excel
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
 original_fill_between = plt.fill_between

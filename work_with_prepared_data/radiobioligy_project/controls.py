@@ -1,3 +1,5 @@
+# файл controls.py
+
 from typing import List, Tuple
 from draw_base_grapfs import TumorDataVisualizer
 from data_processing.excel_data_processor import process_tumor_data_excel

@@ -1,11 +1,13 @@
-import os
+# файл skin_reactions_base_grapf.py
 
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List
 
-from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params, save_plot
-from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
+from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params
+from utils.plot_saver import save_plot
+from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится

@@ -1,5 +1,5 @@
+# файл support_stats_methods.py
 from typing import List
-
 import numpy as np
 import pandas as pd
 from scipy.stats import zscore, t
@@ -213,3 +213,23 @@ class SupportingFunctions:
                 trimmed_values.append(v)
 
         return trimmed_time_data, trimmed_values
+
+    @staticmethod
+    def normalize_time_data(visualizers):
+        """
+        Нормализует временные метки всех экспериментов, приводя их к числовому формату и вычитая начальное время.
+        """
+        for visualizer in visualizers:
+            visualizer.time_data = [int(time) - int(visualizer.time_data[0]) for time in visualizer.time_data]
+
+    @staticmethod
+    def normalize_time_data_min(visualizers):
+        """
+        Нормализует временные данные для всех объектов визуализатора.
+        """
+        # Находим минимальную начальную точку времени среди всех экспериментов
+        min_start_time = min([int(v.time_data[0]) for v in visualizers])
+
+        # Выравниваем все временные ряды, вычитая минимальную начальную точку
+        for visualizer in visualizers:
+            visualizer.time_data = [int(time) - min_start_time for time in visualizer.time_data]

@@ -1,7 +1,10 @@
-import os
+# файл draw_base_graphs_compare.py
+
 import matplotlib.pyplot as plt
 from draw_base_grapfs import TumorDataVisualizer
-from utils.plotting_helpers import custom_fill_between, format_experiment_params, save_plot
+from utils.plotting_helpers import custom_fill_between, format_experiment_params
+from utils.plot_saver import save_plot
+from stats_methods.support_stats_methods import SupportingFunctions
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
 original_fill_between = plt.fill_between
@@ -31,19 +34,12 @@ class TumorDataComparator:
         """
         self.visualizers = visualizers
 
-    def normalize_time_data(self):
-        """
-        Нормализует временные метки всех экспериментов, приводя их к числовому формату и вычитая начальное время.
-        """
-        for visualizer in self.visualizers:
-            visualizer.time_data = [int(time) - int(visualizer.time_data[0]) for time in visualizer.time_data]
-
     def compare_tumor_volumes(self):
         """
         Сравнивает абсолютные объемы опухолей между экспериментами и строит соответствующий график.
         """
         # Нормализовать временные метки
-        self.normalize_time_data()
+        SupportingFunctions.normalize_time_data(self.visualizers)
 
         plt.figure(figsize=(12, 7))
         linestyles = ['-', '--', '-.', ':']
@@ -68,7 +64,7 @@ class TumorDataComparator:
         Сравнивает относительные объемы опухолей между экспериментами и строит соответствующий график.
         """
         # Нормализовать временные метки
-        self.normalize_time_data()
+        SupportingFunctions.normalize_time_data(self.visualizers)
 
         plt.figure(figsize=(12, 7))
         linestyles = ['-', '--', '-.', ':']

@@ -1,4 +1,4 @@
-import os
+# файл draw_abs_rel_graph_compare.py
 
 import pandas as pd
 import numpy as np
@@ -7,7 +7,8 @@ from typing import List
 from draw_base_grapfs import TumorDataVisualizer
 from controls import ControlGroupVisualizer
 from utils.plotting_helpers import custom_fill_between, format_experiment_params
-from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
+from utils.plot_saver import save_plot
+from stats_methods.support_stats_methods import SupportingFunctions
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
 original_fill_between = plt.fill_between
@@ -40,36 +41,11 @@ class TumorDataComparatorAdvanced:
         """
         self.visualizers = visualizers
 
-    def save_plot(self, comparison_type: str):
-        """
-        Сохраняет график в файл PNG.
-
-        Parameters:
-            comparison_type (str): Тип сравнения, используется для формирования имени файла.
-        """
-        file_names = [os.path.splitext(os.path.basename(v.file_path))[0] for v in self.visualizers]
-        file_name = f"{comparison_type}_{'_vs_'.join(file_names)}.png"
-        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
-        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
-        plt.savefig(file_name, format='png', dpi=300)
-        print(f"Plot saved as {file_name}")
-
-    def normalize_time_data(self):
-        """
-        Нормализует временные данные для всех объектов визуализатора.
-        """
-        # Находим минимальную начальную точку времени среди всех экспериментов
-        min_start_time = min([int(v.time_data[0]) for v in self.visualizers])
-
-        # Выравниваем все временные ряды, вычитая минимальную начальную точку
-        for visualizer in self.visualizers:
-            visualizer.time_data = [int(time) - min_start_time for time in visualizer.time_data]
-
     def compare_mean_volumes(self):
         """
         Сравнивает средние абсолютные объемы опухолей для всех экспериментов и строит график.
         """
-        self.normalize_time_data()
+        SupportingFunctions.normalize_time_data_min(self.visualizers)
         plt.figure(figsize=(15, 8))
 
         # Список маркеров
@@ -112,7 +88,7 @@ class TumorDataComparatorAdvanced:
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
-        self.save_plot("compare_mean_volumes")
+        save_plot('', "compare_mean_volumes")
         plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
         plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
         plt.show()
@@ -121,7 +97,7 @@ class TumorDataComparatorAdvanced:
         """
         Сравнивает средние относительные объемы опухолей для всех экспериментов и строит график.
         """
-        self.normalize_time_data()
+        SupportingFunctions.normalize_time_data_min(self.visualizers)
         plt.figure(figsize=(12, 7))
 
         markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
@@ -180,10 +156,10 @@ class TumorDataComparatorAdvanced:
 
         # Время
         time_labels = [f"{time1}" for time1 in time_]
-        #plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='lower right')
+        # plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='lower right')
 
         plt.tight_layout()
-        self.save_plot("compare_relative_volumes")
+        save_plot('', "compare_relative_volumes")
         plt.xlim(left=0)
         plt.ylim(bottom=0)
         plt.show()
@@ -285,7 +261,7 @@ class TumorDataComparatorAdvanced:
         plt.legend(lines, auc_labels, title="Площадь под кривой", loc='center left')
 
         plt.tight_layout()
-        self.save_plot("compare_control_and_experiment")
+        save_plot('', "compare_control_and_experiment")
         plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
         plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
         plt.show()
@@ -351,11 +327,11 @@ class TumorDataComparatorAdvanced:
 
         plt.xlabel("Время, сут.")
         plt.ylabel("Торможение роста опухоли, %")
-        #plt.title("Сравнение торможения роста опухоли")
+        # plt.title("Сравнение торможения роста опухоли")
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
-        self.save_plot("compare_tumor_growth_inhibition_multiple_experiments")
+        save_plot('', "compare_tumor_growth_inhibition_multiple_experiments")
         plt.show()
 
     def create_tumor_growth_inhibition_table(self, control_visualizer, experiment_visualizers):
@@ -403,8 +379,8 @@ class TumorDataComparatorAdvanced:
         print(df_filtered)
 
         # Расчет среднего значения относительной разницы
-        #average_relative_difference = df_filtered['Relative Difference (%)'].mean()
-        #print(f"Средний процент отличия от Dp = 36 Гр начиная с 9-го дня: {average_relative_difference:.2f}%")
+        # average_relative_difference = df_filtered['Relative Difference (%)'].mean()
+        # print(f"Средний процент отличия от Dp = 36 Гр начиная с 9-го дня: {average_relative_difference:.2f}%")
 
         # Расчет среднего абсолютного значения относительных различий
         average_absolute_relative_difference = df_filtered['Relative Difference (%)'].abs().mean()
@@ -437,8 +413,8 @@ if __name__ == "__main__":
     experiment_paths = [
         r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\30.03.2022_p_36_прострел.xlsx',
         r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_12.xlsx',
-        #r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_18.xlsx',
-        #r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
+        # r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_18.xlsx',
+        # r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
     ]
 
     # Создание объектов визуализатора для контрольных групп
