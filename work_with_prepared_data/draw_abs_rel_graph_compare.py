@@ -453,26 +453,36 @@ class TumorDataComparatorAdvanced:
         # Создание DataFrame из словаря
         df = pd.DataFrame(data)
 
-        # Расчет абсолютной и относительной разницы эффективности ТРО, а также среднее значение
-        df['Absolute Difference (%)'] = df.iloc[:, 1] - df.iloc[:, 2]
-        df['Relative Effectiveness from Proton (%)'] = ((df['Absolute Difference (%)'] / df.iloc[:, 1]) * 100)
-        relative_effectiveness_proton = df['Relative Effectiveness from Proton (%)'].mean()
+        # Преобразование 'Время (сут)' в числовой тип данных для возможности фильтрации
+        df['Время (сут)'] = pd.to_numeric(df['Время (сут)'])
+
+        # Фильтрация DataFrame для времени начиная с 9-го дня
+        df_filtered = df.loc[df['Время (сут)'] >= 9].copy()
+
+        # Расчет абсолютной разницы эффективности ТРО и относительной эффективности
+        df_filtered['Absolute Difference (%)'] = df_filtered.iloc[:, 1] - df_filtered.iloc[:, 2]
+        df_filtered['Relative Difference (%)'] = (df_filtered['Absolute Difference (%)'] / df_filtered.iloc[:, 1] * 100)
 
         # Установка формата чисел
         pd.set_option('display.float_format', '{:.2f}'.format)
+        pd.set_option('display.max_rows', None)  # Для показа всех строк
+        pd.set_option('display.max_columns', None)  # Для показа всех столбцов
 
         # Изменение индекса
         df.set_index('Время (сут)', inplace=True)
 
-        # Печать таблицы
-        # Установка формата чисел и вывод всей таблицы без сокращений
-        pd.set_option('display.float_format', '{:.2f}'.format)
-        pd.set_option('display.max_rows', None)  # Установка для показа всех строк
-        pd.set_option('display.max_columns', None)  # Установка для показа всех столбцов
-        print(df)
+        # Печать отфильтрованной таблицы и среднего значения относительной разницы
+        print(df_filtered)
 
-        # Вывод среднего значения относительной эффективности
-        print(f"Средняя относительная эффективность от Dp = 36 Гр: {relative_effectiveness_proton:.2f}%")
+        # Расчет среднего значения относительной разницы
+        #average_relative_difference = df_filtered['Relative Difference (%)'].mean()
+        #print(f"Средний процент отличия от Dp = 36 Гр начиная с 9-го дня: {average_relative_difference:.2f}%")
+
+        # Расчет среднего абсолютного значения относительных различий
+        average_absolute_relative_difference = df_filtered['Relative Difference (%)'].abs().mean()
+
+        print(f"Среднее абсолютное значение относительного различия начиная с 9-го дня: "
+              f"{average_absolute_relative_difference:.2f}%")
 
 
 if __name__ == "__main__":
@@ -512,8 +522,8 @@ if __name__ == "__main__":
         #'./datas/y_32_2023.xlsx',
         #'./datas/y_36_2023.xlsx',
         './datas/control/02.02.2023_n_12.xlsx',
-        './datas/control/02.02.2023_n_18.xlsx',
-        './datas/control/16.03.2023_n_22.xlsx'
+        #'./datas/control/02.02.2023_n_18.xlsx',
+        #'./datas/control/16.03.2023_n_22.xlsx'
     ]
 
     # Создание объектов визуализатора для контрольных групп
@@ -535,4 +545,4 @@ if __name__ == "__main__":
 
     # Сравнение торможения роста опухоли между контрольной и несколькими экспериментальными группами
     #comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
-    #comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)
+    comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)
