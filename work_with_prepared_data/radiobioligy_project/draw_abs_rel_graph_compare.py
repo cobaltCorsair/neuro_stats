@@ -16,9 +16,6 @@ original_fill_between = plt.fill_between
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
 
-# Увеличение размера фигуры
-plt.figure(figsize=(15, 8))  # Увеличение размера фигуры
-
 # Глобальное изменение размеров шрифтов
 plt.rcParams.update({
     'font.family': 'Times New Roman',  # Установка семейства шрифтов
@@ -46,7 +43,7 @@ class TumorDataComparatorAdvanced:
         Сравнивает средние абсолютные объемы опухолей для всех экспериментов и строит график.
         """
         SupportingFunctions.normalize_time_data_min(self.visualizers)
-        plt.figure(figsize=(15, 8))
+        plt.figure(figsize=(12, 7))
 
         # Список маркеров
         markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
@@ -428,7 +425,7 @@ if __name__ == "__main__":
     # Создание объекта сравнителя
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-    # comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
     comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
