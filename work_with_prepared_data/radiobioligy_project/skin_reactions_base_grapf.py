@@ -1,32 +1,15 @@
 import os
-from itertools import cycle
 
-import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Tuple
-from matplotlib.lines import Line2D
+from typing import List
 
-from work_with_prepared_data.support_stats_methods import ExtractOutliers, SupportingFunctions
+from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params, save_plot
+from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
+from data_processing.excel_data_processor import process_skin_data_excel
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
 original_fill_between = plt.fill_between
-
-
-def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
-    horizontal_line_length = 0.2  # Длина горизонтальных линий на концах
-    line_color = color if color is not None else 'blue'  # Используйте заданный цвет, если он предоставлен
-
-    for xi, y1i, y2i in zip(x, y1, y2):
-        # Вертикальные линии
-        plt.plot([xi, xi], [y1i, y2i], color=line_color, alpha=1, zorder=1)
-
-        # Горизонтальные линии на концах
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color=line_color,
-                 alpha=1, zorder=1)
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color=line_color,
-                 alpha=1, zorder=1)
-
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -49,68 +32,11 @@ plt.rcParams.update({
 class SkinReactionsVisualizer:
     def __init__(self, file_path: str):
         self.file_path = file_path
-        self.experiment_params, self.time_data, self.rat_labels, self.skin_reactions = self.process_excel()
-
-    def subscriptify(self, text):
-        subscript_map = {
-            '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
-            '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
-            'n': 'ₙ', 'p': 'ₚ', 'e': 'ₑ', 'a': 'ₐ', 'b': 'ᵦ', 'y': 'ᵧ'
-            # Add more if available
-        }
-        return ''.join(subscript_map.get(char, char) for char in text)
-
-    def format_experiment_params(self, params):
-        cleaned_params = [str(param).replace('nan', '').strip() for param in params if str(param).strip()]
-        rad_values = {}
-        sequence = []
-        for param in cleaned_params:
-            if '=' in param and not param.startswith('t'):
-                key, value = param.split('=')
-                key = key.strip()
-                value = value.split()[0]
-                rad_values[key] = value.strip()
-                sequence.append(key)
-
-        formatted_params = []
-        if len(sequence) > 1:
-            arrows = ' → '.join(sequence)
-            formatted_params.append(arrows)
-
-        for key in sequence:
-            if key in rad_values:
-                formatted_params.append(f"D{self.subscriptify(key.lower())} = {rad_values[key]} Гр")
-
-        return ', '.join(formatted_params)
-
-    def process_excel(self):
-        data = pd.read_excel(self.file_path, header=None)
-        experiment_params = data.iloc[0, :3].tolist()
-        skin_data = data.iloc[2:, :].copy()
-        time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in data.iloc[1, 1:]]
-        rat_labels = skin_data.iloc[:, 0].tolist()
-        skin_reactions = skin_data.iloc[:, 1:].to_numpy().tolist()
-        return experiment_params, time_data, rat_labels, skin_reactions
-
-    def save_plot(self, plot_title: str):
-        file_name_stub = self.file_path.split("/")[-1].replace(".xlsx", "")
-        file_name = f"{plot_title.replace(' ', '_')}_{file_name_stub}.png"
-        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
-        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
-        plt.savefig(file_name, format='png', dpi=300)
-        print(f"Plot saved as {file_name}")
-
-    @staticmethod
-    def save_plot_static(plot_title: str, base_file_name: str):
-        file_name = f"{plot_title}_{base_file_name}.png"
-        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
-        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
-        plt.savefig(file_name, format='png', dpi=300)
-        print(f"Plot saved as {file_name}")
+        self.experiment_params, self.time_data, self.rat_labels, self.skin_reactions = process_skin_data_excel(file_path)
 
     def plot_skin_reactions(self):
         plt.figure(figsize=(15, 8))
-        formatted_params = self.format_experiment_params(self.experiment_params)
+        formatted_params = format_experiment_params(self.experiment_params)
         plt.title(f"Кожные реакции, Параметры эксперимента: {formatted_params}", fontsize=24, y=1.02)
 
         # Список маркеров
@@ -126,14 +52,14 @@ class SkinReactionsVisualizer:
         plt.grid(True)
         plt.legend(title="Метка крысы")
         plt.tight_layout()
-        self.save_plot(f"Skin_Reactions_{formatted_params}")
+        save_plot(self.file_path, f"Skin_Reactions_{formatted_params}")
         plt.show()
 
     def plot_mean_skin_reactions(self):
         # Преобразование self.time_data в числовые значения
         self.time_data = [float(x) for x in self.time_data]
         plt.figure(figsize=(15, 8))
-        formatted_params = self.format_experiment_params(self.experiment_params)
+        formatted_params = format_experiment_params(self.experiment_params)
         plt.title(f"Средние кожные реакции, Параметры эксперимента: {formatted_params}", fontsize=24, y=1.02)
 
         mean_reactions, std_dev, error_margin = self.get_mean_skin_reactions()
@@ -161,7 +87,7 @@ class SkinReactionsVisualizer:
         plt.grid(True)
         plt.legend(fontsize=25)
         plt.tight_layout()
-        self.save_plot(f"Mean_Skin_Reactions_{formatted_params}")
+        save_plot('', f"Mean_Skin_Reactions_{formatted_params}")
         plt.show()
 
     def get_mean_skin_reactions(self):
@@ -195,7 +121,7 @@ class SkinReactionsVisualizer:
 
             auc = SupportingFunctions.calculate_auc(common_timepoints, mean_reactions_interp)
             aucs.append(auc)
-            label = visualizer.format_experiment_params(visualizer.experiment_params)
+            label = format_experiment_params(visualizer.experiment_params)
             time_.append(visualizer.experiment_params[-1])
             line, = plt.plot(common_timepoints,
                              mean_reactions_interp,
@@ -231,7 +157,7 @@ class SkinReactionsVisualizer:
         base_file_name = '_'.join(file_name_parts)
 
         # Использование статического метода для сохранения графика
-        SkinReactionsVisualizer.save_plot_static("multiple_experiments", base_file_name)
+        save_plot(base_file_name, 'multiple_experiments')
 
         plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
         plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
@@ -239,15 +165,12 @@ class SkinReactionsVisualizer:
 
 if __name__ == '__main__':
     # Пример использования
-    # file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx'
-    # file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx'
-    # file_path = 'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx'
-    file_path = 'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx'
-
+    file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\skin_reactions\skin_reactions_p_25,2_n_7,2_2023_3.xlsx'
     visualizer = SkinReactionsVisualizer(file_path)
-    #
-    # # Удаление выбросов
-    # # ExtractOutliers(visualizer).remove_local_outliers()
+
+    # Удаление выбросов
+    # ExtractOutliers(visualizer).remove_local_outliers()
+
     # Удаление точек
     # ExtractOutliers(visualizer).exclude_rats(['б/м'], 'tumor_volumes')  # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
     # ExtractOutliers(visualizer).exclude_rats(['г', 'х'], 'tumor_volumes')  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
@@ -257,11 +180,7 @@ if __name__ == '__main__':
 
     # Отображения средних кожных реакций для нескольких экспериментов
     file_paths = [
-        #'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023.xlsx',
-        #'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023.xlsx',
-        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_2.xlsx',
-        #'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_2.xlsx',
-        'datas/skin_reactions/skin_reactions_n_7.2_p_25.2_2023_3.xlsx',
-        #'datas/skin_reactions/skin_reactions_p_25,2_n_7,2_2023_3.xlsx'
+        r'C:\dev\neuro_stats\work_with_prepared_data\datas\skin_reactions\skin_reactions_p_25,2_n_7,2_2023_2.xlsx',
+        r'C:\dev\neuro_stats\work_with_prepared_data\datas\skin_reactions\skin_reactions_p_25,2_n_7,2_2023_3.xlsx',
     ]
     SkinReactionsVisualizer.plot_multiple_experiments(file_paths)

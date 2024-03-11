@@ -3,29 +3,14 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Tuple, Union
+from typing import List
 from draw_base_grapfs import TumorDataVisualizer
-from work_with_prepared_data.controls import ControlGroupVisualizer
-from work_with_prepared_data.support_stats_methods import SupportingFunctions
+from controls import ControlGroupVisualizer
+from utils.plotting_helpers import custom_fill_between, format_experiment_params
+from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
 original_fill_between = plt.fill_between
-
-
-def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
-    horizontal_line_length = 0.2  # Длина горизонтальных линий на концах
-    line_color = color if color is not None else 'blue'  # Используйте заданный цвет, если он предоставлен
-
-    for xi, y1i, y2i in zip(x, y1, y2):
-        # Вертикальные линии
-        plt.plot([xi, xi], [y1i, y2i], color=line_color, alpha=1, zorder=1)
-
-        # Горизонтальные линии на концах
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color=line_color,
-                 alpha=1, zorder=1)
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color=line_color,
-                 alpha=1, zorder=1)
-
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -80,63 +65,6 @@ class TumorDataComparatorAdvanced:
         for visualizer in self.visualizers:
             visualizer.time_data = [int(time) - min_start_time for time in visualizer.time_data]
 
-    def subscriptify(self, text):
-        """
-        Converts text to subscript format using Unicode characters.
-
-        Parameters:
-            text (str): Text to be converted.
-
-        Returns:
-            str: Text in subscript format.
-        """
-        subscript_map = {
-            '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
-            '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
-            'n': 'ₙ', 'p': 'ₚ', 'e': 'ₑ', 'a': 'ₐ', 'b': 'ᵦ', 'y': 'ᵧ'
-            # Add more if available
-        }
-        return ''.join(subscript_map.get(char, char) for char in text)
-
-    def format_experiment_params(self, params):
-        """
-        Форматирует параметры эксперимента для отображения в легенде.
-
-        Parameters:
-            params (list): Список параметров эксперимента.
-
-        Returns:
-            str: Отформатированная строка параметров эксперимента.
-        """
-        # Удаляем пустые строки и значения 'nan'
-        cleaned_params = [str(param).replace('nan', '').strip() for param in params if str(param).strip()]
-
-        # Разбиваем параметры на ключ и значение
-        rad_values = {}
-        sequence = []  # Сохраняем порядок ключей
-        for param in cleaned_params:
-            if '=' in param and not param.startswith('t'):
-                key, value = param.split('=')
-                key = key.strip()
-                value = value.split()[0]  # Берём только первую часть, исключая "Гр."
-                rad_values[key] = value.strip()
-
-                sequence.append(key)
-
-        # Формирование строки для легенды
-        formatted_params = []
-
-        # Добавление стрелок, если есть более одного типа излучения
-        if len(sequence) > 1:
-            arrows = ' → '.join(sequence)
-            formatted_params.append(arrows)
-
-        for key in sequence:
-            if key in rad_values:
-                formatted_params.append(f"D{self.subscriptify(key.lower())} = {rad_values[key]} Гр")
-
-        return ', '.join(formatted_params)
-
     def compare_mean_volumes(self):
         """
         Сравнивает средние абсолютные объемы опухолей для всех экспериментов и строит график.
@@ -157,7 +85,7 @@ class TumorDataComparatorAdvanced:
                             for std in std_dev]
 
             # Использование format_experiment_params для форматирования параметров эксперимента
-            formatted_params = self.format_experiment_params(visualizer.experiment_params)
+            formatted_params = format_experiment_params(visualizer.experiment_params)
 
             line, = plt.plot(
                 visualizer.time_data,
@@ -212,7 +140,7 @@ class TumorDataComparatorAdvanced:
             error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
                             for std in std_dev]
 
-            formatted_params = self.format_experiment_params(visualizer.experiment_params)
+            formatted_params = format_experiment_params(visualizer.experiment_params)
             time_.append(visualizer.experiment_params[-1])
             line, = plt.plot(
                 visualizer.time_data,
@@ -289,7 +217,7 @@ class TumorDataComparatorAdvanced:
                        for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
             error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
                             for std in std_dev]
-            formatted_params = self.format_experiment_params(visualizer.experiment_params)
+            formatted_params = format_experiment_params(visualizer.experiment_params)
 
             line, = plt.plot(
                 visualizer.time_data,
@@ -317,7 +245,7 @@ class TumorDataComparatorAdvanced:
                            for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
                 error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
                                 for std in std_dev]
-                formatted_params = self.format_experiment_params(visualizer.experiment_params)
+                formatted_params = format_experiment_params(visualizer.experiment_params)
 
                 line, = plt.plot(
                     visualizer.time_data,
@@ -399,7 +327,7 @@ class TumorDataComparatorAdvanced:
                                        zip(control_mean_volumes, experiment_mean_volumes)]
 
             # Использование format_experiment_params для форматирования параметров эксперимента
-            formatted_params = self.format_experiment_params(experiment_visualizer.experiment_params)
+            formatted_params = format_experiment_params(experiment_visualizer.experiment_params)
 
             plt.plot(
                 experiment_visualizer.time_data,
@@ -447,7 +375,7 @@ class TumorDataComparatorAdvanced:
                                        zip(control_mean_volumes, experiment_mean_volumes)]
 
             # Добавление данных в словарь
-            experiment_name = self.format_experiment_params(experiment_visualizer.experiment_params)
+            experiment_name = format_experiment_params(experiment_visualizer.experiment_params)
             data[experiment_name] = tumor_growth_inhibition
 
         # Создание DataFrame из словаря
@@ -504,26 +432,13 @@ if __name__ == "__main__":
 
     # Пути к файлам данных для контрольных и экспериментальных групп
     control_paths = [
-        './datas/control/control.xlsx',
+        r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\control.xlsx',
     ]
     experiment_paths = [
-        # './datas/control/02.02.2023_n_12.xlsx',
-        # './datas/control/02.02.2023_n_18.xlsx',
-        # './datas/control/16.03.2023_n_22.xlsx',
-        './datas/control/30.03.2022_p_36_прострел.xlsx',
-        # './datas/n_7.2_p_25.2_2023.xlsx',
-        # './datas/p_25.2_n_7.2_2023.xlsx',
-        #'./datas/n_7.2_p_25.2_2023_2.xlsx',
-        #'./datas/p_25.2_n_7.2_2023_2.xlsx',
-        # './datas/n_7.2_p_25.2_2023_3.xlsx',
-        # './datas/p_25.2_n_7.2_2023_3.xlsx',
-        # './datas/n_7.2_p_25.2_2023_compared.xlsx',
-        # './datas/p_25.2_n_7.2_2023_compared.xlsx',
-        #'./datas/y_32_2023.xlsx',
-        #'./datas/y_36_2023.xlsx',
-        './datas/control/02.02.2023_n_12.xlsx',
-        #'./datas/control/02.02.2023_n_18.xlsx',
-        #'./datas/control/16.03.2023_n_22.xlsx'
+        r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\30.03.2022_p_36_прострел.xlsx',
+        r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_12.xlsx',
+        #r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_18.xlsx',
+        #r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
     ]
 
     # Создание объектов визуализатора для контрольных групп
@@ -541,8 +456,8 @@ if __name__ == "__main__":
     comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
-    #comparator.compare_control_and_experiment(control_visualizers)
+    comparator.compare_control_and_experiment(control_visualizers)
 
     # Сравнение торможения роста опухоли между контрольной и несколькими экспериментальными группами
-    #comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
+    comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
     comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)

@@ -1,33 +1,14 @@
 import os
 
-import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Tuple
 
-from matplotlib.ticker import FuncFormatter
-
-from work_with_prepared_data.support_stats_methods import SupportingFunctions, ExtractOutliers
+from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params, save_plot
+from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
+from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import process_tumor_data_excel
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
 original_fill_between = plt.fill_between
-
-
-# Custom fill_between function
-def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
-    horizontal_line_length = 0.2  # Длина горизонтальных линий на концах
-    line_color = color if color is not None else 'blue'  # Используйте заданный цвет, если он предоставлен
-
-    for xi, y1i, y2i in zip(x, y1, y2):
-        # Вертикальные линии
-        plt.plot([xi, xi], [y1i, y2i], color=line_color, alpha=1, zorder=1)
-
-        # Горизонтальные линии на концах
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color=line_color,
-                 alpha=1, zorder=1)
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color=line_color,
-                 alpha=1, zorder=1)
-
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -53,121 +34,7 @@ class TumorDataVisualizer:
             file_path (str): Путь к файлу Excel с данными.
         """
         self.file_path = file_path
-        self.experiment_params, self.time_data, self.rat_labels, self.tumor_volumes = self.process_excel()
-
-    def save_plot(self, plot_title: str, file_suffix: str):
-        """
-        Сохраняет текущий график в файл с заданным именем и суффиксом.
-
-        Параметры:
-            plot_title (str): Название графика, используемое для создания имени файла.
-            file_suffix (str): Суффикс для имени файла для уточнения типа графика.
-
-        Примечание:
-            Имя файла формируется с использованием базового имени файла данных,
-            plot_title и file_suffix.
-        """
-        # Извлечение имени файла без расширения и пути
-        file_name_base = os.path.splitext(os.path.basename(self.file_path))[0]
-
-        # Сборка окончательного имени файла
-        file_name = f"{file_name_base}_{plot_title.replace(' ', '_')}_{file_suffix}.png"
-
-        plt.savefig(file_name, format='png', dpi=300)
-        print(f"Plot saved as {file_name}")
-
-    def process_excel(self) -> Tuple[List[str], List[str], List[str], List[List[float]]]:
-        """
-        Обрабатывает данные из файла Excel и извлекает необходимые данные.
-
-        Возвращает:
-            tuple: Кортеж, содержащий:
-                - experiment_params (List[str]): Параметры эксперимента.
-                - time_data (List[str]): Метки времени для каждого измерения.
-                - rat_labels (List[str]): Метки крыс.
-                - tumor_volumes (List[List[float]]): Объемы опухолей для каждой крысы на каждом временном интервале.
-        """
-        data = pd.read_excel(self.file_path, header=None)
-        experiment_params = data.iloc[0, :3].astype(str).replace('nan', '').tolist()
-        tumor_data = data.iloc[2:, :].copy()
-        time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in data.iloc[1, 1:]]
-
-        tumor_data = tumor_data.applymap(
-            lambda x: str(x).strip().replace(',', '.').replace(' -', '-') if pd.notna(x) else "NA")
-        rat_labels = tumor_data.iloc[:, 0].tolist()
-
-        tumor_volumes = []
-        for _, row in tumor_data.iterrows():
-            rat_volumes = []
-            for item in row[1:]:
-                if "-" in item:
-                    a, b, c = map(float, item.split("-"))
-                    volume = (np.pi * a * b * c) / 6
-                elif item.replace(".", "").isdigit():
-                    volume = float(item)
-                else:
-                    volume = np.nan
-                rat_volumes.append(volume)
-            tumor_volumes.append(rat_volumes)
-
-        return experiment_params, time_data, rat_labels, tumor_volumes
-
-    def subscriptify(self, text):
-        """
-        Converts text to subscript format using Unicode characters.
-
-        Parameters:
-            text (str): Text to be converted.
-
-        Returns:
-            str: Text in subscript format.
-        """
-        subscript_map = {
-            '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
-            '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
-            'n': 'ₙ', 'p': 'ₚ', 'e': 'ₑ', 'a': 'ₐ', 'b': 'ᵦ', 'y': 'ᵧ'
-            # Add more if available
-        }
-        return ''.join(subscript_map.get(char, char) for char in text)
-
-    def format_experiment_params(self, params):
-        """
-        Форматирует параметры эксперимента для отображения в легенде.
-
-        Parameters:
-            params (list): Список параметров эксперимента.
-
-        Returns:
-            str: Отформатированная строка параметров эксперимента.
-        """
-        # Удаляем пустые строки и значения 'nan'
-        cleaned_params = [str(param).replace('nan', '').strip() for param in params if str(param).strip()]
-
-        # Разбиваем параметры на ключ и значение
-        rad_values = {}
-        sequence = []  # Сохраняем порядок ключей
-        for param in cleaned_params:
-            if '=' in param and not param.startswith('t'):
-                key, value = param.split('=')
-                key = key.strip()
-                value = value.split()[0]  # Берём только первую часть, исключая "Гр."
-                rad_values[key] = value.strip()
-
-                sequence.append(key)
-
-        # Формирование строки для легенды
-        formatted_params = []
-
-        # Добавление стрелок, если есть более одного типа излучения
-        if len(sequence) > 1:
-            arrows = ' → '.join(sequence)
-            formatted_params.append(arrows)
-
-        for key in sequence:
-            if key in rad_values:
-                formatted_params.append(f"D{self.subscriptify(key.lower())} = {rad_values[key]} Гр")
-
-        return ', '.join(formatted_params)
+        self.experiment_params, self.time_data, self.rat_labels, self.tumor_volumes = process_tumor_data_excel(file_path)
 
     def plot_tumor_volumes_single_graph(self):
         """
@@ -182,7 +49,7 @@ class TumorDataVisualizer:
         marker_size = 12  # Установка размера маркера
 
         # Используем функцию для форматирования параметров эксперимента
-        formatted_params = self.format_experiment_params(self.experiment_params)
+        formatted_params = format_experiment_params(self.experiment_params)
         plt.title(f"Абсолютные объемы опухоли", fontsize=24, y=1.02)
 
         for label, volumes in zip(self.rat_labels, self.tumor_volumes):
@@ -221,7 +88,7 @@ class TumorDataVisualizer:
         plt.legend(title="Метка крысы", fontsize=25, loc='upper left')
         plt.tight_layout()
 
-        self.save_plot(f"{', '.join(self.experiment_params)}_absolute_volumes", "single_graph")
+        save_plot(f"{', '.join(self.experiment_params)}_absolute_volumes", "single_graph")
         plt.show()
 
     def plot_relative_tumor_volumes_single_graph(self):
@@ -239,7 +106,7 @@ class TumorDataVisualizer:
         marker_size = 12
 
         # Используем функцию для форматирования параметров эксперимента
-        formatted_params = self.format_experiment_params(self.experiment_params)
+        formatted_params = format_experiment_params(self.experiment_params)
 
         # plt.title("Относительные объемы опухоли", fontsize=24, y=1.02)
 
@@ -284,7 +151,7 @@ class TumorDataVisualizer:
         plt.legend(title="Метка крысы", fontsize=25, loc='upper left')
         plt.tight_layout()
 
-        self.save_plot(f"{', '.join(self.experiment_params)}_relative_volumes", "single_graph_rel")
+        save_plot(f"{', '.join(self.experiment_params)}_relative_volumes", "single_graph_rel")
         plt.show()
 
     def plot_mean_tumor_volume(self):
@@ -295,7 +162,7 @@ class TumorDataVisualizer:
         self.time_data = [float(x) for x in self.time_data]
 
         # Используем функцию для форматирования параметров эксперимента
-        formatted_params = self.format_experiment_params(self.experiment_params)
+        formatted_params = format_experiment_params(self.experiment_params)
 
         plt.title("(M/V абс.)", fontsize=24)
 
@@ -326,7 +193,7 @@ class TumorDataVisualizer:
         plt.legend(fontsize=25, loc='lower right')
         plt.tight_layout()
 
-        self.save_plot(f"{', '.join(self.experiment_params)}_mean_volumes", "mean_volume")
+        save_plot(f"{', '.join(self.experiment_params)}_mean_volumes", "mean_volume")
         plt.show()
 
     def plot_average_relative_tumor_volume(self):
@@ -337,7 +204,7 @@ class TumorDataVisualizer:
         self.time_data = [float(x) for x in self.time_data]
 
         # Используем функцию для форматирования параметров эксперимента
-        formatted_params = self.format_experiment_params(self.experiment_params)
+        formatted_params = format_experiment_params(self.experiment_params)
 
         plt.title("(V отн.)", fontsize=24)
 
@@ -372,7 +239,7 @@ class TumorDataVisualizer:
         plt.legend(fontsize=25, loc='lower right')
         plt.tight_layout()
 
-        self.save_plot(f"{', '.join(self.experiment_params)}_average_relative_volumes", "mean_relative_volume")
+        save_plot(f"{', '.join(self.experiment_params)}_average_relative_volumes", "mean_relative_volume")
         plt.show()
 
     def plot_mean_relative_mean_tumor_volume(self):
@@ -383,7 +250,7 @@ class TumorDataVisualizer:
         self.time_data = [float(x) for x in self.time_data]
 
         # Используем функцию для форматирования параметров эксперимента
-        formatted_params = self.format_experiment_params(self.experiment_params)
+        formatted_params = format_experiment_params(self.experiment_params)
 
         # plt.title("Средний относительный объем опухоли (V отн. ср.)", fontsize=24)
 
@@ -417,7 +284,7 @@ class TumorDataVisualizer:
         plt.legend(handles=plot_line, fontsize=25, loc='lower right')  # Исправление: handles должно быть списком
 
         plt.tight_layout()
-        self.save_plot(f"{', '.join(self.experiment_params)}_mean_relative_mean_volumes", "mean_relative_mean_volume")
+        save_plot(f"{', '.join(self.experiment_params)}_mean_relative_mean_volumes", "mean_relative_mean_volume")
         plt.show()
 
     def get_mean_tumor_volumes(self) -> np.ndarray:
@@ -456,17 +323,7 @@ class TumorDataVisualizer:
 
 if __name__ == '__main__':
     # Используем с файлом данных
-    # file_path = './datas/n_7.2_p_25.2_2023.xlsx'
-    # file_path = './datas/p_25.2_n_7.2_2023.xlsx'
-    # file_path = './datas/p_25.2_n_7.2_2023_2.xlsx'
-    # file_path = './datas/n_7.2_p_25.2_2023_2.xlsx'
-    # file_path = './datas/n_2.56_p_25.6_2019.xlsx'
-    # file_path = './datas/p_25.6_n_2.56_2019.xlsx'
-    # file_path = './datas/y_32_2023.xlsx'
-    # file_path ='./datas/y_36_2023.xlsx'
-    # file_path = './datas/control/02.02.2023_n_12.xlsx'
-    # file_path = './datas/control/02.02.2023_n_18.xlsx'
-    file_path = './datas/control/16.03.2023_n_22.xlsx'
+    file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
 
     visualizer = TumorDataVisualizer(file_path)
     # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
