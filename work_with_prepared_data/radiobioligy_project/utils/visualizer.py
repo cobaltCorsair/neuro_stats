@@ -48,7 +48,7 @@ class GraphVisualizer:
             markersize=self.marker_size,
             linestyle='-',
             zorder=2,
-            label= f"{format_experiment_params(params)}{label}"
+            label= f"{label}{format_experiment_params(params)}"
         )
         if calculate_auc:
             auc_value = SupportingFunctions.calculate_auc(y_data, x_data)
@@ -91,7 +91,7 @@ class GraphVisualizer:
             auc_labels = [f"AUC: {auc:.2f}" for auc in self.aucs]
             # Создаем объекты легенды AUC. Важно передать 'handles=self.lines', если стили линий важны
             auc_legend = plt.legend(handles=self.lines, labels=auc_labels, title="Площадь под кривой",
-                                    loc='upper center')
+                                    loc='center left')
             ax.add_artist(auc_legend)  # Добавляем легенду AUC
 
         # Добавляем дополнительные легенды с корректным отображением цветов
