@@ -12,13 +12,15 @@ class GraphVisualizer:
         self.title = title
         self.x_label = x_label
         self.y_label = y_label
-        self.markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
+        self.markers = ['o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_']
         self.marker_index = 0
         self.marker_size = 12
         self.lines = []
         self.aucs = []
         self.max_x = None  # Добавлено для хранения максимального значения по оси X
         self.max_y = None  # Дополнительно, можно добавить для Y
+        self.legend_info = []  # Список для хранения информации для дополнительных легенд
+
 
     def setup_figure(self):
         plt.figure(figsize=self.figsize)
@@ -46,7 +48,7 @@ class GraphVisualizer:
             markersize=self.marker_size,
             linestyle='-',
             zorder=2,
-            label= f"{format_experiment_params(params)}: {label}"
+            label= f"{format_experiment_params(params)}{label}"
         )
         if calculate_auc:
             auc_value = SupportingFunctions.calculate_auc(y_data, x_data)
@@ -64,22 +66,41 @@ class GraphVisualizer:
 
         # Метод для обновления границ осей, вызываемый после добавления всех графиков
 
+    def add_legend(self, labels, title="", loc="upper left"):
+        """Добавляет информацию для создания легенды."""
+        self.legend_info.append((labels, title, loc))
+
     def update_axes_limits(self, x_data_lists):
         # Изменено на правильное вычисление максимального значения из списка списков
         self.max_x = max(max(x_data) for x_data in x_data_lists) if x_data_lists else self.max_x
 
     def finalize_figure(self, file_path):
-        # Установка делений оси X должна быть здесь, после установки границ осей
+        ax = plt.gca()  # Получаем текущий объект Axes
+
+        # Устанавливаем деления оси X
         if self.max_x is not None:
             plt.xticks(ticks=range(0, self.max_x + 1, 3), rotation=0)
 
+        # Создаем и добавляем основную легенду
         if self.lines:
             first_legend = plt.legend(handles=self.lines, loc='upper left')
-            plt.gca().add_artist(first_legend)
+            ax.add_artist(first_legend)  # Важно использовать add_artist для сохранения основной легенды
 
+        # Создаем и добавляем легенду AUC, если есть значения AUC
         if self.aucs:
             auc_labels = [f"AUC: {auc:.2f}" for auc in self.aucs]
-            plt.legend(self.lines, auc_labels, title="Площадь под кривой", loc='upper center')
+            # Создаем объекты легенды AUC. Важно передать 'handles=self.lines', если стили линий важны
+            auc_legend = plt.legend(handles=self.lines, labels=auc_labels, title="Площадь под кривой",
+                                    loc='upper center')
+            ax.add_artist(auc_legend)  # Добавляем легенду AUC
+
+        # Добавляем дополнительные легенды с корректным отображением цветов
+        for extra_legend_data in self.legend_info:
+            labels, title, loc = extra_legend_data
+            extra_handles = [plt.Line2D([], [], color=line.get_color(), marker=line.get_marker()) for line in
+                             self.lines[:len(labels)]]
+            extra_legend = plt.legend(handles=extra_handles, labels=labels, title=title, loc=loc)
+            ax.add_artist(extra_legend)
 
         plt.tight_layout()
         save_plot(file_path, self.title)

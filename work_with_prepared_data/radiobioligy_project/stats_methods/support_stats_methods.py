@@ -178,7 +178,7 @@ class SupportingFunctions:
         return np.interp(common_timepoints, time_data, skin_reactions)
 
     @staticmethod
-    def calculate_auc(x, y):
+    def calculate_auc(y, x):
         """
         Вычисляет площадь под кривой, используя метод трапеций.
 
@@ -189,7 +189,7 @@ class SupportingFunctions:
         Returns:
             float: Площадь под кривой.
         """
-        return np.trapz(y, x) / 1000
+        return np.trapz(y, x)
 
     @staticmethod
     def trim_data_to_timepoint(time_data, values, last_timepoint):

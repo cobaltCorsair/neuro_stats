@@ -56,7 +56,7 @@ class TumorDataComparatorAdvanced:
             error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
                             for std in std_dev]
 
-            drawgraph.add_plot(visualizer.time_data, mean_volumes, visualizer.experiment_params, "M/V абс.", error_margin, False)
+            drawgraph.add_plot(visualizer.time_data, mean_volumes, visualizer.experiment_params, ": M/V абс.", error_margin, False)
             x_data_lists.append(visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
 
         # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
@@ -68,16 +68,12 @@ class TumorDataComparatorAdvanced:
         Сравнивает средние относительные объемы опухолей для всех экспериментов и строит график.
         """
         SupportingFunctions.normalize_time_data_min(self.visualizers)
-        plt.figure(figsize=(12, 7))
+        drawgraph = GraphVisualizer("Сравнение среднего относительного объема опухолей", "Время, сут.",
+                                    "Относительный объем опухоли, отн. ед.")
+        drawgraph.setup_figure()
 
-        markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
-        marker_index = 0
-        marker_size = 12
-
-        # Списки для хранения объектов линий и значений AUC
-        lines = []
-        aucs = []
         time_ = []
+        x_data_lists = []
 
         for visualizer in self.visualizers:
             mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
@@ -86,53 +82,17 @@ class TumorDataComparatorAdvanced:
             error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
                             for std in std_dev]
 
-            formatted_params = format_experiment_params(visualizer.experiment_params)
             time_.append(visualizer.experiment_params[-1])
-            line, = plt.plot(
-                visualizer.time_data,
-                mean_rel_volumes,
-                marker=markers[marker_index % len(markers)],
-                markersize=marker_size,
-                linestyle='-',
-                zorder=2,
-                label=formatted_params
-            )
-            line_color = line.get_color()
-            custom_fill_between(visualizer.time_data,
-                                [mean - err for mean, err in zip(mean_rel_volumes, error_margin)],
-                                [mean + err for mean, err in zip(mean_rel_volumes, error_margin)],
-                                color=line_color, alpha=0.2)
+            drawgraph.add_plot(visualizer.time_data, mean_rel_volumes, visualizer.experiment_params, "", error_margin, False)
+            x_data_lists.append(visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
 
-            # Расчет AUC и добавление в список
-            auc_value = np.trapz(mean_rel_volumes, visualizer.time_data)
-            aucs.append(auc_value)
+        # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
+        drawgraph.update_axes_limits(x_data_lists)
 
-            lines.append(line)
-            marker_index += 1
-
-        max_time = max([max(v.time_data) for v in self.visualizers])
-        plt.xticks(ticks=range(0, max_time + 1, 3), rotation=0)
-        plt.xlabel("Время, сут.")
-        plt.ylabel("Относительный объем опухоли, отн. ед.")
-        plt.grid(True)
-
-        # Первая легенда с названиями экспериментов
-        first_legend = plt.legend(handles=lines, loc='upper left')
-        plt.gca().add_artist(first_legend)
-
-        # Вторая легенда с AUC
-        auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
-        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper center')
-
-        # Время
-        time_labels = [f"{time1}" for time1 in time_]
-        # plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='lower right')
-
-        plt.tight_layout()
-        save_plot('', "compare_relative_volumes")
-        plt.xlim(left=0)
-        plt.ylim(bottom=0)
-        plt.show()
+        # Добавляем дополнительные легенды
+        #time_labels = [f"Интервал: {time}" for time in time_]
+        #drawgraph.add_legend(time_labels, "Интервалы между облучениями", "lower right")
+        drawgraph.finalize_figure('')
 
     def compare_control_and_experiment(self, control_visualizers):
         """
@@ -398,7 +358,7 @@ if __name__ == "__main__":
     # Создание объекта сравнителя
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-    comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    #comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
     #comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
