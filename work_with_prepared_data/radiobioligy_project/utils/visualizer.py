@@ -21,13 +21,39 @@ class GraphVisualizer:
         self.max_y = None  # Дополнительно, можно добавить для Y
         self.legend_info = []  # Список для хранения информации для дополнительных легенд
 
-
     def setup_figure(self):
         plt.figure(figsize=self.figsize)
-        plt.title(self.title)
+        #plt.title(self.title)
         plt.xlabel(self.x_label)
         plt.ylabel(self.y_label)
         plt.grid(True)
+
+    @staticmethod
+    def prepare_and_add_data_to_graph(visualizers, value_extractor_func, graph_visualizer, label_prefix, calculate_auc=False):
+        """
+        Подготавливает и добавляет данные к объекту GraphVisualizer.
+
+        Parameters:
+            visualizers (list): Список объектов визуализатора.
+            value_extractor_func (function): Функция для извлечения значений из визуализатора.
+            graph_visualizer (GraphVisualizer): Объект GraphVisualizer для добавления данных.
+            label_prefix (str): Префикс для метки легенды графика.
+            :param calculate_auc:
+        """
+        x_data_lists = []
+        for visualizer in visualizers:
+            values = value_extractor_func(visualizer)
+            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
+                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), values)]
+            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
+                            for std in std_dev]
+
+            graph_visualizer.add_plot(visualizer.time_data, values, visualizer.experiment_params, f"{label_prefix}",
+                                      error_margin, calculate_auc)
+            x_data_lists.append(visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
+
+        # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
+        graph_visualizer.update_axes_limits(x_data_lists)
 
     def add_plot(self, x_data, y_data, params, label, error_margin=None, calculate_auc=False, fill_alpha=0.2):
         """

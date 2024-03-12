@@ -44,23 +44,14 @@ class TumorDataComparatorAdvanced:
         Сравнивает средние абсолютные объемы опухолей для всех экспериментов и строит график.
         """
         SupportingFunctions.normalize_time_data_min(self.visualizers)
-        drawgraph = GraphVisualizer("Сравнение среднего объема опухолей", "Время, сут.",
-                                    "Средний объем опухоли")
+        drawgraph = GraphVisualizer("Сравнение среднего объема опухолей", "Время, сут.", "Средний объем опухоли")
         drawgraph.setup_figure()
+        GraphVisualizer.prepare_and_add_data_to_graph(
+            self.visualizers,
+            lambda visualizer: visualizer.get_mean_tumor_volumes(),
+            drawgraph,
+            "M/V абс.: ")
 
-        x_data_lists = []
-        for visualizer in self.visualizers:
-            mean_volumes = visualizer.get_mean_tumor_volumes()
-            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_volumes)]
-            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
-                            for std in std_dev]
-
-            drawgraph.add_plot(visualizer.time_data, mean_volumes, visualizer.experiment_params, "M/V абс.: ", error_margin, False)
-            x_data_lists.append(visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
-
-        # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
-        drawgraph.update_axes_limits(x_data_lists)
         drawgraph.finalize_figure('')
 
     def compare_relative_volumes(self):
@@ -72,26 +63,20 @@ class TumorDataComparatorAdvanced:
                                     "Относительный объем опухоли, отн. ед.")
         drawgraph.setup_figure()
 
-        time_ = []
-        x_data_lists = []
+        # Собираем информацию об интервалах
+        time_intervals = [visualizer.experiment_params[-1] for visualizer in self.visualizers]
 
-        for visualizer in self.visualizers:
-            mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
-            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
-            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
-                            for std in std_dev]
-
-            time_.append(visualizer.experiment_params[-1])
-            drawgraph.add_plot(visualizer.time_data, mean_rel_volumes, visualizer.experiment_params, "", error_margin, False)
-            x_data_lists.append(visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
-
-        # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
-        drawgraph.update_axes_limits(x_data_lists)
-
-        # Добавляем дополнительные легенды
-        #time_labels = [f"Интервал: {time}" for time in time_]
+        # Используем лямбда-функцию для извлечения значений
+        GraphVisualizer.prepare_and_add_data_to_graph(
+            self.visualizers,
+            lambda visualizer: visualizer.get_mean_relative_tumor_volumes(),  # Лямбда-функция
+            drawgraph,
+            ""
+        )
+        # Добавляем легенду с интервалами
+        time_labels = [f"Интервал: {interval}" for interval in time_intervals]
         #drawgraph.add_legend(time_labels, "Интервалы между облучениями", "lower right")
+
         drawgraph.finalize_figure('')
 
     def compare_control_and_experiment(self, control_visualizers):
@@ -101,43 +86,31 @@ class TumorDataComparatorAdvanced:
         Parameters:
             control_visualizers (list): Список визуализаторов для контрольных групп.
         """
-        all_visualizers = list(self.visualizers) + control_visualizers
-        for viz in all_visualizers:
-            viz.time_data = [int(time) - int(viz.time_data[0]) for time in viz.time_data]
-
+        SupportingFunctions.normalize_time_data_min(list(self.visualizers) + control_visualizers)
         drawgraph = GraphVisualizer("Сравнение контрольных и экспериментальных групп", "Время, сут.",
                                     "Относительный объем опухоли, отн. ед.")
         drawgraph.setup_figure()
 
-        x_data_lists = []
+        # Функция для извлечения значений средних относительных объемов из визуализатора
+        value_extractor = lambda visualizer: visualizer.get_mean_relative_tumor_volumes()
 
-        # Визуализация для контрольных групп
-        for visualizer in control_visualizers:
-            mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
-            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
-            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
-                            for std in std_dev]
-            drawgraph.add_plot(visualizer.time_data, mean_rel_volumes, visualizer.experiment_params, "Контроль: без облучения",
-                               error_margin, True)
-            x_data_lists.append(visualizer.time_data)
+        # Добавляем данные контрольных групп
+        GraphVisualizer.prepare_and_add_data_to_graph(
+            control_visualizers,
+            value_extractor,
+            drawgraph,
+            "Контроль: без облучения",
+            calculate_auc=True  # Указываем, что нужно рассчитать AUC
+        )
 
-        # Визуализация для экспериментальных групп
-        for visualizer in self.visualizers:
-            mean_rel_volumes = visualizer.get_mean_relative_tumor_volumes()
-            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), mean_rel_volumes)]
-            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
-                            for std in std_dev]
-            drawgraph.add_plot(visualizer.time_data, mean_rel_volumes, visualizer.experiment_params, "Эксперимент: ",
-                               error_margin, True)
-            x_data_lists.append(visualizer.time_data)
-
-        # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
-        drawgraph.update_axes_limits(x_data_lists)
-
-        # Если нужно, добавляем дополнительные легенды
-        # Пример: drawgraph.add_legend(["Легенда 1", "Легенда 2"], "Дополнительные легенды", "lower right")
+        # Добавляем данные экспериментальных групп
+        GraphVisualizer.prepare_and_add_data_to_graph(
+            self.visualizers,
+            value_extractor,
+            drawgraph,
+            "Эксперимент: ",
+            calculate_auc=True  # Указываем, что нужно рассчитать AUC
+        )
 
         drawgraph.finalize_figure('')
 
@@ -303,12 +276,12 @@ if __name__ == "__main__":
     # Создание объекта сравнителя
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-    #comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    #comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    # comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
-    comparator.compare_control_and_experiment(control_visualizers)
+    #comparator.compare_control_and_experiment(control_visualizers)
 
     # Сравнение торможения роста опухоли между контрольной и несколькими экспериментальными группами
-    #comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
-    #comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)
+    # comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
+    # comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)
