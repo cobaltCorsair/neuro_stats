@@ -6,6 +6,7 @@ from utils.plotting_helpers import custom_fill_between, subscriptify, format_exp
 from utils.plot_saver import save_plot
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_tumor_data_excel
+from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
 original_fill_between = plt.fill_between
@@ -40,119 +41,27 @@ class TumorDataVisualizer:
         """
         Построение графика объемов опухолей для каждой крысы на одном графике.
         """
-        plt.figure(figsize=(12, 7))
-        self.time_data = [float(x) for x in self.time_data]
+        drawgraph = GraphVisualizer("Абсолютные объемы опухоли", "Время, сут.", "Объем опухоли, абс. ед.",
+                                    figsize=(12, 7))
+        drawgraph.setup_figure()
+        drawgraph.add_individual_plots(self.rat_labels, self.tumor_volumes, self.time_data)
 
-        # Список маркеров
-        markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
-        marker_index = 0
-        marker_size = 12  # Установка размера маркера
-
-        # Используем функцию для форматирования параметров эксперимента
         formatted_params = format_experiment_params(self.experiment_params)
-        plt.title(f"Абсолютные объемы опухоли", fontsize=24, y=1.02)
-
-        for label, volumes in zip(self.rat_labels, self.tumor_volumes):
-            clean_volumes = np.array(volumes)[~np.isnan(volumes)]
-            clean_time_data = np.array(self.time_data)[~np.isnan(volumes)]
-
-            if not list(clean_volumes):
-                continue
-
-            mean_volume = np.mean(clean_volumes)
-            std_dev = SupportingFunctions.calculate_std_dev(clean_volumes, mean_volume)
-            error_margin = SupportingFunctions.calculate_error_margin(std_dev, len(clean_volumes))
-
-            line, = plt.plot(clean_time_data, clean_volumes, marker=markers[marker_index % len(markers)],
-                             markersize=marker_size, linestyle='-', label=label)
-            marker_index += 1
-            line_color = line.get_color()
-
-            plt.fill_between(clean_time_data,
-                             clean_volumes - error_margin,
-                             clean_volumes + error_margin,
-                             color=line_color, alpha=0.2)
-
-        plt.xticks(np.arange(min(self.time_data), max(self.time_data) + 1, 3), fontsize=20)
-        plt.xlabel("Время, сут.", fontsize=24)
-        plt.ylabel("Объем опухоли", fontsize=24)
-        plt.grid(True)
-
-        # Первая легенда
-        custom_lines = [plt.Line2D([0], [0], color="none", marker="None", label=formatted_params)]
-        first_legend = plt.legend(handles=custom_lines, loc='upper center', fontsize=24, handlelength=0, handletextpad=0,
-                                  title_fontsize=16)
-        plt.gca().add_artist(first_legend)
-
-        # Вторая легенда с метками крыс
-        plt.legend(title="Метка крысы", fontsize=25, loc='upper left')
-        plt.tight_layout()
-
-        save_plot(f"{', '.join(self.experiment_params)}_absolute_volumes", "single_graph")
-        plt.show()
+        drawgraph.add_legend([formatted_params], "Параметры эксперимента", "upper center", display_marker=False)
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_absolute_volumes", 'Метка крысы')
 
     def plot_relative_tumor_volumes_single_graph(self):
         """
         Построение графика относительных объемов опухолей для каждой крысы на одном графике.
         """
-        relative_volumes = self.get_relative_tumor_volumes()
-
-        plt.figure(figsize=(12, 7))
-        self.time_data = [float(x) for x in self.time_data]
-
-        # Список маркеров
-        markers = ['o', 's', '^', 'x', '*', 'D', 'h', '+', 'p']
-        marker_index = 0
-        marker_size = 12
-
-        # Используем функцию для форматирования параметров эксперимента
+        drawgraph = GraphVisualizer("Относительные объемы опухоли", "Время, сут.", "Объем опухоли, отн. ед.",
+                                    figsize=(12, 7))
+        drawgraph.setup_figure()
+        drawgraph.add_individual_plots(self.rat_labels, self.get_relative_tumor_volumes(), self.time_data)
         formatted_params = format_experiment_params(self.experiment_params)
-
-        # plt.title("Относительные объемы опухоли", fontsize=24, y=1.02)
-
-        relative_volumes = self.get_relative_tumor_volumes()
-
-        for label, volumes in zip(self.rat_labels, relative_volumes):
-            clean_volumes = np.array(volumes)[~np.isnan(volumes)]
-            clean_time_data = np.array(self.time_data)[~np.isnan(volumes)]
-
-            if not list(clean_volumes):
-                continue
-
-            mean_volume = np.mean(clean_volumes)
-            std_dev = SupportingFunctions.calculate_std_dev(clean_volumes, mean_volume)
-            error_margin = SupportingFunctions.calculate_error_margin(std_dev, len(clean_volumes))
-
-            line, = plt.plot(clean_time_data, clean_volumes, marker=markers[marker_index % len(markers)],
-                             markersize=marker_size, linestyle='-', label=label)
-            marker_index += 1  # Переход к следующему маркеру для следующей крысы
-            line_color = line.get_color()
-
-            # Настройка тиков оси X
-            plt.fill_between(clean_time_data,
-                             clean_volumes - error_margin,
-                             clean_volumes + error_margin,
-                             color=line_color, alpha=0.2)
-
-        plt.xticks(np.arange(min(self.time_data), max(self.time_data) + 1, 3), fontsize=20)
-
-        plt.xlabel("Время, сут.", fontsize=24)
-        plt.ylabel("Объем опухоли", fontsize=24)
-        plt.grid(True)
-
-        # Создание "пустых" линий для легенды с параметрами эксперимента
-        custom_lines = [plt.Line2D([0], [0], color="none", marker="None", label=formatted_params)]
-        first_legend = plt.legend(handles=custom_lines, loc='upper center', fontsize=24,
-                                  handlelength=0, handletextpad=0)
-        plt.gca().add_artist(first_legend)
-        # Форматирование меток на оси Y без лишних нулей после точки
-
-        # Вторая легенда с метками крыс
-        plt.legend(title="Метка крысы", fontsize=25, loc='upper left')
-        plt.tight_layout()
-
-        save_plot(f"{', '.join(self.experiment_params)}_relative_volumes", "single_graph_rel")
-        plt.show()
+        # Добавление легенды с параметрами эксперимента
+        drawgraph.add_legend([formatted_params], "Параметры эксперимента", "upper center", display_marker=False)
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_relative_volumes", 'Метка крысы')
 
     def plot_mean_tumor_volume(self):
         """
@@ -330,16 +239,16 @@ if __name__ == '__main__':
     # ExtractOutliers(visualizer).exclude_rats(['г- пл'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
 
     # Сохраняем график для каждой крысы
-    visualizer.plot_tumor_volumes_single_graph()
+    #visualizer.plot_tumor_volumes_single_graph()
 
     # Сохраняем график относительных объемов для каждой крысы
     visualizer.plot_relative_tumor_volumes_single_graph()
 
     # Сохраняем график средних значений
-    visualizer.plot_mean_tumor_volume()
+    #visualizer.plot_mean_tumor_volume()
 
     # Сохраняем график среднего относительного объема опухоли
-    visualizer.plot_average_relative_tumor_volume()
+    #visualizer.plot_average_relative_tumor_volume()
 
     # Сохраняем график среднего относительного усреднённого объема опухоли
-    visualizer.plot_mean_relative_mean_tumor_volume()
+    #visualizer.plot_mean_relative_mean_tumor_volume()

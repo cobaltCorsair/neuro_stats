@@ -55,6 +55,29 @@ class GraphVisualizer:
         # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
         graph_visualizer.update_axes_limits(x_data_lists)
 
+    def add_individual_plots(self, labels, volumes_data, time_data):
+        """
+        Добавляет индивидуальные графики для каждой единицы данных (например, для каждой крысы).
+
+        Parameters:
+        - labels: метки для каждого графика (например, метки крыс).
+        - volumes_data: данные объемов для каждой метки.
+        - time_data: временные данные, общие для всех графиков.
+        """
+        for label, volumes in zip(labels, volumes_data):
+            clean_volumes = np.array(volumes)[~np.isnan(volumes)]
+            clean_time_data = np.array(time_data)[~np.isnan(volumes)]
+
+            if not list(clean_volumes):
+                continue
+
+            mean_volume = np.mean(clean_volumes)
+            std_dev = SupportingFunctions.calculate_std_dev(clean_volumes, mean_volume)
+            error_margin = SupportingFunctions.calculate_error_margin(std_dev, len(clean_volumes))
+
+            # Добавление данных на график
+            self.add_plot(clean_time_data, clean_volumes, {}, label, error_margin)
+
     def add_plot(self, x_data, y_data, params, label, error_margin=None, calculate_auc=False, fill_alpha=0.2):
         """
         Добавляет линейный график с опциональными доверительными интервалами и расчётом AUC.
@@ -67,6 +90,7 @@ class GraphVisualizer:
         - calculate_auc: флаг для расчёта площади под кривой (AUC)
         - fill_alpha: прозрачность заполнения доверительных интервалов
         """
+        x_data = np.array(x_data, dtype=float)
         line, = plt.plot(
             x_data,
             y_data,
@@ -74,7 +98,7 @@ class GraphVisualizer:
             markersize=self.marker_size,
             linestyle='-',
             zorder=2,
-            label= f"{label}{format_experiment_params(params)}"
+            label=f"{label}{format_experiment_params(params)}"
         )
         if calculate_auc:
             auc_value = SupportingFunctions.calculate_auc(y_data, x_data)
@@ -82,6 +106,10 @@ class GraphVisualizer:
 
         self.lines.append(line)
         self.marker_index += 1
+
+        # Проверяем, является ли error_margin итерируемым объектом, и если нет, преобразуем его
+        if error_margin is not None and not hasattr(error_margin, '__iter__'):
+            error_margin = [error_margin] * len(y_data)  # Создаем список с повторяющимся значением error_margin
 
         if error_margin is not None:
             line_color = line.get_color()
@@ -92,24 +120,30 @@ class GraphVisualizer:
 
         # Метод для обновления границ осей, вызываемый после добавления всех графиков
 
-    def add_legend(self, labels, title="", loc="upper left"):
-        """Добавляет информацию для создания легенды."""
-        self.legend_info.append((labels, title, loc))
+    def add_legend(self, labels, title="", loc="upper left", display_marker=True):
+        """Добавляет информацию для создания легенды. Поддерживает как одиночное значение, так и список."""
+        if not isinstance(labels, list):  # Если labels не список, преобразуем в список
+            labels = [labels]
+        self.legend_info.append((labels, title, loc, display_marker))
 
     def update_axes_limits(self, x_data_lists):
         # Изменено на правильное вычисление максимального значения из списка списков
         self.max_x = max(max(x_data) for x_data in x_data_lists) if x_data_lists else self.max_x
 
-    def finalize_figure(self, file_path):
+    def finalize_figure(self, file_path, main_legend_title=""):
         ax = plt.gca()  # Получаем текущий объект Axes
 
         # Устанавливаем деления оси X
+        if not self.max_x and self.lines:
+            # Предполагаем, что все линии используют одинаковый набор данных x, поэтому берем максимум из первой
+            self.max_x = max(self.lines[0].get_xdata())
+            # Устанавливаем деления оси X
         if self.max_x is not None:
-            plt.xticks(ticks=range(0, self.max_x + 1, 3), rotation=0)
+            plt.xticks(ticks=range(0, int(self.max_x) + 1, 3), rotation=0)
 
         # Создаем и добавляем основную легенду
         if self.lines:
-            first_legend = plt.legend(handles=self.lines, loc='upper left')
+            first_legend = plt.legend(handles=self.lines, loc='upper left', title=main_legend_title)
             ax.add_artist(first_legend)  # Важно использовать add_artist для сохранения основной легенды
 
         # Создаем и добавляем легенду AUC, если есть значения AUC
@@ -120,12 +154,16 @@ class GraphVisualizer:
                                     loc='center left')
             ax.add_artist(auc_legend)  # Добавляем легенду AUC
 
-        # Добавляем дополнительные легенды с корректным отображением цветов
         for extra_legend_data in self.legend_info:
-            labels, title, loc = extra_legend_data
-            extra_handles = [plt.Line2D([], [], color=line.get_color(), marker=line.get_marker()) for line in
-                             self.lines[:len(labels)]]
-            extra_legend = plt.legend(handles=extra_handles, labels=labels, title=title, loc=loc)
+            labels, title, loc, display_marker = extra_legend_data
+            if display_marker:
+                extra_handles = [plt.Line2D([], [], color=line.get_color(), marker=line.get_marker()) for line in
+                                 self.lines[:len(labels)]]
+            else:
+                # Если маркер не нужен, создаем элементы легенды без маркера
+                extra_handles = [plt.Line2D([], [], color="none", marker=None, linestyle="None", label=label) for label
+                                 in labels]
+            extra_legend = plt.legend(handles=extra_handles, title=title, loc=loc)
             ax.add_artist(extra_legend)
 
         plt.tight_layout()
