@@ -192,6 +192,21 @@ class SupportingFunctions:
         return np.trapz(y, x)
 
     @staticmethod
+    def calculate_tumor_growth_inhibition(control_volumes, experiment_volumes):
+        """
+        Расчет торможения роста опухоли между контрольной и экспериментальными группами.
+
+        Parameters:
+            control_volumes (list): Средние объемы опухоли для контрольной группы.
+            experiment_volumes (list): Средние объемы опухоли для экспериментальных групп.
+
+        Returns:
+            list: Значения торможения роста опухоли.
+        """
+        return [(control - experiment) / control * 100 for control, experiment in
+                zip(control_volumes, experiment_volumes)]
+
+    @staticmethod
     def trim_data_to_timepoint(time_data, values, last_timepoint):
         """
         Обрезает данные до указанной временной точки.
@@ -221,6 +236,28 @@ class SupportingFunctions:
         """
         for visualizer in visualizers:
             visualizer.time_data = [int(time) - int(visualizer.time_data[0]) for time in visualizer.time_data]
+
+    @staticmethod
+    def trim_data_to_common_length(visualizers):
+        """
+        Обрезает временные ряды и соответствующие им значения до минимальной общей длины.
+
+        Parameters:
+            visualizers (list): Список визуализаторов с данными для обработки.
+
+        Returns:
+            None: Модифицирует объекты визуализаторов 'in-place', обрезая их временные ряды и данные.
+        """
+        # Находим минимальную длину временного ряда среди всех визуализаторов
+        min_length = min(len(viz.time_data) for viz in visualizers)
+
+        # Обрезаем временные ряды и данные до этой минимальной длины
+        for viz in visualizers:
+            viz.time_data = viz.time_data[:min_length]
+            if hasattr(viz, 'tumor_volumes'):  # Если есть атрибут с объемами опухолей
+                viz.tumor_volumes = [vol[:min_length] for vol in viz.tumor_volumes]
+            if hasattr(viz, 'mean_tumor_volumes'):  # Если есть атрибут со средними объемами опухолей
+                viz.mean_tumor_volumes = viz.mean_tumor_volumes[:min_length]
 
     @staticmethod
     def normalize_time_data_min(visualizers):
