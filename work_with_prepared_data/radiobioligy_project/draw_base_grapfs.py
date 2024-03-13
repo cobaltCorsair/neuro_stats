@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params
-from utils.plot_saver import save_plot
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_tumor_data_excel
 from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
@@ -87,7 +86,7 @@ class TumorDataVisualizer:
         drawgraph.setup_figure()
 
         relative_tumor_volumes = self.get_relative_tumor_volumes()
-        mean_relative_volumes = np.nanmean(relative_tumor_volumes, axis=0)
+        mean_relative_volumes = self.get_mean_relative_tumor_volumes()
         std_dev_rel = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
                        zip(np.transpose(relative_tumor_volumes), mean_relative_volumes)]
         error_margin_rel = [SupportingFunctions.calculate_error_margin(std, len(relative_tumor_volumes)) for std in
@@ -104,55 +103,37 @@ class TumorDataVisualizer:
         """
         Построение графика среднего относительного объема опухоли, усредненного по всем крысам.
         """
-        plt.figure(figsize=(12, 7))
-        self.time_data = [float(x) for x in self.time_data]
+        drawgraph = GraphVisualizer("Средний относительный объем опухоли (V отн. ср.)", "Время, сут.",
+                                    "Относительный объем опухоли, отн. ед.", figsize=(12, 7))
+        drawgraph.setup_figure()
 
-        # Используем функцию для форматирования параметров эксперимента
-        formatted_params = format_experiment_params(self.experiment_params)
-
-        # plt.title("Средний относительный объем опухоли (V отн. ср.)", fontsize=24)
-
-        # Вычисление среднего относительного объема опухоли
+        # Вычисление среднего относительного объема опухоли и его доверительного интервала
         relative_mean_volumes = self.get_mean_relative_tumor_volumes()
-
-        # Расчет стандартного отклонения и доверительного интервала
-        std_dev_rel_mean = SupportingFunctions.calculate_std_dev(relative_mean_volumes,
-                                                                 np.nanmean(relative_mean_volumes))
+        mean_volumes = self.get_mean_tumor_volumes(relative_mean_volumes)
+        std_dev_rel_mean = SupportingFunctions.calculate_std_dev(relative_mean_volumes, mean_volumes)
         error_margin_rel_mean = SupportingFunctions.calculate_error_margin(std_dev_rel_mean, len(relative_mean_volumes))
 
-        marker = 'o'
-        marker_size = 12
+        # Добавление данных на график
+        drawgraph.add_plot(self.time_data, relative_mean_volumes, self.experiment_params, "M/V отн. ср.: ",
+                           error_margin_rel_mean)
 
-        plot_line = plt.plot(self.time_data, relative_mean_volumes, marker=marker, markersize=marker_size,
-                             linestyle='-', color='b', label='M/V отн. ср.')
-        plt.fill_between(self.time_data, relative_mean_volumes - error_margin_rel_mean,
-                         relative_mean_volumes + error_margin_rel_mean, color='b', alpha=0.2)
+        formatted_params = format_experiment_params(self.experiment_params)
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_mean_relative_mean_volumes")
 
-        plt.xticks(np.arange(min(self.time_data), max(self.time_data) + 1, 3), fontsize=20)
-        plt.xlabel("Время, сут.", fontsize=24)
-        plt.ylabel("Объем опухоли", fontsize=24)
-        plt.grid(True)
-
-        # Создание "пустых" линий для легенды с параметрами эксперимента
-        custom_lines = [plt.Line2D([0], [0], color="none", marker="None", label=formatted_params)]
-        first_legend = plt.legend(handles=custom_lines, loc='upper left', fontsize=24, handlelength=0, handletextpad=0)
-        plt.gca().add_artist(first_legend)  # Добавляем первую легенду обратно на график
-
-        # Основная легенда с меткой "M/V отн. ср.", созданная после первой легенды
-        plt.legend(handles=plot_line, fontsize=25, loc='lower right')  # Исправление: handles должно быть списком
-
-        plt.tight_layout()
-        save_plot(f"{', '.join(self.experiment_params)}_mean_relative_mean_volumes", "mean_relative_mean_volume")
-        plt.show()
-
-    def get_mean_tumor_volumes(self) -> np.ndarray:
+    def get_mean_tumor_volumes(self, volumes=None) -> np.ndarray:
         """
         Вычисляет средний объем опухоли для всех крыс на каждом временном интервале.
+        Поддерживает внешние данные о объемах опухоли.
+
+        Параметры:
+            volumes (np.ndarray, optional): Внешние данные объемов опухоли. Если не указан, используется self.tumor_volumes.
 
         Возвращает:
             np.ndarray: Массив средних объемов опухоли.
         """
-        return np.nanmean(self.tumor_volumes, axis=0)
+        if volumes is None:
+            volumes = self.tumor_volumes
+        return np.nanmean(volumes, axis=0)
 
     def get_relative_tumor_volumes(self) -> np.ndarray:
         """
@@ -188,16 +169,16 @@ if __name__ == '__main__':
     # ExtractOutliers(visualizer).exclude_rats(['г- пл'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
 
     # Сохраняем график для каждой крысы
-    #visualizer.plot_tumor_volumes_single_graph()
+    visualizer.plot_tumor_volumes_single_graph()
 
     # Сохраняем график относительных объемов для каждой крысы
-    #visualizer.plot_relative_tumor_volumes_single_graph()
+    visualizer.plot_relative_tumor_volumes_single_graph()
 
     # Сохраняем график средних значений
-    #visualizer.plot_mean_tumor_volume()
+    visualizer.plot_mean_tumor_volume()
 
     # Сохраняем график среднего относительного объема опухоли
     visualizer.plot_average_relative_tumor_volume()
 
     # Сохраняем график среднего относительного усреднённого объема опухоли
-    #visualizer.plot_mean_relative_mean_tumor_volume()
+    visualizer.plot_mean_relative_mean_tumor_volume()
