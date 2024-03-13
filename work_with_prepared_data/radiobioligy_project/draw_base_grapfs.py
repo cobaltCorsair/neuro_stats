@@ -67,55 +67,24 @@ class TumorDataVisualizer:
         """
         Построение графика среднего объема опухоли со всеми крысами.
         """
-        plt.figure(figsize=(12, 7))
-        self.time_data = [float(x) for x in self.time_data]
-
-        # Используем функцию для форматирования параметров эксперимента
-        formatted_params = format_experiment_params(self.experiment_params)
-
-        plt.title("(M/V абс.)", fontsize=24)
+        drawgraph = GraphVisualizer("", "Время, сут.", "Объем опухоли, абс. ед.", figsize=(12, 7))
+        drawgraph.setup_figure()
 
         mean_volumes = self.get_mean_tumor_volumes()
         std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
                    zip(np.transpose(self.tumor_volumes), mean_volumes)]
         error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.tumor_volumes)) for std in std_dev]
 
-        marker = 'o'
-        marker_size = 12  # Установка размера маркера
-
-        plt.plot(self.time_data, mean_volumes, marker=marker, markersize=marker_size, linestyle='-', color='b',
-                 label='M/V абс.')
-        plt.fill_between(self.time_data, mean_volumes - error_margin, mean_volumes + error_margin, color='b', alpha=0.2)
-
-        plt.xticks(np.arange(min(self.time_data), max(self.time_data) + 1, 3), fontsize=20)
-
-        plt.xlabel("Время, сут.", fontsize=24)
-        plt.ylabel("Объем опухоли", fontsize=24)
-        plt.grid(True)
-
-        # Создание "пустых" линий для легенды с параметрами эксперимента
-        custom_lines = [plt.Line2D([0], [0], color="none", marker="None", label=formatted_params)]
-        first_legend = plt.legend(handles=custom_lines, loc='upper left', fontsize=24, handlelength=0, handletextpad=0)
-        plt.gca().add_artist(first_legend)  # Добавляем первую легенду обратно на график
-
-        # Основная легенда с меткой "M/V абс."
-        plt.legend(fontsize=25, loc='lower right')
-        plt.tight_layout()
-
-        save_plot(f"{', '.join(self.experiment_params)}_mean_volumes", "mean_volume")
-        plt.show()
+        # Добавление данных на график
+        drawgraph.add_plot(self.time_data, mean_volumes, self.experiment_params, "M/V абс.: ", error_margin)
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_mean_volumes")
 
     def plot_average_relative_tumor_volume(self):
         """
         Построение графика среднего относительного объема опухоли со всеми крысами.
         """
-        plt.figure(figsize=(12, 7))
-        self.time_data = [float(x) for x in self.time_data]
-
-        # Используем функцию для форматирования параметров эксперимента
-        formatted_params = format_experiment_params(self.experiment_params)
-
-        plt.title("(V отн.)", fontsize=24)
+        drawgraph = GraphVisualizer("(V отн.)", "Время, сут.", "Относительный объем опухоли, отн. ед.", figsize=(12, 7))
+        drawgraph.setup_figure()
 
         relative_tumor_volumes = self.get_relative_tumor_volumes()
         mean_relative_volumes = np.nanmean(relative_tumor_volumes, axis=0)
@@ -124,32 +93,12 @@ class TumorDataVisualizer:
         error_margin_rel = [SupportingFunctions.calculate_error_margin(std, len(relative_tumor_volumes)) for std in
                             std_dev_rel]
 
-        marker = 'o'
-        marker_size = 12
+        # Добавление данных на график
+        drawgraph.add_plot(self.time_data, mean_relative_volumes, self.experiment_params, "M/V отн.: ",
+                           error_margin_rel)
 
-        plt.plot(self.time_data, mean_relative_volumes, marker=marker, markersize=marker_size, linestyle='-', color='b',
-                 label='M/V отн.')
-        plt.fill_between(self.time_data, mean_relative_volumes - error_margin_rel,
-                         mean_relative_volumes + error_margin_rel, color='b', alpha=0.2)
-
-        plt.xticks(np.arange(min(self.time_data), max(self.time_data) + 1, 3), fontsize=20)
-
-        plt.xlabel("Время, сут.", fontsize=24)
-        plt.ylabel("Объем опухоли", fontsize=24)
-        plt.grid(True)
-
-        # Создание "пустых" линий для легенды с параметрами эксперимента
-        custom_lines = [plt.Line2D([0], [0], color="none", marker="None", label=formatted_params)]
-        first_legend = plt.legend(handles=custom_lines, loc='upper left', fontsize=24,
-                                  handlelength=0, handletextpad=0)
-        plt.gca().add_artist(first_legend)
-
-        # Основная легенда с меткой "M/V отн."
-        plt.legend(fontsize=25, loc='lower right')
-        plt.tight_layout()
-
-        save_plot(f"{', '.join(self.experiment_params)}_average_relative_volumes", "mean_relative_volume")
-        plt.show()
+        formatted_params = format_experiment_params(self.experiment_params)
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_average_relative_volumes")
 
     def plot_mean_relative_mean_tumor_volume(self):
         """
@@ -242,13 +191,13 @@ if __name__ == '__main__':
     #visualizer.plot_tumor_volumes_single_graph()
 
     # Сохраняем график относительных объемов для каждой крысы
-    visualizer.plot_relative_tumor_volumes_single_graph()
+    #visualizer.plot_relative_tumor_volumes_single_graph()
 
     # Сохраняем график средних значений
     #visualizer.plot_mean_tumor_volume()
 
     # Сохраняем график среднего относительного объема опухоли
-    #visualizer.plot_average_relative_tumor_volume()
+    visualizer.plot_average_relative_tumor_volume()
 
     # Сохраняем график среднего относительного усреднённого объема опухоли
     #visualizer.plot_mean_relative_mean_tumor_volume()
