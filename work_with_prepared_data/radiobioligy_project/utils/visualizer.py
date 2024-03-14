@@ -13,6 +13,8 @@ class GraphVisualizer:
         self.x_label = x_label
         self.y_label = y_label
         self.markers = ['o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_']
+        self.linestyles = ['-', '--', '-.', ':']
+        self.linestyle_index = 0
         self.marker_index = 0
         self.marker_size = 12
         self.lines = []
@@ -89,14 +91,19 @@ class GraphVisualizer:
         - error_margin: доверительные интервалы или погрешности для заполнения (опционально)
         - calculate_auc: флаг для расчёта площади под кривой (AUC)
         - fill_alpha: прозрачность заполнения доверительных интервалов
+        - linestyle: стиль линии графика.
         """
+        # Выбор стиля линии и инкремент индекса
+        current_linestyle = self.linestyles[self.linestyle_index % len(self.linestyles)]
+        self.linestyle_index += 1
+
         x_data = np.array(x_data, dtype=float)
         line, = plt.plot(
             x_data,
             y_data,
             marker=self.markers[self.marker_index % len(self.markers)],
             markersize=self.marker_size,
-            linestyle='-',
+            linestyle=current_linestyle,
             zorder=2,
             label=f"{label}{format_experiment_params(params)}"
         )
@@ -130,7 +137,7 @@ class GraphVisualizer:
         # Изменено на правильное вычисление максимального значения из списка списков
         self.max_x = max(max(x_data) for x_data in x_data_lists) if x_data_lists else self.max_x
 
-    def finalize_figure(self, file_path, main_legend_title=""):
+    def finalize_figure(self, file_path, main_legend_title="", ncol=1, legend_fontsize='medium'):
         ax = plt.gca()  # Получаем текущий объект Axes
 
         # Устанавливаем деления оси X
@@ -143,7 +150,7 @@ class GraphVisualizer:
 
         # Создаем и добавляем основную легенду
         if self.lines:
-            first_legend = plt.legend(handles=self.lines, loc='upper left', title=main_legend_title)
+            first_legend = plt.legend(handles=self.lines, loc='upper left', title=main_legend_title, ncol=ncol, fontsize=legend_fontsize)
             ax.add_artist(first_legend)  # Важно использовать add_artist для сохранения основной легенды
 
         # Создаем и добавляем легенду AUC, если есть значения AUC
@@ -151,7 +158,7 @@ class GraphVisualizer:
             auc_labels = [f"AUC: {auc:.2f}" for auc in self.aucs]
             # Создаем объекты легенды AUC. Важно передать 'handles=self.lines', если стили линий важны
             auc_legend = plt.legend(handles=self.lines, labels=auc_labels, title="Площадь под кривой",
-                                    loc='center left')
+                                    loc='center left', fontsize=legend_fontsize)
             ax.add_artist(auc_legend)  # Добавляем легенду AUC
 
         for extra_legend_data in self.legend_info:
@@ -163,7 +170,7 @@ class GraphVisualizer:
                 # Если маркер не нужен, создаем элементы легенды без маркера
                 extra_handles = [plt.Line2D([], [], color="none", marker=None, linestyle="None", label=label) for label
                                  in labels]
-            extra_legend = plt.legend(handles=extra_handles, title=title, loc=loc)
+            extra_legend = plt.legend(handles=extra_handles, title=title, loc=loc, fontsize=legend_fontsize)
             ax.add_artist(extra_legend)
 
         plt.tight_layout()

@@ -5,6 +5,7 @@ from draw_base_grapfs import TumorDataVisualizer
 from utils.plotting_helpers import custom_fill_between, format_experiment_params
 from utils.plot_saver import save_plot
 from stats_methods.support_stats_methods import SupportingFunctions
+from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
 original_fill_between = plt.fill_between
@@ -38,53 +39,45 @@ class TumorDataComparator:
         """
         Сравнивает абсолютные объемы опухолей между экспериментами и строит соответствующий график.
         """
-        # Нормализовать временные метки
+        # Нормализация временных меток всех визуализаторов
         SupportingFunctions.normalize_time_data(self.visualizers)
 
-        plt.figure(figsize=(12, 7))
-        linestyles = ['-', '--', '-.', ':']
-        for visualizer, linestyle in zip(self.visualizers, linestyles[:len(self.visualizers)]):
+        drawgraph = GraphVisualizer("Сравнение экспериментов", "Время, сут.)", "Объем опухоли, абс. ед.", figsize=(12, 7))
+        drawgraph.setup_figure()
+
+        for visualizer in self.visualizers:
             formatted_params = format_experiment_params(visualizer.experiment_params)
             for label, volumes in zip(visualizer.rat_labels, visualizer.tumor_volumes):
-                plt.plot(visualizer.time_data, volumes, marker='o', linestyle=linestyle,
-                         label=f"{formatted_params}: {label}")
+                # Создаем полный label, включающий параметры эксперимента и метку крысы
+                full_label = f"{formatted_params}: {label}"
+                # Нет необходимости в error_margin и calculate_auc для этого графика
+                drawgraph.add_plot(visualizer.time_data, volumes, {}, full_label)
 
-        plt.title("Сравнение экспериментов")
-        plt.xticks()
-        plt.xlabel("Время (дни)")
-        plt.ylabel("Объем опухоли")
-        plt.grid(True)
-        plt.legend(title="Метка крысы")
-        plt.tight_layout()
-        save_plot('', "compare_tumor_volumes")
-        plt.show()
+        # Можем добавить дополнительную легенду, если нужно. В этом случае просто используем finalize_figure
+        drawgraph.finalize_figure("compare_tumor_volumes", 'Метка крысы', 2, 18)
 
     def compare_relative_tumor_volumes(self):
         """
         Сравнивает относительные объемы опухолей между экспериментами и строит соответствующий график.
         """
-        # Нормализовать временные метки
+        # Нормализация временных меток всех визуализаторов
         SupportingFunctions.normalize_time_data(self.visualizers)
 
-        plt.figure(figsize=(12, 7))
-        linestyles = ['-', '--', '-.', ':']
-        for visualizer, linestyle in zip(self.visualizers, linestyles[:len(self.visualizers)]):
+        drawgraph = GraphVisualizer("Сравнение относительных объемов опухолей", "Время, сут.",
+                                    "Объем опухоли, отн. ед.", figsize=(12, 7))
+        drawgraph.setup_figure()
+
+        for visualizer in self.visualizers:
             formatted_params = format_experiment_params(visualizer.experiment_params)
-            for label, volumes in zip(visualizer.rat_labels, visualizer.get_relative_tumor_volumes()):
-                plt.plot(visualizer.time_data, volumes, marker='o', linestyle=linestyle,
-                         label=f"{formatted_params}: {label}")
+            relative_volumes = visualizer.data_processor.get_relative_tumor_volumes()
+            for label, volumes in zip(visualizer.rat_labels, relative_volumes):
+                # Создаем полный label, включающий параметры эксперимента и метку крысы
+                full_label = f"{formatted_params}: {label}"
+                # Нет необходимости в error_margin и calculate_auc для этого графика
+                drawgraph.add_plot(visualizer.time_data, volumes, {}, full_label)
 
-        plt.title("Сравнение относительных объемов опухолей")
-        plt.xticks()
-        plt.xlabel("Время (дни)")
-        plt.ylabel("Относительный объем опухоли")
-        plt.grid(True)
-        plt.legend(title="Метка крысы")
-        plt.tight_layout()
-
-        # Сохранение графика
-        save_plot('', "compare_relative_tumor_volumes")
-        plt.show()
+        # Можем добавить дополнительную легенду, если нужно. В этом случае просто используем finalize_figure
+        drawgraph.finalize_figure("compare_relative_tumor_volumes", 'Метка крысы', 2, 18)
 
 
 if __name__ == "__main__":
