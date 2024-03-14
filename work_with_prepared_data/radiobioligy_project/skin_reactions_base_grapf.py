@@ -64,39 +64,25 @@ class SkinReactionsVisualizer:
         drawgraph.finalize_figure(self.file_path, 'Метки крыс', 2, 25)
 
     def plot_mean_skin_reactions(self):
-        # Преобразование self.time_data в числовые значения
-        self.time_data = [float(x) for x in self.time_data]
-        plt.figure(figsize=(15, 8))
-        formatted_params = format_experiment_params(self.experiment_params)
-        plt.title(f"Средние кожные реакции, Параметры эксперимента: {formatted_params}", fontsize=24, y=1.02)
+        drawgraph = GraphVisualizer(
+            f"Средние кожные реакции, Параметры эксперимента: {format_experiment_params(self.experiment_params)}",
+            "Время, сут.",
+            "Средние кожные реакции, абс. ед.",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
 
+        # Получение средних кожных реакций и их статистических характеристик
         mean_reactions, std_dev, error_margin = self.get_mean_skin_reactions()
 
-        # Используем первый маркер из списка для единообразия
-        marker = 'o'
-        marker_size = 12  # Установка размера маркера
+        # Добавление данных на график
+        drawgraph.add_plot(self.time_data, mean_reactions, self.experiment_params, "", error_margin)
 
-        # Отрисовка линии и сохранение её цвета
-        line, = plt.plot(self.time_data, mean_reactions, marker=marker, markersize=marker_size, linestyle='-',
-                         label='Среднее')
-        line_color = line.get_color()  # Получение цвета линии
+        # Устанавливаем тики по оси X с шагом в 3 дня и поворачиваем их на 45 градусов
+        if drawgraph.max_x is not None:
+            plt.xticks(ticks=np.arange(0, int(drawgraph.max_x) + 1, 3), rotation=45)
 
-        # Использование цвета линии для доверительных интервалов
-        plt.fill_between(self.time_data, mean_reactions - error_margin, mean_reactions + error_margin, color=line_color,
-                         alpha=0.2)
-
-        # Настройка тиков оси X для отображения каждые 3 дня
-        min_day = min(self.time_data)
-        max_day = max(self.time_data)
-        plt.xticks(np.arange(min_day, max_day + 1, 3), fontsize=20)
-
-        plt.xlabel("Время, сут.", fontsize=24)
-        plt.ylabel("Средние кожные реакции", fontsize=24)
-        plt.grid(True)
-        plt.legend(fontsize=25)
-        plt.tight_layout()
-        save_plot('', f"Mean_Skin_Reactions_{formatted_params}")
-        plt.show()
+        drawgraph.finalize_figure('', '', 1, 25)
 
     def get_mean_skin_reactions(self):
         mean_reactions = np.nanmean(self.skin_reactions, axis=0)
@@ -183,12 +169,12 @@ if __name__ == '__main__':
     # ExtractOutliers(visualizer).exclude_rats(['б/м'], 'tumor_volumes')  # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
     # ExtractOutliers(visualizer).exclude_rats(['г', 'х'], 'tumor_volumes')  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
 
-    visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
-    # visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
+    #visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
+    visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
 
     # Отображения средних кожных реакций для нескольких экспериментов
     file_paths = [
         r'C:\dev\neuro_stats\work_with_prepared_data\datas\skin_reactions\skin_reactions_p_25,2_n_7,2_2023_2.xlsx',
         r'C:\dev\neuro_stats\work_with_prepared_data\datas\skin_reactions\skin_reactions_p_25,2_n_7,2_2023_3.xlsx',
     ]
-    SkinReactionsVisualizer.plot_multiple_experiments(file_paths)
+    #SkinReactionsVisualizer.plot_multiple_experiments(file_paths)
