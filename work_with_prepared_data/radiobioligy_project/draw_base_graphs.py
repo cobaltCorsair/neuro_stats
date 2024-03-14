@@ -1,4 +1,4 @@
-# файл draw_base_grapfs.py
+# файл draw_base_graphs.py
 
 import numpy as np
 import matplotlib.pyplot as plt

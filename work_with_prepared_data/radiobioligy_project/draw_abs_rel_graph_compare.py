@@ -1,14 +1,12 @@
 # файл draw_abs_rel_graph_compare.py
 
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from typing import List
-from draw_base_grapfs import TumorDataVisualizer
+from draw_base_graphs import TumorDataVisualizer
 from controls import ControlGroupVisualizer
 from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions
-from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import process_tumor_data_excel
 from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
 
 # Переопределяем функцию

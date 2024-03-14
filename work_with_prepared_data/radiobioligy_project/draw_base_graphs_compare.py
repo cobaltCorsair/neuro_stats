@@ -1,7 +1,7 @@
 # файл draw_base_graphs_compare.py
 
 import matplotlib.pyplot as plt
-from draw_base_grapfs import TumorDataVisualizer
+from draw_base_graphs import TumorDataVisualizer
 from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions
 from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
