@@ -9,6 +9,7 @@ from utils.plotting_helpers import custom_fill_between, subscriptify, format_exp
 from utils.plot_saver import save_plot
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
+from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import SkinReactionsDataProcessor
 from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
@@ -35,7 +36,9 @@ plt.rcParams.update({
 class SkinReactionsVisualizer:
     def __init__(self, file_path: str):
         self.file_path = file_path
-        self.experiment_params, self.time_data, self.rat_labels, self.skin_reactions = process_skin_data_excel(file_path)
+        self.experiment_params, self.time_data, self.rat_labels, self.skin_reactions = process_skin_data_excel(
+            file_path)
+        self.data_processor = SkinReactionsDataProcessor(self.skin_reactions)
 
     def plot_skin_reactions(self):
         drawgraph = GraphVisualizer(
@@ -56,11 +59,6 @@ class SkinReactionsVisualizer:
 
             # Добавление данных на график
             drawgraph.add_plot(clean_time_data, clean_reactions, {}, label)
-
-        # Устанавливаем тики по оси X с шагом в 3 дня и поворачиваем их на 45 градусов
-        if drawgraph.max_x is not None:
-            plt.xticks(ticks=np.arange(0, int(drawgraph.max_x) + 1, 3), rotation=45)
-
         drawgraph.finalize_figure(self.file_path, 'Метки крыс', 2, 25)
 
     def plot_mean_skin_reactions(self):
@@ -71,91 +69,43 @@ class SkinReactionsVisualizer:
             figsize=(12, 7)
         )
         drawgraph.setup_figure()
-
         # Получение средних кожных реакций и их статистических характеристик
-        mean_reactions, std_dev, error_margin = self.get_mean_skin_reactions()
-
+        mean_reactions, std_dev, error_margin = self.data_processor.get_mean_skin_reactions()
         # Добавление данных на график
         drawgraph.add_plot(self.time_data, mean_reactions, self.experiment_params, "", error_margin)
-
-        # Устанавливаем тики по оси X с шагом в 3 дня и поворачиваем их на 45 градусов
-        if drawgraph.max_x is not None:
-            plt.xticks(ticks=np.arange(0, int(drawgraph.max_x) + 1, 3), rotation=45)
-
         drawgraph.finalize_figure('', '', 1, 25)
-
-    def get_mean_skin_reactions(self):
-        mean_reactions = np.nanmean(self.skin_reactions, axis=0)
-        std_dev = [SupportingFunctions.calculate_std_dev(values, mean_value) for values, mean_value in zip(np.transpose(self.skin_reactions), mean_reactions)]
-        error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.skin_reactions)) for std in std_dev]
-        return mean_reactions, np.array(std_dev), np.array(error_margin)
 
     @staticmethod
     def plot_multiple_experiments(file_paths: List[str]):
-        plt.figure(figsize=(12, 7))
+        drawgraph = GraphVisualizer(
+            "Сравнение кожных реакций между экспериментами",
+            "Время, сут.",
+            "Кожные реакции, усл. ед.",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
         common_timepoints = list(range(0, 25))
-        aucs = []
-        lines = []
-        time_ = []
 
-        # Список маркеров
-        markers = ['o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_']
-        marker_size = 12  # Установка размера маркера
-
-        for file_path, marker in zip(file_paths, markers):
+        for file_path in file_paths:
             visualizer = SkinReactionsVisualizer(file_path)
-            mean_reactions, std_dev, _ = visualizer.get_mean_skin_reactions()
-            mean_reactions_interp = SupportingFunctions.interpolate_data_to_common_timepoints(
-                visualizer.time_data, mean_reactions, common_timepoints
-            )
-            std_dev_interp = SupportingFunctions.interpolate_data_to_common_timepoints(
-                visualizer.time_data, std_dev, common_timepoints  # Предполагаемая интерполяция стандартного отклонения
-            )
-            error_margin = std_dev_interp / np.sqrt(len(file_paths))  # Предполагаемый расчет доверительного интервала
+            mean_reactions, std_dev, _ = visualizer.data_processor.get_mean_skin_reactions()
 
-            auc = SupportingFunctions.calculate_auc(common_timepoints, mean_reactions_interp)
-            aucs.append(auc)
+            interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(visualizer.time_data,
+                                                                                            mean_reactions,
+                                                                                            common_timepoints)
+            interpolated_std_dev = SupportingFunctions.interpolate_data_to_common_timepoints(visualizer.time_data,
+                                                                                             std_dev,
+                                                                                             common_timepoints)
+            error_margin = [SupportingFunctions.calculate_error_margin(std, len(file_paths)) for std in
+                            interpolated_std_dev]
             label = format_experiment_params(visualizer.experiment_params)
-            time_.append(visualizer.experiment_params[-1])
-            line, = plt.plot(common_timepoints,
-                             mean_reactions_interp,
-                             marker=marker,
-                             linestyle='-',
-                             markersize=marker_size,
-                             label=label)
-            lines.append(line)
-            plt.fill_between(common_timepoints,
-                             mean_reactions_interp - error_margin,
-                             mean_reactions_interp + error_margin,
-                             alpha=0.2, color=line.get_color())
 
-        first_legend = plt.legend(title="", loc='lower right')
-        plt.gca().add_artist(first_legend)
-        labels = [f'{auc:.2e} тыс.' for auc in aucs]
-        plt.xticks(np.arange(25)[::3], rotation=0)
-        plt.xlabel("Время, сут.")
-        plt.ylabel("Кожные реакции, усл. ед.")
-        plt.grid(True)
-        plt.tight_layout()
+            # Добавление данных на график с автоматическим выбором стиля линии и маркера
+            drawgraph.add_plot(common_timepoints, interpolated_values, {}, label, error_margin, calculate_auc=True)
 
-        # Вторая легенда с AUC
-        auc_labels = [f"AUC: {auc:.2f}" for auc in aucs]
-        plt.legend(lines, auc_labels, title="Площадь под кривой", loc='upper left')
+        base_file_name = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths])
+        drawgraph.finalize_figure(base_file_name, ncol=1, legend_fontsize='20')
 
-        # Вторая легенда с интервалом облучения
-        #time_labels = [f"{time1}" for time1 in time_]
-        #plt.legend(lines, time_labels, title="Интервал между \n облучениями", loc='upper left')
-
-        # Сбор частей имен файлов
-        file_name_parts = [os.path.splitext(os.path.basename(file_path))[0] for file_path in file_paths]
-        base_file_name = '_'.join(file_name_parts)
-
-        # Использование статического метода для сохранения графика
-        save_plot(base_file_name, 'multiple_experiments')
-
-        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
-        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
-        plt.show()
 
 if __name__ == '__main__':
     # Пример использования
@@ -169,12 +119,12 @@ if __name__ == '__main__':
     # ExtractOutliers(visualizer).exclude_rats(['б/м'], 'tumor_volumes')  # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
     # ExtractOutliers(visualizer).exclude_rats(['г', 'х'], 'tumor_volumes')  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
 
-    #visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
-    visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
+    # visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
+    # visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
 
     # Отображения средних кожных реакций для нескольких экспериментов
     file_paths = [
         r'C:\dev\neuro_stats\work_with_prepared_data\datas\skin_reactions\skin_reactions_p_25,2_n_7,2_2023_2.xlsx',
         r'C:\dev\neuro_stats\work_with_prepared_data\datas\skin_reactions\skin_reactions_p_25,2_n_7,2_2023_3.xlsx',
     ]
-    #SkinReactionsVisualizer.plot_multiple_experiments(file_paths)
+    SkinReactionsVisualizer.plot_multiple_experiments(file_paths)

@@ -158,7 +158,7 @@ class GraphVisualizer:
             auc_labels = [f"AUC: {auc:.2f}" for auc in self.aucs]
             # Создаем объекты легенды AUC. Важно передать 'handles=self.lines', если стили линий важны
             auc_legend = plt.legend(handles=self.lines, labels=auc_labels, title="Площадь под кривой",
-                                    loc='center left', fontsize=legend_fontsize)
+                                    loc='upper right', fontsize=legend_fontsize)
             ax.add_artist(auc_legend)  # Добавляем легенду AUC
 
         for extra_legend_data in self.legend_info:
