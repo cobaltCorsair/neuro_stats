@@ -44,11 +44,11 @@ class TumorDataComparatorAdvanced:
         Сравнивает средние абсолютные объемы опухолей для всех экспериментов и строит график.
         """
         SupportingFunctions.normalize_time_data_min(self.visualizers)
-        drawgraph = GraphVisualizer("Сравнение среднего объема опухолей", "Время, сут.", "Средний объем опухоли")
+        drawgraph = GraphVisualizer("Сравнение среднего объема опухолей", "Время, сут.", "Средний объем опухоли, абс. ед.")
         drawgraph.setup_figure()
         GraphVisualizer.prepare_and_add_data_to_graph(
             self.visualizers,
-            lambda visualizer: visualizer.get_mean_tumor_volumes(),
+            lambda visualizer: visualizer.data_processor.get_mean_tumor_volumes(),
             drawgraph,
             "M/V абс.: ")
 
@@ -69,7 +69,7 @@ class TumorDataComparatorAdvanced:
         # Используем лямбда-функцию для извлечения значений
         GraphVisualizer.prepare_and_add_data_to_graph(
             self.visualizers,
-            lambda visualizer: visualizer.get_mean_relative_tumor_volumes(),  # Лямбда-функция
+            lambda visualizer: visualizer.data_processor.get_mean_relative_tumor_volumes(),  # Лямбда-функция
             drawgraph,
             ""
         )
@@ -92,7 +92,7 @@ class TumorDataComparatorAdvanced:
         drawgraph.setup_figure()
 
         # Функция для извлечения значений средних относительных объемов из визуализатора
-        value_extractor = lambda visualizer: visualizer.get_mean_relative_tumor_volumes()
+        value_extractor = lambda visualizer: visualizer.data_processor.get_mean_relative_tumor_volumes()
 
         # Добавляем данные контрольных групп
         GraphVisualizer.prepare_and_add_data_to_graph(
@@ -123,10 +123,10 @@ class TumorDataComparatorAdvanced:
         drawgraph.setup_figure()
 
         # Подготовка данных
-        control_mean_volumes = control_visualizer.get_mean_tumor_volumes()
+        control_mean_volumes = control_visualizer.data_processor.get_mean_tumor_volumes()
         x_data_lists = []
         for experiment_visualizer in experiment_visualizers:
-            experiment_mean_volumes = experiment_visualizer.get_mean_tumor_volumes()
+            experiment_mean_volumes = experiment_visualizer.data_processor.get_mean_tumor_volumes()
             tumor_growth_inhibition = SupportingFunctions.calculate_tumor_growth_inhibition(control_mean_volumes,
                                                                                             experiment_mean_volumes)
             label = ''
@@ -148,12 +148,12 @@ class TumorDataComparatorAdvanced:
 
         # Обрезаем данные до минимальной длины
         control_time_data = control_visualizer.time_data[:min_length]
-        control_mean_volumes = control_visualizer.get_mean_tumor_volumes()[:min_length]
+        control_mean_volumes = control_visualizer.data_processor.get_mean_tumor_volumes()[:min_length]
 
         data = {'Время (сут)': control_time_data}
 
         for experiment_visualizer in experiment_visualizers:
-            experiment_mean_volumes = experiment_visualizer.get_mean_tumor_volumes()[:min_length]
+            experiment_mean_volumes = experiment_visualizer.data_processor.get_mean_tumor_volumes()[:min_length]
 
             tumor_growth_inhibition = SupportingFunctions.calculate_tumor_growth_inhibition(
                 control_mean_volumes,
@@ -231,12 +231,12 @@ if __name__ == "__main__":
     # Создание объекта сравнителя
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-    # comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    #comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
-    #comparator.compare_control_and_experiment(control_visualizers)
+    comparator.compare_control_and_experiment(control_visualizers)
 
     # Сравнение торможения роста опухоли между контрольной и несколькими экспериментальными группами
-    #comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
+    comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
     comparator.create_tumor_growth_inhibition_table(control_visualizer, experiment_visualizers)

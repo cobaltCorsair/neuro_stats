@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_tumor_data_excel
+from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import TumorDataProcessor
 from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
@@ -35,6 +36,7 @@ class TumorDataVisualizer:
         """
         self.file_path = file_path
         self.experiment_params, self.time_data, self.rat_labels, self.tumor_volumes = process_tumor_data_excel(file_path)
+        self.data_processor = TumorDataProcessor(self.tumor_volumes)  # Создаем экземпляр TumorDataProcessor
 
     def plot_tumor_volumes_single_graph(self):
         """
@@ -56,7 +58,7 @@ class TumorDataVisualizer:
         drawgraph = GraphVisualizer("Относительные объемы опухоли", "Время, сут.", "Объем опухоли, отн. ед.",
                                     figsize=(12, 7))
         drawgraph.setup_figure()
-        drawgraph.add_individual_plots(self.rat_labels, self.get_relative_tumor_volumes(), self.time_data)
+        drawgraph.add_individual_plots(self.rat_labels, self.data_processor.get_relative_tumor_volumes(), self.time_data)
         formatted_params = format_experiment_params(self.experiment_params)
         # Добавление легенды с параметрами эксперимента
         drawgraph.add_legend([formatted_params], "Параметры эксперимента", "upper center", display_marker=False)
@@ -69,7 +71,7 @@ class TumorDataVisualizer:
         drawgraph = GraphVisualizer("", "Время, сут.", "Объем опухоли, абс. ед.", figsize=(12, 7))
         drawgraph.setup_figure()
 
-        mean_volumes = self.get_mean_tumor_volumes()
+        mean_volumes = self.data_processor.get_mean_tumor_volumes()
         std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
                    zip(np.transpose(self.tumor_volumes), mean_volumes)]
         error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.tumor_volumes)) for std in std_dev]
@@ -85,8 +87,8 @@ class TumorDataVisualizer:
         drawgraph = GraphVisualizer("(V отн.)", "Время, сут.", "Относительный объем опухоли, отн. ед.", figsize=(12, 7))
         drawgraph.setup_figure()
 
-        relative_tumor_volumes = self.get_relative_tumor_volumes()
-        mean_relative_volumes = self.get_mean_relative_tumor_volumes()
+        relative_tumor_volumes = self.data_processor.get_relative_tumor_volumes()
+        mean_relative_volumes = self.data_processor.get_mean_relative_tumor_volumes()
         std_dev_rel = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
                        zip(np.transpose(relative_tumor_volumes), mean_relative_volumes)]
         error_margin_rel = [SupportingFunctions.calculate_error_margin(std, len(relative_tumor_volumes)) for std in
@@ -108,8 +110,8 @@ class TumorDataVisualizer:
         drawgraph.setup_figure()
 
         # Вычисление среднего относительного объема опухоли и его доверительного интервала
-        relative_mean_volumes = self.get_mean_relative_tumor_volumes()
-        mean_volumes = self.get_mean_tumor_volumes(relative_mean_volumes)
+        relative_mean_volumes = self.data_processor.get_mean_relative_tumor_volumes()
+        mean_volumes = self.data_processor.get_mean_tumor_volumes(relative_mean_volumes)
         std_dev_rel_mean = SupportingFunctions.calculate_std_dev(relative_mean_volumes, mean_volumes)
         error_margin_rel_mean = SupportingFunctions.calculate_error_margin(std_dev_rel_mean, len(relative_mean_volumes))
 
@@ -120,44 +122,6 @@ class TumorDataVisualizer:
         formatted_params = format_experiment_params(self.experiment_params)
         drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_mean_relative_mean_volumes")
 
-    def get_mean_tumor_volumes(self, volumes=None) -> np.ndarray:
-        """
-        Вычисляет средний объем опухоли для всех крыс на каждом временном интервале.
-        Поддерживает внешние данные о объемах опухоли.
-
-        Параметры:
-            volumes (np.ndarray, optional): Внешние данные объемов опухоли. Если не указан, используется self.tumor_volumes.
-
-        Возвращает:
-            np.ndarray: Массив средних объемов опухоли.
-        """
-        if volumes is None:
-            volumes = self.tumor_volumes
-        return np.nanmean(volumes, axis=0)
-
-    def get_relative_tumor_volumes(self) -> np.ndarray:
-        """
-        Вычисляет относительные объемы опухолей для каждой крысы.
-
-        Возвращает:
-            np.ndarray: Массив относительных объемов опухолей.
-        """
-        return np.array([[vol / volumes[0] for vol in volumes] for volumes in self.tumor_volumes])
-
-    def get_mean_relative_tumor_volumes(self) -> np.ndarray:
-        """
-        Вычисляет средний относительный усреднённый объем опухоли для всех крыс.
-
-        Возвращает:
-            np.ndarray: Массив средних относительных объемов опухоли.
-        """
-        # Получение средних объемов опухоли
-        mean_volumes = self.get_mean_tumor_volumes()
-
-        # Вычисление среднего относительного объема опухоли
-        mean_rel_volumes = mean_volumes / mean_volumes[0]
-
-        return mean_rel_volumes
 
 
 if __name__ == '__main__':
