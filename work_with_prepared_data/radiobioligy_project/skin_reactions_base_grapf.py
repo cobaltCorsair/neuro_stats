@@ -9,6 +9,7 @@ from utils.plotting_helpers import custom_fill_between, subscriptify, format_exp
 from utils.plot_saver import save_plot
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
+from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
 
 # Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
 original_fill_between = plt.fill_between
@@ -37,25 +38,30 @@ class SkinReactionsVisualizer:
         self.experiment_params, self.time_data, self.rat_labels, self.skin_reactions = process_skin_data_excel(file_path)
 
     def plot_skin_reactions(self):
-        plt.figure(figsize=(15, 8))
-        formatted_params = format_experiment_params(self.experiment_params)
-        plt.title(f"Кожные реакции, Параметры эксперимента: {formatted_params}", fontsize=24, y=1.02)
+        drawgraph = GraphVisualizer(
+            f"Кожные реакции, Параметры эксперимента: {format_experiment_params(self.experiment_params)}",
+            "Время, сут.",
+            "Кожные реакции, абс. ед.",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
 
-        # Список маркеров
-        markers = ['o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_']
-        marker_size = 12  # Установка размера маркера
+        # Итерация по крысам и их кожным реакциям для добавления на график
+        for label, reactions in zip(self.rat_labels, self.skin_reactions):
+            clean_reactions = np.array(reactions)[~np.isnan(reactions)]
+            clean_time_data = np.array(self.time_data)[~np.isnan(reactions)]
 
-        for label, reactions, marker in zip(self.rat_labels, self.skin_reactions, markers):
-            plt.plot(self.time_data, reactions, marker=marker, linestyle='-', markersize=marker_size, label=label)
+            if not list(clean_reactions):
+                continue
 
-        plt.xticks(np.arange(len(self.time_data))[::3], rotation=45)
-        plt.xlabel("Время (дни)")
-        plt.ylabel("Кожные реакции")
-        plt.grid(True)
-        plt.legend(title="Метка крысы")
-        plt.tight_layout()
-        save_plot(self.file_path, f"Skin_Reactions_{formatted_params}")
-        plt.show()
+            # Добавление данных на график
+            drawgraph.add_plot(clean_time_data, clean_reactions, {}, label)
+
+        # Устанавливаем тики по оси X с шагом в 3 дня и поворачиваем их на 45 градусов
+        if drawgraph.max_x is not None:
+            plt.xticks(ticks=np.arange(0, int(drawgraph.max_x) + 1, 3), rotation=45)
+
+        drawgraph.finalize_figure(self.file_path, 'Метки крыс', 2, 25)
 
     def plot_mean_skin_reactions(self):
         # Преобразование self.time_data в числовые значения
@@ -177,7 +183,7 @@ if __name__ == '__main__':
     # ExtractOutliers(visualizer).exclude_rats(['б/м'], 'tumor_volumes')  # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
     # ExtractOutliers(visualizer).exclude_rats(['г', 'х'], 'tumor_volumes')  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
 
-    # visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
+    visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
     # visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
 
     # Отображения средних кожных реакций для нескольких экспериментов
