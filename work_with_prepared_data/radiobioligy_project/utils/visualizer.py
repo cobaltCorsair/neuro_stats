@@ -25,7 +25,7 @@ class GraphVisualizer:
 
     def setup_figure(self):
         plt.figure(figsize=self.figsize)
-        #plt.title(self.title)
+        # plt.title(self.title)
         plt.xlabel(self.x_label)
         plt.ylabel(self.y_label)
         plt.grid(True)

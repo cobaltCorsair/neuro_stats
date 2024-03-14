@@ -1,29 +1,19 @@
 # файл draw_base_grapfs.py
+
 import numpy as np
 import matplotlib.pyplot as plt
 
-from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params
+from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_tumor_data_excel
 from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import TumorDataProcessor
 from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
 
-# Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
-original_fill_between = plt.fill_between
-
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
-
-# Глобальное изменение размеров шрифтов
-plt.rcParams.update({
-    'font.family': 'Times New Roman',
-    'font.size': 22,
-    'axes.titlesize': 24,
-    'axes.labelsize': 24,
-    'xtick.labelsize': 20,
-    'ytick.labelsize': 20,
-    'legend.fontsize': 25
-})
+configurator = MatplotlibConfigurator()
+configurator.apply_custom_styles()
+configurator.restore_original_styles()
 
 
 class TumorDataVisualizer:

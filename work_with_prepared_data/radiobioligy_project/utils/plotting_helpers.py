@@ -3,19 +3,24 @@
 import matplotlib.pyplot as plt
 
 
-def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
-    horizontal_line_length = 0.2  # Длина горизонтальных линий на концах
-    line_color = color if color is not None else 'blue'  # Используйте заданный цвет, если он предоставлен
+class MatplotlibConfigurator:
+    def __init__(self):
+        self.original_rcParams = plt.rcParams.copy()
 
-    for xi, y1i, y2i in zip(x, y1, y2):
-        # Вертикальные линии
-        plt.plot([xi, xi], [y1i, y2i], color=line_color, alpha=1, zorder=1)
+    def apply_custom_styles(self):
+        plt.rcParams.update({
+            'font.family': 'Times New Roman',
+            'font.size': 22,
+            'axes.titlesize': 24,
+            'axes.labelsize': 24,
+            'xtick.labelsize': 20,
+            'ytick.labelsize': 20,
+            'legend.fontsize': 25
+        })
 
-        # Горизонтальные линии на концах
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color=line_color,
-                 alpha=1, zorder=1)
-        plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color=line_color,
-                 alpha=1, zorder=1)
+    def restore_original_styles(self):
+        plt.rcParams = self.original_rcParams
+
 
 
 def subscriptify(text):
@@ -35,7 +40,6 @@ def subscriptify(text):
         # Add more if available
     }
     return ''.join(subscript_map.get(char, char) for char in text)
-
 
 def format_experiment_params(params):
     """
@@ -76,4 +80,16 @@ def format_experiment_params(params):
 
     return ', '.join(formatted_params)
 
+def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
+        horizontal_line_length = 0.2  # Длина горизонтальных линий на концах
+        line_color = color if color is not None else 'blue'  # Используйте заданный цвет, если он предоставлен
 
+        for xi, y1i, y2i in zip(x, y1, y2):
+            # Вертикальные линии
+            plt.plot([xi, xi], [y1i, y2i], color=line_color, alpha=1, zorder=1)
+
+            # Горизонтальные линии на концах
+            plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y1i, y1i], color=line_color,
+                     alpha=1, zorder=1)
+            plt.plot([xi - horizontal_line_length / 2, xi + horizontal_line_length / 2], [y2i, y2i], color=line_color,
+                     alpha=1, zorder=1)

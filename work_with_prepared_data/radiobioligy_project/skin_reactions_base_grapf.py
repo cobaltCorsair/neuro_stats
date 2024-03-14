@@ -5,33 +5,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import List
 
-from utils.plotting_helpers import custom_fill_between, subscriptify, format_experiment_params
-from utils.plot_saver import save_plot
+from utils.plotting_helpers import format_experiment_params, MatplotlibConfigurator, custom_fill_between
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
 from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import SkinReactionsDataProcessor
 from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
 
-# Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
-original_fill_between = plt.fill_between
-
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
-
-# Увеличение размера фигуры
-plt.figure(figsize=(15, 8))  # Увеличение размера фигуры
-
-# Глобальное изменение размеров шрифтов
-plt.rcParams.update({
-    'font.family': 'Times New Roman',  # Установка семейства шрифтов
-    'font.size': 22,  # Размер основного шрифта
-    'axes.titlesize': 24,  # Размер заголовка
-    'axes.labelsize': 24,  # Размер подписей осей
-    'xtick.labelsize': 20,  # Размер меток на оси X
-    'ytick.labelsize': 20,  # Размер меток на оси Y
-    'legend.fontsize': 25  # Размер шрифта в легенде
-})
-
+configurator = MatplotlibConfigurator()
+configurator.apply_custom_styles()
+configurator.restore_original_styles()
 
 class SkinReactionsVisualizer:
     def __init__(self, file_path: str):
@@ -119,8 +103,8 @@ if __name__ == '__main__':
     # ExtractOutliers(visualizer).exclude_rats(['б/м'], 'tumor_volumes')  # for skin_reactions_p_25,2_n_7,2_2023_2.xlsx
     # ExtractOutliers(visualizer).exclude_rats(['г', 'х'], 'tumor_volumes')  # for skin_reactions_n_7.2_p_25.2_2023_2.xlsx
 
-    # visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
-    # visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
+    visualizer.plot_skin_reactions()  # Визуализация индивидуальных кожных реакций
+    visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
 
     # Отображения средних кожных реакций для нескольких экспериментов
     file_paths = [

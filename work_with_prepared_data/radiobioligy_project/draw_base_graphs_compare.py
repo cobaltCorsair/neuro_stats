@@ -2,27 +2,15 @@
 
 import matplotlib.pyplot as plt
 from draw_base_grapfs import TumorDataVisualizer
-from utils.plotting_helpers import custom_fill_between, format_experiment_params
-from utils.plot_saver import save_plot
+from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions
 from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
 
-# Сохраняем оригинальную функцию в другой переменной, на случай, если она понадобится
-original_fill_between = plt.fill_between
-
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
-
-# Глобальное изменение размеров шрифтов
-plt.rcParams.update({
-    'font.family': 'Times New Roman',  # Установка семейства шрифтов
-    'font.size': 22,  # Размер основного шрифта
-    'axes.titlesize': 24,  # Размер заголовка
-    'axes.labelsize': 24,  # Размер подписей осей
-    'xtick.labelsize': 20,  # Размер меток на оси X
-    'ytick.labelsize': 20,  # Размер меток на оси Y
-    'legend.fontsize': 25  # Размер шрифта в легенде
-})
+configurator = MatplotlibConfigurator()
+configurator.apply_custom_styles()
+configurator.restore_original_styles()
 
 
 class TumorDataComparator:
