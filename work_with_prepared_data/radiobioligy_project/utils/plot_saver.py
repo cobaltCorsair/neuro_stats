@@ -5,31 +5,37 @@ from matplotlib import pyplot as plt
 
 def save_plot(file_path, plot_title, comparison_type=None, file_suffix=None, set_limits=True):
     """
-    Сохраняет текущий график в файл PNG с учетом различных параметров.
+    Сохраняет текущий график в файл PNG.
 
-    Parameters:
+    Args:
         file_path (str): Путь к файлу данных, используемый для создания части имени файла.
-        plot_title (str): Основа для имени файла, обычно название графика.
-        comparison_type (str, optional): Тип сравнения, если применимо, для дополнения имени файла.
-        file_suffix (str, optional): Суффикс для имени файла для уточнения типа графика.
-        set_limits (bool, optional): Флаг для установки минимальных значений осей X и Y равными 0.
+        plot_title (str): Заголовок графика, используемый в качестве части имени сохраняемого файла.
+        comparison_type (Optional[str]): Дополнительное описание сравнения для включения в имя файла.
+        file_suffix (Optional[str]): Суффикс имени файла для дополнительного уточнения.
+        set_limits (bool): Если True, устанавливает минимальные значения осей X и Y в 0.
+
+    Пример:
+        save_plot("data.xlsx", "График роста опухоли", "контроль_vs_эксперимент", "график_1")
     """
-    # Базовое имя файла из пути к файлу данных
+    # Извлечение базового имени файла из пути к файлу для использования в имени сохраняемого файла
     file_name_base = os.path.splitext(os.path.basename(file_path))[0]
-    save_dir = r'C:\dev\neuro_stats\work_with_prepared_data\saved_graphics'
+    # Определение директории для сохранения графиков
+    save_dir = 'C:\\dev\\neuro_stats\\work_with_prepared_data\\saved_graphics'
 
-    # Составление имени файла из предоставленных компонентов
-    components = [component for component in [file_name_base, plot_title, comparison_type, file_suffix] if component]
-    file_name = f"{'_'.join(components).replace(' ', '_')}.png"
+    # Комбинирование компонентов для формирования имени файла
+    components = [file_name_base, plot_title, comparison_type, file_suffix]
+    file_name = "_".join(filter(None, components)).replace(" ", "_") + ".png"
 
+    # Установка ограничений для осей, если требуется
     if set_limits:
-        plt.xlim(left=0)  # Установка минимального значения для оси X равным 0
-        plt.ylim(bottom=0)  # Установка минимального значения для оси Y равным 0
+        plt.xlim(left=0)  # Установка минимального значения оси X
+        plt.ylim(bottom=0)  # Установка минимального значения оси Y
 
-    # Создаём путь для сохранения, если он не существует
+    # Проверка наличия директории для сохранения и её создание при необходимости
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    full_file_path = os.path.join(save_dir, file_name)  # Полный путь к файлу
-    plt.savefig(full_file_path, format='png', dpi=300)  # Сохранение файла по полному пути
-    print(f"Plot saved as {full_file_path}")
+    # Формирование полного пути к файлу и сохранение графика
+    full_file_path = os.path.join(save_dir, file_name)
+    plt.savefig(full_file_path, format="png", dpi=300)
+    print(f"График сохранён как {full_file_path}")

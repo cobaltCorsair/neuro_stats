@@ -7,14 +7,18 @@ import pandas as pd
 
 def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str], List[List[float]]]:
     """
-    Обрабатывает данные из файла Excel и извлекает данные о реакциях кожи.
+    Обрабатывает данные из указанного файла Excel, содержащего информацию о реакциях кожи на эксперименты.
 
-    Возвращает:
-        tuple: Кортеж, содержащий:
-            - experiment_params (List[str]): Параметры эксперимента.
-            - time_data (List[str]): Метки времени для каждого измерения.
-            - rat_labels (List[str]): Метки крыс.
-            - skin_reactions (List[List[float]]): Реакции кожи для каждой крысы на каждом временном интервале.
+    Args:
+        file_path (str): Путь к файлу Excel с данными о реакциях кожи.
+
+    Returns:
+        Tuple[List[str], List[str], List[str], List[List[float]]]:
+            - experiment_params (List[str]): Список, содержащий параметры эксперимента, извлеченные из первой строки файла.
+            - time_data (List[str]): Список меток времени для каждого измерения, преобразованный из строк в числовой формат.
+            - rat_labels (List[str]): Список меток (идентификаторов) крыс, участвовавших в эксперименте.
+            - skin_reactions (List[List[float]]): Список списков с данными о реакциях кожи для каждой крысы на каждом
+            временном интервале.
     """
     data = pd.read_excel(file_path, header=None)
     experiment_params = data.iloc[0, :3].tolist()  # Извлекаем параметры эксперимента из первой строки
@@ -27,14 +31,17 @@ def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str],
 
 def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str], List[List[float]]]:
     """
-    Обрабатывает данные из файла Excel и извлекает необходимые данные.
+    Обрабатывает данные из указанного файла Excel, содержащего объемы опухолей и извлекает необходимые данные для анализа.
 
-    Возвращает:
-        tuple: Кортеж, содержащий:
-            - experiment_params (List[str]): Параметры эксперимента.
-            - time_data (List[str]): Метки времени для каждого измерения.
-            - rat_labels (List[str]): Метки крыс.
-            - tumor_volumes (List[List[float]]): Объемы опухолей для каждой крысы на каждом временном интервале.
+    Args:
+        file_path (str): Путь к файлу Excel с данными об объемах опухолей.
+
+    Returns:
+        Tuple[List[str], List[str], List[str], List[List[float]]]:
+            - experiment_params (List[str]): Параметры эксперимента, извлеченные из первой строки файла.
+            - time_data (List[str]): Список меток времени для каждого измерения, преобразованный из строк в числовой формат.
+            - rat_labels (List[str]): Список меток (идентификаторов) крыс, участвовавших в эксперименте.
+            - tumor_volumes (List[List[float]]): Список списков с объемами опухолей для каждой крысы на каждом временном интервале.
     """
     data = pd.read_excel(file_path, header=None)
     # Извлечение всех непустых значений из первой строки как параметры эксперимента
@@ -42,10 +49,12 @@ def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str]
     tumor_data = data.iloc[2:, :].copy()
     time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in data.iloc[1, 1:]]
 
+    # Преобразование данных об объемах опухолей
     tumor_data = tumor_data.applymap(
         lambda x: str(x).strip().replace(',', '.').replace(' -', '-') if pd.notna(x) else "NA")
     rat_labels = tumor_data.iloc[:, 0].tolist()
 
+    # Преобразование объемов опухолей в числовой формат
     tumor_volumes = []
     for _, row in tumor_data.iterrows():
         rat_volumes = []
