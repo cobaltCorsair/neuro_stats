@@ -255,17 +255,19 @@ class TumorDataVisualizer:
 if __name__ == '__main__':
     # Используем с файлом данных
     #file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
-    #file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_12.xlsx'
-    file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_18.xlsx'
+    file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_12.xlsx'
+    #file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_18.xlsx'
 
     visualizer = TumorDataVisualizer(file_path)
     visualizer.plot_tumor_volumes_single_graph()
-    visualizer.plot_average_relative_tumor_volume()
     # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
     # ExtractOutliers(visualizer).exclude_rats(['г- пл'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
     outlier_extractor = ExtractOutliers(visualizer)
     #outlier_extractor.remove_outliers_elliptic_envelope(contamination=0.05)  # Применение метода Гаусса
-    outlier_extractor.remove_outliers_isolation_forest(contamination=0.05)  # Применение метода изоляции леса
+    #outlier_extractor.remove_outliers_isolation_forest(contamination=0.05)  # Применение метода изоляции леса
+    #outlier_extractor.remove_outliers()
+    #outlier_extractor.remove_outliers_iqr()
+    #outlier_extractor.remove_outliers_grubbs()
     #outlier_extractor.remove_outliers_mahalanobis(alpha=0.05)
     # Сохраняем график для каждой крысы
     visualizer.plot_tumor_volumes_single_graph()
@@ -277,7 +279,7 @@ if __name__ == '__main__':
     #visualizer.plot_mean_tumor_volume()
 
     # Сохраняем график среднего относительного объема опухоли
-    visualizer.plot_average_relative_tumor_volume()
+    #visualizer.plot_average_relative_tumor_volume()
 
     # Сохраняем график среднего относительного усреднённого объема опухоли
     #visualizer.plot_mean_relative_mean_tumor_volume()

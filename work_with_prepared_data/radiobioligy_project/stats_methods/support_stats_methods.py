@@ -29,13 +29,13 @@ class ExtractOutliers:
 
     def remove_outliers(self, threshold=2):
         """
-        Удаляет выбросы из данных о кожных реакциях, используя Z-score.
+        Удаляет выбросы из данных об объёмах опухолей, используя Z-score.
 
         Args:
             threshold (float): Пороговое значение Z-score для определения выбросов.
         """
         # Вычисление Z-score для данных о кожных реакциях
-        z_scores = np.abs(zscore(self.base_class.skin_reactions, nan_policy='omit'))
+        z_scores = np.abs(zscore(self.base_class.tumor_volumes, nan_policy='omit'))
 
         # Определение строк (крыс), в которых есть хотя бы одно значение, превышающее пороговое значение
         outlier_rows = np.any(z_scores > threshold, axis=1)
@@ -43,18 +43,18 @@ class ExtractOutliers:
         # Обновление меток и данных о кожных реакциях, исключая выбросы
         self.base_class.rat_labels = [label for idx, label in enumerate(self.base_class.rat_labels) if
                                       not outlier_rows[idx]]
-        self.base_class.skin_reactions = [reaction for idx, reaction in enumerate(self.base_class.skin_reactions) if
+        self.base_class.tumor_volumes = [reaction for idx, reaction in enumerate(self.base_class.tumor_volumes) if
                                           not outlier_rows[idx]]
 
     def remove_outliers_iqr(self, k=1.5):
         """
-        Удаляет выбросы из данных о кожных реакциях, используя IQR.
+        Удаляет выбросы из данных об объёмах опухолей, используя IQR.
 
         Args:
             k (float): Множитель для IQR.
         """
         # Преобразование данных в DataFrame для удобства
-        skin_reactions_df = pd.DataFrame(self.base_class.skin_reactions, columns=self.base_class.time_data)
+        skin_reactions_df = pd.DataFrame(self.base_class.tumor_volumes, columns=self.base_class.time_data)
 
         # Вычисление Q1, Q3 и IQR для каждого временного шага
         Q1 = skin_reactions_df.quantile(0.25)
@@ -70,17 +70,17 @@ class ExtractOutliers:
         # Обновление меток и данных о кожных реакциях
         self.base_class.rat_labels = [label for idx, label in enumerate(self.base_class.rat_labels) if
                                       idx in clean_skin_reactions_df.index]
-        self.base_class.skin_reactions = clean_skin_reactions_df.values.tolist()
+        self.base_class.tumor_volumes = clean_skin_reactions_df.values.tolist()
 
     def remove_outliers_grubbs(self, alpha=0.05):
         """
-        Удаляет выбросы из данных о кожных реакциях, используя тест Граббса.
+        Удаляет выбросы из данных об объёмах опухолей, используя тест Граббса.
 
         Args:
             alpha (float): Уровень значимости для теста Граббса.
         """
         # Преобразование данных в DataFrame для удобства
-        skin_reactions_df = pd.DataFrame(self.base_class.skin_reactions, columns=self.base_class.time_data)
+        skin_reactions_df = pd.DataFrame(self.base_class.tumor_volumes, columns=self.base_class.time_data)
 
         # Вычисление z-оценок
         z_scores = np.abs(zscore(skin_reactions_df, axis=0))
@@ -99,7 +99,7 @@ class ExtractOutliers:
         # Обновление меток и данных о кожных реакциях
         self.base_class.rat_labels = [label for idx, label in enumerate(self.base_class.rat_labels) if
                                       idx in clean_skin_reactions_df.index]
-        self.base_class.skin_reactions = clean_skin_reactions_df.values.tolist()
+        self.base_class.tumor_volumes = clean_skin_reactions_df.values.tolist()
 
     def remove_local_outliers(self, window_size=3, threshold=2):
         """
