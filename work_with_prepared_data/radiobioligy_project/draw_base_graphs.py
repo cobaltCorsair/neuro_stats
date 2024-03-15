@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
-from stats_methods.support_stats_methods import SupportingFunctions
+from stats_methods.support_stats_methods import SupportingFunctions, ExtractOutliers
 from data_processing.excel_data_processor import process_tumor_data_excel
 from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import TumorDataProcessor
 from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
@@ -13,7 +13,8 @@ from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphV
 plt.fill_between = custom_fill_between
 configurator = MatplotlibConfigurator()
 configurator.apply_custom_styles()
-configurator.restore_original_styles()
+# После создания и сохранения всех графиков восстанавливаем оригинальные стили
+# configurator.restore_original_styles()
 
 
 class TumorDataVisualizer:
@@ -253,23 +254,30 @@ class TumorDataVisualizer:
 
 if __name__ == '__main__':
     # Используем с файлом данных
-    file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
+    #file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
+    #file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_12.xlsx'
+    file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_18.xlsx'
 
     visualizer = TumorDataVisualizer(file_path)
+    visualizer.plot_tumor_volumes_single_graph()
+    visualizer.plot_average_relative_tumor_volume()
     # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
     # ExtractOutliers(visualizer).exclude_rats(['г- пл'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
-
+    outlier_extractor = ExtractOutliers(visualizer)
+    #outlier_extractor.remove_outliers_elliptic_envelope(contamination=0.05)  # Применение метода Гаусса
+    outlier_extractor.remove_outliers_isolation_forest(contamination=0.05)  # Применение метода изоляции леса
+    #outlier_extractor.remove_outliers_mahalanobis(alpha=0.05)
     # Сохраняем график для каждой крысы
     visualizer.plot_tumor_volumes_single_graph()
 
     # Сохраняем график относительных объемов для каждой крысы
-    visualizer.plot_relative_tumor_volumes_single_graph()
+    #visualizer.plot_relative_tumor_volumes_single_graph()
 
     # Сохраняем график средних значений
-    visualizer.plot_mean_tumor_volume()
+    #visualizer.plot_mean_tumor_volume()
 
     # Сохраняем график среднего относительного объема опухоли
     visualizer.plot_average_relative_tumor_volume()
 
     # Сохраняем график среднего относительного усреднённого объема опухоли
-    visualizer.plot_mean_relative_mean_tumor_volume()
+    #visualizer.plot_mean_relative_mean_tumor_volume()

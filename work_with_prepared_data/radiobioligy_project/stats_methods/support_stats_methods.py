@@ -3,7 +3,11 @@ from typing import List
 import numpy as np
 import pandas as pd
 from scipy.stats import zscore, t
-
+from sklearn.covariance import EllipticEnvelope
+from sklearn.ensemble import IsolationForest
+from sklearn.cluster import DBSCAN
+from scipy.spatial.distance import mahalanobis
+from scipy.stats import chi2
 
 class ExtractOutliers:
     def __init__(self, vis_baseclass):
@@ -119,6 +123,90 @@ class ExtractOutliers:
                                       non_outlier_indices[i]]
         self.base_class.skin_reactions = [reactions for i, reactions in enumerate(self.base_class.skin_reactions) if
                                           non_outlier_indices[i]]
+
+    def remove_outliers_elliptic_envelope(self, contamination=0.1):
+        """
+        Идентифицирует и удаляет выбросы с использованием многомерного метода Гаусса (Elliptic Envelope).
+
+        Args:
+            contamination (float): Доля выбросов в данных, ожидаемая алгоритмом.
+        """
+        # Преобразование данных в массив numpy для обработки
+        # Транспонирование нужно, чтобы строки соответствовали крысам (объектам), а столбцы - измерениям (признакам)
+        data = np.array(self.base_class.tumor_volumes)
+
+        ee = EllipticEnvelope(contamination=contamination)
+        ee.fit(data)
+
+        # Предсказание, где 1 - не выброс, -1 - выброс
+        labels = ee.predict(data)
+
+        # Индексы не выбросов (где labels == 1)
+        non_outlier_indices = np.where(labels == 1)[0]
+
+        # Ваши индексы идут от 0 до 8, что не соответствует длине labels или rat_labels
+        # Убедимся, что индексы не выходят за границы списка rat_labels
+        non_outlier_indices = [idx for idx in non_outlier_indices if idx < len(self.base_class.rat_labels)]
+
+        self.base_class.rat_labels = [self.base_class.rat_labels[i] for i in non_outlier_indices]
+        self.base_class.tumor_volumes = [self.base_class.tumor_volumes[i] for i in non_outlier_indices]
+
+    def remove_outliers_isolation_forest(self, contamination=0.1):
+        """
+        Идентифицирует и удаляет выбросы с использованием метода изоляции леса.
+
+        Args:
+            contamination (float или 'auto'): Доля выбросов в данных, ожидаемая алгоритмом.
+        """
+        from sklearn.ensemble import IsolationForest
+
+        # Преобразование данных в массив numpy
+        data = np.array(self.base_class.tumor_volumes)
+
+        # Создание и обучение модели изоляции леса
+        isolation_forest = IsolationForest(contamination=contamination)
+        isolation_forest.fit(data)
+
+        # Предсказание выбросов
+        labels = isolation_forest.predict(data)
+
+        # Индексы не выбросов
+        non_outlier_indices = np.where(labels == 1)[0]
+
+        # Обновление меток крыс и данных о объемах опухолей
+        self.base_class.rat_labels = [self.base_class.rat_labels[i] for i in non_outlier_indices]
+        self.base_class.tumor_volumes = [self.base_class.tumor_volumes[i] for i in non_outlier_indices]
+
+    def remove_outliers_mahalanobis(self, alpha=0.01):
+        """
+        Идентифицирует и удаляет выбросы с использованием квадратичного расстояния Махаланобиса.
+
+        Args:
+            alpha (float): Уровень значимости для определения порогового значения расстояния.
+        """
+        from scipy.stats import chi2
+        from scipy.spatial.distance import mahalanobis
+        import pandas as pd
+
+        data = pd.DataFrame(self.base_class.tumor_volumes)  # Транспонируем для удобства
+
+        # Вычисляем ковариационную матрицу и её обратную матрицу
+        cov_matrix = np.cov(data, rowvar=False)
+        inv_cov_matrix = np.linalg.inv(cov_matrix)
+        mean = np.mean(data, axis=0)
+
+        # Вычисление расстояния Махаланобиса
+        mahal_distance = data.apply(lambda x: mahalanobis(x, mean, inv_cov_matrix), axis=1)
+
+        # Пороговое значение на основе распределения chi-square
+        threshold = chi2.ppf((1 - alpha), df=data.shape[1])
+
+        # Индексы не выбросов
+        non_outlier_indices = np.where(mahal_distance <= threshold)[0]
+
+        # Обновление меток крыс и данных
+        self.base_class.rat_labels = [self.base_class.rat_labels[i] for i in non_outlier_indices]
+        self.base_class.tumor_volumes = [self.base_class.tumor_volumes[i] for i in non_outlier_indices]
 
     def exclude_rats(self, excluded_rats: List[str], data_attribute_name: str):
         """
