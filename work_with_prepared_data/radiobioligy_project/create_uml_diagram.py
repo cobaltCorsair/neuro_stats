@@ -64,6 +64,10 @@ class TumorDataComparatorAdvanced {
 
 class GraphVisualizer {
     +setup_figure()
+    {static} +prepare_and_add_data_to_graph()
+    {static} +prepare_mann_whitney_test()
+    {static} +perform_mann_whitney_test()
+    {static} +add_significance_annotation()
     +add_plot()
     +finalize_figure()
     +add_legend()

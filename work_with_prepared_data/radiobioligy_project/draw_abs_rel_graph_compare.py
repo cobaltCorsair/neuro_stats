@@ -68,7 +68,12 @@ class TumorDataComparatorAdvanced:
             self.visualizers,
             lambda visualizer: visualizer.data_processor.get_mean_tumor_volumes(),
             drawgraph,
-            "M/V абс.: ")
+            "M/V абс.: ",
+            False,
+            True,
+            [self.visualizers[0], self.visualizers[1]],
+            'up'
+            )
 
         drawgraph.finalize_figure('')
 
@@ -114,7 +119,11 @@ class TumorDataComparatorAdvanced:
             self.visualizers,
             lambda visualizer: visualizer.data_processor.get_mean_relative_tumor_volumes(),  # Лямбда-функция
             drawgraph,
-            ""
+            "",
+            True,
+            True,
+            [self.visualizers[0], self.visualizers[1]],
+            'down'
         )
         # Добавляем легенду с интервалами (при необходимости)
         time_labels = [f"Интервал: {interval}" for interval in time_intervals]
@@ -164,7 +173,7 @@ class TumorDataComparatorAdvanced:
             value_extractor,
             drawgraph,
             "Контроль: без облучения",
-            calculate_auc=True  # Указываем, что нужно рассчитать AUC
+            True,  # Указываем, что нужно рассчитать AUC
         )
 
         # Добавляем данные экспериментальных групп
@@ -173,7 +182,10 @@ class TumorDataComparatorAdvanced:
             value_extractor,
             drawgraph,
             "Эксперимент: ",
-            calculate_auc=True  # Указываем, что нужно рассчитать AUC
+            True,  # Указываем, что нужно рассчитать AUC
+            True,
+            [self.visualizers[0], self.visualizers[1]],
+            'up'
         )
 
         drawgraph.finalize_figure('')

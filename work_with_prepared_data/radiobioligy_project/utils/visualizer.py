@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from scipy.stats import mannwhitneyu
 
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
 from work_with_prepared_data.radiobioligy_project.utils.plot_saver import save_plot
@@ -64,7 +65,9 @@ class GraphVisualizer:
         plt.grid(True)
 
     @staticmethod
-    def prepare_and_add_data_to_graph(visualizers, value_extractor_func, graph_visualizer, label_prefix, calculate_auc=False):
+    def prepare_and_add_data_to_graph(visualizers, value_extractor_func, graph_visualizer, label_prefix,
+                                      calculate_auc=False, perform_stat_test=False, experiments_to_compare=None,
+                                      annotation_offset_direction='up'):
         """
         Подготавливает данные от нескольких экспериментов и добавляет их на график.
 
@@ -77,13 +80,22 @@ class GraphVisualizer:
             label_prefix (str): Префикс для легенды, добавляемый к метке каждой серии данных на графике.
             calculate_auc (bool, optional): Флаг, указывающий, нужно ли вычислять площадь под кривой (AUC).
             По умолчанию False.
+            experiments_to_compare (List[VisualizerType]): Эксперименты для теста
+            perform_stat_test (bool, optional): Флаг, необходим ли тест
+            annotation_offset_direction (str): Направление сдвига звёздочки
 
         Примечание:
             Для расчета стандартного отклонения и погрешности используются функции `calculate_std_dev` и
             `calculate_error_margin` соответственно.
         """
         x_data_lists = []
-        for visualizer in visualizers:
+        y_positions_for_annotations = []
+        upper_bounds_dict = {}
+        if perform_stat_test and experiments_to_compare:
+            p_values, x_positions_for_annotations = GraphVisualizer.prepare_mann_whitney_test(
+                experiments_to_compare, perform_stat_test)
+
+        for index, visualizer in enumerate(visualizers):
             values = value_extractor_func(visualizer)
             std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
                        for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), values)]
@@ -92,10 +104,111 @@ class GraphVisualizer:
 
             graph_visualizer.add_plot(visualizer.time_data, values, visualizer.experiment_params, f"{label_prefix}",
                                       error_margin, calculate_auc)
-            x_data_lists.append(visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
+            x_data_lists.append(visualizer.time_data)
+
+            # Если проводится статистический тест, то здесь нам нужно вычислить y_position для аннотации
+            if perform_stat_test and experiments_to_compare:
+                # Рассчитываем верхние или нижние границы в зависимости от направления аннотации
+                if annotation_offset_direction == 'up':
+                    upper_bounds = [val + err for val, err in zip(values, error_margin)]
+                elif annotation_offset_direction == 'down':  # Если направление вниз
+                    upper_bounds = [val - err for val, err in zip(values, error_margin)]
+
+                # Сохраняем верхние границы в словарь
+                upper_bounds_dict[visualizer] = upper_bounds
+                y_positions_for_annotations = upper_bounds_dict
 
         # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
         graph_visualizer.update_axes_limits(x_data_lists)
+        # Добавление аннотаций значимости на график, если требуется
+        if perform_stat_test and experiments_to_compare:
+            GraphVisualizer.add_significance_annotation(visualizers, p_values, x_positions_for_annotations,
+                                                        y_positions_for_annotations)
+
+    @staticmethod
+    def prepare_mann_whitney_test(experiments_to_compare, perform_stat_test):
+        """
+        Подготавливает и выполняет статистический тест Манна-Уитни для сравнения экспериментальных групп.
+
+        Для каждой временной точки данных сравнивает группы экспериментов, используя тест Манна-Уитни,
+        и собирает значения p для последующей аннотации значимости на графике.
+
+        Args:
+            experiments_to_compare (List[VisualizerType]): Список из двух экспериментов для сравнения.
+            perform_stat_test (bool): Флаг, определяющий необходимость выполнения статистического теста.
+
+        Returns:
+            Tuple[List[float], List[float]]: Возвращает два списка - значения p и позиции по оси X для аннотаций.
+        """
+        if perform_stat_test and experiments_to_compare:
+            # Инициализация списков для результатов тестов и аннотаций
+            p_values = []
+            x_positions_for_annotations = []
+
+            # Проходимся по всем временным точкам, предполагая, что они одинаковы для всех экспериментов
+            for time_index in range(len(experiments_to_compare[0].time_data)):
+                group1_volumes = [vol[time_index] for vol in experiments_to_compare[0].tumor_volumes]
+                group2_volumes = [vol[time_index] for vol in experiments_to_compare[1].tumor_volumes]
+
+                # Выполнение теста Манна-Уитни
+                p_value = GraphVisualizer.perform_mann_whitney_test(group1_volumes, group2_volumes)
+                p_values.append(p_value)
+
+                # Добавляем позиции для аннотаций
+                # индекс тут — это то, для какого эксперимента мы делаем "звёздочки"
+                x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
+
+        return p_values, x_positions_for_annotations
+
+    @staticmethod
+    def perform_mann_whitney_test(group1, group2):
+        """
+        Выполняет статистический тест Манна-Уитни для двух групп данных.
+
+        Args:
+            group1 (List[float]): Первая группа данных для сравнения.
+            group2 (List[float]): Вторая группа данных для сравнения.
+
+        Returns:
+            float: Значение p, полученное в результате теста Манна-Уитни.
+        """
+        _, p_value = mannwhitneyu(group1, group2, alternative='two-sided')
+        return p_value
+
+    @staticmethod
+    def add_significance_annotation(visualizers, p_values, x_positions, y_positions,
+                                    offset=0.0):
+        """
+        Добавляет аннотации значимости на график на основе значений p.
+
+        Аннотации ('*', '**', '***') добавляются в зависимости от уровня значимости (p-value),
+        указывая на статистическую значимость различий между группами.
+
+        Args:
+            visualizers (List[VisualizerType]): Список визуализаторов, используемых для отображения графиков.
+            p_values (List[float]): Список значений p, полученных в результате статистических тестов.
+            x_positions (List[float]): Список координат по оси X для размещения аннотаций.
+            y_positions (Dict[VisualizerType, List[float]]): Словарь с верхними границами для аннотаций каждого визуализатора.
+            offset (float, optional): Величина смещения аннотаций от верхних границ. По умолчанию 1.5.
+
+        Примечание:
+            Аннотации добавляются непосредственно на график с использованием координат X и Y с учетом смещения.
+        """
+        # индекс тут — это то, для какого эксперимента мы делаем "звёздочки"
+        for p_value, x_position, y_position in zip(p_values, x_positions, y_positions[visualizers[0]]):
+            if p_value < 0.001:
+                annotation = '***'  # Сильно значимо
+            elif p_value < 0.01:
+                annotation = '**'  # Значимо
+            elif p_value < 0.05:
+                annotation = '*'  # Умеренно значимо
+            else:
+                annotation = ''  # Не значимо
+
+            if annotation:  # Если есть что добавлять
+                # Позиция аннотации немного выше верхней границы погрешности
+                plt.text(x_position, y_position + offset, annotation, ha='center', fontsize=20,
+                         color='red')
 
     def add_individual_plots(self, labels, volumes_data, time_data):
         """
@@ -118,7 +231,7 @@ class GraphVisualizer:
             clean_time_data = np.array(time_data)[~np.isnan(volumes)]
 
             if not list(clean_volumes):
-                continue # Пропуск пустых данных
+                continue  # Пропуск пустых данных
 
             # Расчет стандартного отклонения и доверительного интервала
             mean_volume = np.mean(clean_volumes)
@@ -238,7 +351,8 @@ class GraphVisualizer:
 
         # Создаем и добавляем основную легенду
         if self.lines:
-            first_legend = plt.legend(handles=self.lines, loc='upper left', title=main_legend_title, ncol=ncol, fontsize=legend_fontsize)
+            first_legend = plt.legend(handles=self.lines, loc='upper left', title=main_legend_title, ncol=ncol,
+                                      fontsize=legend_fontsize)
             ax.add_artist(first_legend)  # Важно использовать add_artist для сохранения основной легенды
 
         # Создаем и добавляем легенду AUC, если есть значения AUC

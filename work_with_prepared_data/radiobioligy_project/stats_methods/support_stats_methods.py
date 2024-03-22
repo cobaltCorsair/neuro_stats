@@ -4,10 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import zscore, t
 from sklearn.covariance import EllipticEnvelope
-from sklearn.ensemble import IsolationForest
-from sklearn.cluster import DBSCAN
-from scipy.spatial.distance import mahalanobis
-from scipy.stats import chi2
+
 
 class ExtractOutliers:
     def __init__(self, vis_baseclass):
@@ -44,7 +41,7 @@ class ExtractOutliers:
         self.base_class.rat_labels = [label for idx, label in enumerate(self.base_class.rat_labels) if
                                       not outlier_rows[idx]]
         self.base_class.tumor_volumes = [reaction for idx, reaction in enumerate(self.base_class.tumor_volumes) if
-                                          not outlier_rows[idx]]
+                                         not outlier_rows[idx]]
 
     def remove_outliers_iqr(self, k=1.5):
         """
