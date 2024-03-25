@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1071</width>
-    <height>476</height>
+    <width>1125</width>
+    <height>506</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,7 +16,10 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QGridLayout" name="gridLayout">
     <item row="0" column="0">
-     <layout class="QVBoxLayout" name="verticalLayout_5" stretch="2,5">
+     <layout class="QVBoxLayout" name="verticalLayout_5" stretch="0,0">
+      <property name="spacing">
+       <number>6</number>
+      </property>
       <item>
        <layout class="QVBoxLayout" name="verticalLayout_3">
         <item>
@@ -40,16 +43,12 @@
        </layout>
       </item>
       <item>
-       <layout class="QVBoxLayout" name="verticalLayout_4" stretch="0,3,0">
+       <layout class="QVBoxLayout" name="verticalLayout_4" stretch="0,0">
+        <property name="spacing">
+         <number>6</number>
+        </property>
         <item>
-         <widget class="QLabel" name="label">
-          <property name="text">
-           <string>График:</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="3,0">
+         <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="5,0">
           <property name="spacing">
            <number>6</number>
           </property>
@@ -57,8 +56,8 @@
            <widget class="QFrame" name="frame">
             <property name="minimumSize">
              <size>
-              <width>350</width>
-              <height>250</height>
+              <width>650</width>
+              <height>300</height>
              </size>
             </property>
             <property name="frameShape">
@@ -191,6 +190,9 @@
                </widget>
               </item>
               <item>
+               <widget class="QDoubleSpinBox" name="doubleSpinBox"/>
+              </item>
+              <item>
                <widget class="QCheckBox" name="checkBox">
                 <property name="text">
                  <string>Критерий Стьюдента</string>
@@ -267,7 +269,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1071</width>
+     <width>1125</width>
      <height>22</height>
     </rect>
    </property>

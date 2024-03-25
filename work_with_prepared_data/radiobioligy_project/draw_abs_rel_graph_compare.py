@@ -219,6 +219,8 @@ class TumorDataComparatorAdvanced:
               условий или терапий на основе их способности тормозить рост опухолей.
         """
         SupportingFunctions.normalize_time_data_min([control_visualizer] + experiment_visualizers)
+        # Обрезка данных до общей минимальной длины
+        SupportingFunctions.trim_data_to_common_length([control_visualizer] + experiment_visualizers)
         drawgraph = GraphVisualizer("Сравнение торможения роста опухоли", "Время, сут.", "Торможение роста опухоли, %")
         drawgraph.setup_figure()
 
@@ -343,9 +345,9 @@ if __name__ == "__main__":
     ]
     experiment_paths = [
         r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\30.03.2022_p_36_прострел.xlsx',
-        r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_12.xlsx',
-        # r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_18.xlsx',
-        # r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
+        #r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_12.xlsx',
+        r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_18.xlsx',
+        #r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
     ]
 
     # Создание объектов визуализатора для контрольных групп
@@ -359,11 +361,11 @@ if __name__ == "__main__":
     # Создание объекта сравнителя
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-    comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    #comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    #comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
-    comparator.compare_control_and_experiment(control_visualizers)
+    #comparator.compare_control_and_experiment(control_visualizers)
 
     # Сравнение торможения роста опухоли между контрольной и несколькими экспериментальными группами
     comparator.compare_tumor_growth_inhibition_with_multiple_experiments(control_visualizer, experiment_visualizers)
