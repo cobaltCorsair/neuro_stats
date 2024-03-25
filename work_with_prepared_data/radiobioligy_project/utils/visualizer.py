@@ -1,7 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.stats import mannwhitneyu
-
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
 from work_with_prepared_data.radiobioligy_project.utils.plot_saver import save_plot
 from work_with_prepared_data.radiobioligy_project.utils.plotting_helpers import format_experiment_params

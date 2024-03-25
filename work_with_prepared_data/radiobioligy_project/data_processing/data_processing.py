@@ -1,5 +1,4 @@
 import numpy as np
-
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
 
 

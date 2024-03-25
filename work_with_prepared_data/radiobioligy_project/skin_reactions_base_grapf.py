@@ -8,14 +8,13 @@ from typing import List
 from utils.plotting_helpers import format_experiment_params, MatplotlibConfigurator, custom_fill_between
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
-from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import SkinReactionsDataProcessor
-from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
+from data_processing.data_processing import SkinReactionsDataProcessor
+from utils.visualizer import GraphVisualizer
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
 configurator = MatplotlibConfigurator()
 configurator.apply_custom_styles()
-configurator.restore_original_styles()
 
 class SkinReactionsVisualizer:
     def __init__(self, file_path: str):

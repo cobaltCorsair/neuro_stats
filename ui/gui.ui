@@ -114,7 +114,7 @@
             <item>
              <widget class="QPushButton" name="pushButton_6">
               <property name="text">
-               <string>Индекс прироста опухоли</string>
+               <string>Таблица торможения объёмов опухоли</string>
               </property>
              </widget>
             </item>

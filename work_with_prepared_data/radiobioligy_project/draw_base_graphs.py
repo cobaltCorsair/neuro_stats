@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions, ExtractOutliers
 from data_processing.excel_data_processor import process_tumor_data_excel
-from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import TumorDataProcessor
-from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
+from data_processing.data_processing import TumorDataProcessor
+from utils.visualizer import GraphVisualizer
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -273,13 +273,13 @@ if __name__ == '__main__':
     visualizer.plot_tumor_volumes_single_graph()
 
     # Сохраняем график относительных объемов для каждой крысы
-    #visualizer.plot_relative_tumor_volumes_single_graph()
+    visualizer.plot_relative_tumor_volumes_single_graph()
 
     # Сохраняем график средних значений
-    #visualizer.plot_mean_tumor_volume()
+    visualizer.plot_mean_tumor_volume()
 
     # Сохраняем график среднего относительного объема опухоли
-    #visualizer.plot_average_relative_tumor_volume()
+    visualizer.plot_average_relative_tumor_volume()
 
     # Сохраняем график среднего относительного усреднённого объема опухоли
-    #visualizer.plot_mean_relative_mean_tumor_volume()
+    visualizer.plot_mean_relative_mean_tumor_volume()

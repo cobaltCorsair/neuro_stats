@@ -7,7 +7,7 @@ from draw_base_graphs import TumorDataVisualizer
 from controls import ControlGroupVisualizer
 from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions
-from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
+from utils.visualizer import GraphVisualizer
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
