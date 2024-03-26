@@ -376,4 +376,4 @@ class GraphVisualizer:
 
         plt.tight_layout()
         save_plot(file_path, self.title)
-        plt.show()
+        #plt.show()
