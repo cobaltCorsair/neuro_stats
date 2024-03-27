@@ -3,7 +3,7 @@ import io
 from PyQt6.QtCore import QFileInfo, Qt
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QMessageBox, \
-    QLabel
+    QLabel, QSplitter
 import sys
 
 # Импорт сгенерированного класса из gui.py
@@ -27,8 +27,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Настраиваем модель для 2 столбцов
         self.model = QStandardItemModel(0, 2, self)
         self.change_table()
+        # Кнопки по умолчанию неактивны
+        self.pushButton.setEnabled(False)
         # Биндинг кнопок
-        self.pushButton.clicked.connect(self.handleAllOfRats)
+        self.pushButton.clicked.connect(self.handle_all_of_rats)
+        # Подключаем сигналы изменения состояния чекбоксов
+        self.checkBox_3.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_3, self.checkBox_4))
+        self.checkBox_4.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_4, self.checkBox_3))
+        self.checkBox_5.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_5, self.checkBox_6))
+        self.checkBox_6.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_6, self.checkBox_5))
+        self.model.itemChanged.connect(self.update_first_button_state)
 
     def change_table(self):
         self.model.setHorizontalHeaderLabels(['Выбор файла', 'Путь к файлу эксперимента'])
@@ -73,24 +81,52 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             for row in range(self.model.rowCount()):
                 self.tableView.setRowHeight(row, 20)  # Задаем желаемую высоту строки
 
-    def getSelectedExperiments(self):
+    def get_selected_experiments(self):
         """Собираем пути к выбранным экспериментам."""
         selected_paths = []
         for row in range(self.model.rowCount()):
-            if self.model.item(row, 0).checkState() == Qt.CheckState.Checked:
-                path = self.model.item(row, 1).text()  # Измените индекс, если путь хранится в другой колонке
+            item = self.model.item(row, 0)
+            if item and item.isCheckable() and item.checkState() == Qt.CheckState.Checked:
+                path = self.model.item(row, 1).text()
                 selected_paths.append(path)
         return selected_paths
 
-    def handleAllOfRats(self):
-        selected_paths = self.getSelectedExperiments()
+    def update_first_button_state(self):
+        # Проверяем количество выбранных экспериментов и состояние чекбоксов
+        selected_paths = self.get_selected_experiments()
+        oneExperimentSelected = len(selected_paths) == 1
+        anyCheckboxChecked = self.checkBox_3.isChecked() or self.checkBox_4.isChecked()
+        self.pushButton.setEnabled(oneExperimentSelected and anyCheckboxChecked)
+
+    def on_checkbox_pair_changed(self, thisCheckbox, pairedCheckbox):
+        # Если активирован один чекбокс, деактивируем связанный с ним
+        if thisCheckbox.isChecked():
+            pairedCheckbox.setChecked(False)
+        self.update_first_button_state()
+
+    def handle_all_of_rats(self):
+        selected_paths = self.get_selected_experiments()
         if len(selected_paths) < 1:
             print("Выберите хотя бы один эксперимент")
             return
+        elif len(selected_paths) > 1:
+            print("Для построения данного графика нужен лишь один эксперимент")
+            return
+        else:
+            if self.checkBox_3.isChecked():
+                plotting_func = TumorDataVisualizer.plot_tumor_volumes_single_graph
+            elif self.checkBox_4.isChecked():
+                plotting_func = TumorDataVisualizer.plot_relative_tumor_volumes_single_graph
+            else:
+                print("Необходимо выбрать тип графика")
+                return
 
-        visualizer = TumorDataVisualizer(selected_paths[0])
-        pixmap = self.draw_figure_to_pixmap(visualizer)
+        if plotting_func:
+            self.create_graphic(selected_paths, TumorDataVisualizer, plotting_func)
+        else:
+            print("Ошибка: Не выбран метод для визуализации")
 
+    def create_graphic(self, selected_paths, visualizer, plotting_func):
         # Очищаем layout, если он уже существует
         if self.frame.layout() is not None:
             # Удаляем все виджеты из layout
@@ -98,27 +134,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 child = self.frame.layout().takeAt(0)
                 if child.widget():
                     child.widget().deleteLater()
-
         else:
             # Если layout еще не был установлен, создаем его
             layout = QVBoxLayout(self.frame)
             self.frame.setLayout(layout)
 
-        # Создаем QLabel для отображения графика
-        label = QLabel()
-        label.setPixmap(pixmap)
-        label.setScaledContents(True)  # Указываем, что содержимое label должно масштабироваться с его размером
+        for path in selected_paths:
+            pixmap = self.draw_figure_to_pixmap(visualizer(path), plotting_func)
+            # Создаем QLabel для отображения каждого графика
+            label = QLabel()
+            label.setPixmap(pixmap)
+            label.setScaledContents(True)  # График масштабируется вместе с размером QLabel
+            label.setMinimumSize(self.frame.size())  # Настройка размера QLabel
+            self.frame.layout().addWidget(label)  # Добавляем QLabel в layout frame
 
-        # Добавляем label в layout frame
-        self.frame.layout().addWidget(label)
-
-        # Можно также настроить размер label, чтобы он соответствовал размеру frame, если нужно
-        label.setMinimumSize(self.frame.size())
-
-    def draw_figure_to_pixmap(self, visualizer):
+    def draw_figure_to_pixmap(self, visualizer, plotting_func):
         # Перенаправляем вывод графика в объект BytesIO вместо отображения в окне
         with io.BytesIO() as buf:
-            visualizer.plot_tumor_volumes_single_graph()
+            plotting_func(visualizer)
             # После генерации графика нужно сохранить текущий рисунок в buf
             plt.savefig(buf, format='png')
             plt.close()  # Закрываем текущее окно plt, чтобы оно не отображалось
