@@ -234,6 +234,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func)
 
+    def handle_compare_with_control(self):
+        selected_paths = self.get_selected_experiments()
+        if len(selected_paths) < 2:
+            print("Необходимо выбрать два или более экспериментов")
+            return
+    # TODO: Необходимо доделать
+
     def draw_graphic(self, selected_paths, visualizer, plotting_func):
         self.current_selected_paths = selected_paths
         self.current_visualizer = visualizer

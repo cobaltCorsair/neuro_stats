@@ -148,7 +148,7 @@ class GraphVisualizer:
             for time_index in range(len(experiments_to_compare[0].time_data)):
                 group1_volumes = [vol[time_index] for vol in experiments_to_compare[0].tumor_volumes]
                 group2_volumes = [vol[time_index] for vol in experiments_to_compare[1].tumor_volumes]
-
+                # TODO: тест падает, потому что возникает IndexError: list index out of range на vol[time_index]
                 # Выполнение теста Манна-Уитни
                 p_value = GraphVisualizer.perform_mann_whitney_test(group1_volumes, group2_volumes)
                 p_values.append(p_value)
