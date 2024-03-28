@@ -233,8 +233,8 @@ class TumorDataVisualizer:
             Создает и отображает график с динамикой изменения среднего относительного объема опухолей со всеми крысами,
             добавляя зоны доверительных интервалов. График сохраняется в файл с именем, соответствующим параметрам эксперимента.
         """
-        drawgraph = GraphVisualizer("Средний относительный объем опухоли (V отн. ср.)", "Время, сут.",
-                                    "Относительный объем опухоли, отн. ед.", figsize=(12, 7))
+        drawgraph = GraphVisualizer("Средний относительный усреднённый объем опухоли (V отн. ср.)", "Время, сут.",
+                                    "Средний отн. объем опухоли, отн. ед.", figsize=(12, 7))
         drawgraph.setup_figure()
 
         # Вычисление среднего относительного объема опухоли и его доверительного интервала
@@ -259,7 +259,6 @@ if __name__ == '__main__':
     #file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\02.02.2023_n_18.xlsx'
 
     visualizer = TumorDataVisualizer(file_path)
-    visualizer.plot_tumor_volumes_single_graph()
     # ExtractOutliers(visualizer).exclude_rats(['пл', 'г'], 'tumor_volumes')  # for p_25.2_n_7.2_2023.xlsx
     # ExtractOutliers(visualizer).exclude_rats(['г- пл'], 'tumor_volumes')  # for n_7.2_p_25.2_2023_2.xlsx
     outlier_extractor = ExtractOutliers(visualizer)
@@ -282,4 +281,4 @@ if __name__ == '__main__':
     visualizer.plot_average_relative_tumor_volume()
 
     # Сохраняем график среднего относительного усреднённого объема опухоли
-    visualizer.plot_mean_relative_mean_tumor_volume()
+    #visualizer.plot_mean_relative_mean_tumor_volume()

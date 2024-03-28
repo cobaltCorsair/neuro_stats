@@ -32,10 +32,10 @@ class TumorDataProcessor:
 
     def get_relative_tumor_volumes(self) -> np.ndarray:
         """
-        Вычисляет средний относительный объем опухолей для всех крыс.
+        Вычисляет относительный объем опухолей для всех крыс.
 
         Returns:
-            np.ndarray: Массив средних относительных объемов опухолей на каждом временном интервале.
+            np.ndarray: Массив относительных объемов опухолей на каждом временном интервале.
         """
         return np.array([[vol / volumes[0] for vol in volumes] for volumes in self.tumor_volumes])
 
