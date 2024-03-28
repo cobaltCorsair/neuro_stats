@@ -361,8 +361,8 @@ if __name__ == "__main__":
     # Создание объекта сравнителя
     comparator = TumorDataComparatorAdvanced(*experiment_visualizers)
 
-    #comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
-    #comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
+    comparator.compare_mean_volumes()  # Сравниваем средние абсолютные объемы
+    comparator.compare_relative_volumes()  # Сравниваем средние относительные объемы
 
     # Сравнение контрольных и экспериментальных групп
     #comparator.compare_control_and_experiment(control_visualizers)
