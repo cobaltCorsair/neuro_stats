@@ -9,6 +9,7 @@ from gui import Ui_MainWindow
 from work_with_prepared_data.radiobioligy_project.draw_abs_rel_graph_compare import TumorDataComparatorAdvanced
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs import TumorDataVisualizer
 import matplotlib
+
 matplotlib.use('QT5Agg')
 import matplotlib.pyplot as plt
 
@@ -28,6 +29,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ax = None
         self.canvas = None
         self.figure = None
+        self.current_visualizer = None
+        self.current_plotting_func = None
+        self.current_selected_paths = []
         self.setupUi(self)
         self.action.triggered.connect(self.open_files)
         # Настраиваем модель для 2 столбцов
@@ -208,57 +212,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 print("Необходимо выбрать тип графика")
                 return
 
-        self.create_graphic(selected_paths, TumorDataVisualizer, plotting_func)
+        self.draw_graphic(selected_paths, TumorDataVisualizer, plotting_func)
 
-    def create_graphic(self, selected_paths, visualizer, plotting_func):
-        """
-        Создает и отображает графики для выбранных экспериментов.
+    def handle_compare_rats(self):
+        selected_paths = self.get_selected_experiments()
+        if len(selected_paths) < 2:
+            print("Необходимо выбрать два или более экспериментов")
+            return
 
-        Этот метод генерирует графики для каждого пути в selected_paths, используя
-        указанную функцию отрисовки из класса visualizer. Графики отображаются внутри
-        виджета frame текущего интерфейса.
+        # Подготовка состояний чекбоксов
+        state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(), self.checkBox_6.isChecked())
+        # Использование match-case для определения функции визуализации
+        match state:
+            case (True, False, True):
+                plotting_func = TumorDataComparatorAdvanced.compare_mean_volumes
+            case (False, True, True):
+                plotting_func = TumorDataComparatorAdvanced.compare_relative_volumes
+            case _:
+                print("Необходимо выбрать тип графика")
+                return
 
-        Args:
-            selected_paths (List[str]): Список путей к файлам экспериментов.
-            visualizer (Visualizer): Класс визуализатора, который используется для генерации графиков.
-            plotting_func (function): Функция визуализатора для генерации графика.
+        self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func)
 
-        """
-        # Очищаем layout, если он уже существует
-        if self.frame.layout() is not None:
-            # Удаляем все виджеты из layout
-            while self.frame.layout().count():
-                child = self.frame.layout().takeAt(0)
-                if child.widget():
-                    child.widget().deleteLater()
-        else:
-            # Если layout еще не был установлен, создаем его
-            layout = QVBoxLayout(self.frame)
-            self.frame.setLayout(layout)
-
-        if visualizer is TumorDataVisualizer:
-            # Случай для одного эксперимента
-            pixmap = self.draw_figure_to_pixmap(visualizer(selected_paths[0]), plotting_func)
-        elif visualizer is TumorDataComparatorAdvanced:
-            # Случай для сравнения нескольких экспериментов
-            experiment_visualizers = [TumorDataVisualizer(path) for path in selected_paths]
-            pixmap = self.draw_figure_to_pixmap(visualizer(*experiment_visualizers), plotting_func)
-
-        # Отображаем созданный pixmap
-        label = QLabel()
-        label.setPixmap(pixmap)
-        label.setScaledContents(True)
-        label.setMinimumSize(self.frame.size())
-        self.frame.layout().addWidget(label)
-
-        # for path in selected_paths:
-        #     pixmap = self.draw_figure_to_pixmap(visualizer(path), plotting_func)
-        #     # Создаем QLabel для отображения каждого графика
-        #     label = QLabel()
-        #     label.setPixmap(pixmap)
-        #     label.setScaledContents(True)  # График масштабируется вместе с размером QLabel
-        #     label.setMinimumSize(self.frame.size())  # Настройка размера QLabel
-        #     self.frame.layout().addWidget(label)  # Добавляем QLabel в layout frame
+    def draw_graphic(self, selected_paths, visualizer, plotting_func):
+        self.current_selected_paths = selected_paths
+        self.current_visualizer = visualizer
+        self.current_plotting_func = plotting_func
+        self.create_graphic()
 
     def draw_figure_to_pixmap(self, visualizer, plotting_func):
         """
@@ -288,26 +268,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             pixmap.loadFromData(buf.getvalue())
             return pixmap
 
-    def handle_compare_rats(self):
-        selected_paths = self.get_selected_experiments()
-        if len(selected_paths) < 2:
-            print("Необходимо выбрать два или более экспериментов")
-            return
-
-        # Подготовка состояний чекбоксов
-        state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(), self.checkBox_6.isChecked())
-        # Использование match-case для определения функции визуализации
-        match state:
-            case (True, False, True):
-                plotting_func = TumorDataComparatorAdvanced.compare_mean_volumes
-            case (False, True, True):
-                plotting_func = TumorDataComparatorAdvanced.compare_relative_volumes
-            case _:
-                print("Необходимо выбрать тип графика")
-                return
-
-        self.create_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func)
-
     def update_third_button_state(self):
         """
         Обновляет состояние кнопки в зависимости от выбранных экспериментов и чекбоксов.
@@ -325,9 +285,59 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         selected_paths = self.get_selected_experiments()
         oneExperimentSelected = len(selected_paths) >= 2
-        anyCheckboxChecked = (self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and self.checkBox_6.isChecked()
+        anyCheckboxChecked = (
+                                         self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and self.checkBox_6.isChecked()
         self.pushButton_3.setEnabled(oneExperimentSelected and anyCheckboxChecked)
 
+    def create_graphic(self):
+        """
+        Создает и отображает графики для выбранных экспериментов.
+
+        Этот метод генерирует графики для каждого пути в selected_paths, используя
+        указанную функцию отрисовки из класса visualizer. Графики отображаются внутри
+        виджета frame текущего интерфейса.
+
+        Args:
+            selected_paths (List[str]): Список путей к файлам экспериментов.
+            visualizer (Visualizer): Класс визуализатора, который используется для генерации графиков.
+            plotting_func (function): Функция визуализатора для генерации графика.
+
+        """
+        if not self.current_visualizer or not self.current_plotting_func:
+            return  # Ничего не делаем, если параметры не заданы
+
+        # Очищаем layout, если он уже существует
+        if self.frame.layout() is not None:
+            # Удаляем все виджеты из layout
+            while self.frame.layout().count():
+                child = self.frame.layout().takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+        else:
+            # Если layout еще не был установлен, создаем его
+            layout = QVBoxLayout(self.frame)
+            self.frame.setLayout(layout)
+
+        if self.current_visualizer is TumorDataVisualizer:
+            # Случай для одного эксперимента
+            visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
+        elif self.current_visualizer is TumorDataComparatorAdvanced:
+            # Случай для сравнения нескольких экспериментов
+            visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
+            visualizer_instance = self.current_visualizer(*visualizer_instances)
+
+        pixmap = self.draw_figure_to_pixmap(visualizer_instance, self.current_plotting_func)
+
+        # Отображаем созданный pixmap
+        label = QLabel()
+        label.setPixmap(pixmap)
+        label.setScaledContents(True)
+        self.frame.layout().addWidget(label)
+
+    def resizeEvent(self, event):
+        """Вызывается при изменении размера окна."""
+        super(MainWindow, self).resizeEvent(event)
+        self.create_graphic()
 
 
 def main():
