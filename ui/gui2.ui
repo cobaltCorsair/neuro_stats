@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>828</width>
-    <height>477</height>
+    <width>885</width>
+    <height>518</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -84,6 +84,20 @@
         <item>
          <layout class="QHBoxLayout" name="horizontalLayout">
           <item>
+           <widget class="QCheckBox" name="checkBox_2">
+            <property name="text">
+             <string>Площадь под кривой</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="Line" name="line_5">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QCheckBox" name="checkBox_7">
             <property name="text">
              <string>Критерий Манна-Уитни</string>
@@ -107,12 +121,16 @@
           <item>
            <widget class="QLabel" name="label_3">
             <property name="text">
-             <string>Оффсет:</string>
+             <string>Сдвиг</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QDoubleSpinBox" name="doubleSpinBox"/>
+           <widget class="QDoubleSpinBox" name="doubleSpinBox">
+            <property name="minimum">
+             <double>-99.900000000000006</double>
+            </property>
+           </widget>
           </item>
          </layout>
         </item>
@@ -203,6 +221,13 @@
        </layout>
       </item>
      </layout>
+    </item>
+    <item row="0" column="0">
+     <widget class="QLabel" name="label_2">
+      <property name="text">
+       <string>Список доступных для анализа экспериментов:</string>
+      </property>
+     </widget>
     </item>
     <item row="1" column="0">
      <layout class="QGridLayout" name="gridLayout" columnstretch="0">
@@ -325,13 +350,6 @@
       </item>
      </layout>
     </item>
-    <item row="0" column="0">
-     <widget class="QLabel" name="label_2">
-      <property name="text">
-       <string>Список доступных для анализа экспериментов:</string>
-      </property>
-     </widget>
-    </item>
    </layout>
   </widget>
   <widget class="QMenuBar" name="menubar">
@@ -339,7 +357,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>828</width>
+     <width>885</width>
      <height>22</height>
     </rect>
    </property>

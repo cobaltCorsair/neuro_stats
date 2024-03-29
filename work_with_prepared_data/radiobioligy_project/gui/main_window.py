@@ -15,6 +15,42 @@ matplotlib.use('QT5Agg')
 import matplotlib.pyplot as plt
 
 
+class DataProcessor:
+    def __init__(self):
+        pass
+
+    def process_for_single_experiment(self, selected_path, checkboxes_state):
+        # Определение функции визуализации на основе состояния чекбоксов
+        if checkboxes_state == (True, False, True, False):
+            plotting_func = TumorDataVisualizer.plot_tumor_volumes_single_graph
+        elif checkboxes_state == (False, True, True, False):
+            plotting_func = TumorDataVisualizer.plot_relative_tumor_volumes_single_graph
+        elif checkboxes_state == (True, False, False, True):
+            plotting_func = TumorDataVisualizer.plot_mean_tumor_volume
+        elif checkboxes_state == (False, True, False, True):
+            plotting_func = TumorDataVisualizer.plot_average_relative_tumor_volume
+        else:
+            raise ValueError("Invalid checkbox state")
+        return plotting_func, selected_path
+
+    def process_for_comparison(self, selected_paths, checkboxes_state):
+        if checkboxes_state == (True, False, True):
+            plotting_func = TumorDataComparatorAdvanced.compare_mean_volumes
+        elif checkboxes_state == (False, True, True):
+            plotting_func = TumorDataComparatorAdvanced.compare_relative_volumes
+        else:
+            raise ValueError("Invalid checkbox state")
+        return plotting_func, selected_paths
+
+    def process_for_control_comparison(self, selected_paths, control_path, checkboxes_state):
+        if checkboxes_state == (True, True):
+            plotting_func = TumorDataComparatorAdvanced.compare_control_and_experiment
+            control_visualizer = ControlGroupVisualizer(control_path)
+        else:
+            raise ValueError("Invalid checkbox state")
+        return plotting_func, selected_paths, control_visualizer
+
+
 class MainWindow(QMainWindow, Ui_MainWindow):
     """Главное окно приложения.
 
@@ -35,6 +71,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_plotting_func = None
         self.current_selected_paths = []
         self.current_control = None
+        self.data_processor = DataProcessor()
         self.setupUi(self)
         self.action.triggered.connect(self.open_files)
         # Настраиваем модель для 2 столбцов
@@ -275,25 +312,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             print("Для построения данного графика нужен лишь один эксперимент")
             return
 
-        # Подготовка состояний чекбоксов
-        state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(),
-                 self.checkBox_5.isChecked(), self.checkBox_6.isChecked())
-
-        # Использование match-case для определения функции визуализации
-        match state:
-            case (True, False, True, False):
-                plotting_func = TumorDataVisualizer.plot_tumor_volumes_single_graph
-            case (False, True, True, False):
-                plotting_func = TumorDataVisualizer.plot_relative_tumor_volumes_single_graph
-            case (True, False, False, True):
-                plotting_func = TumorDataVisualizer.plot_mean_tumor_volume
-            case (False, True, False, True):
-                plotting_func = TumorDataVisualizer.plot_average_relative_tumor_volume
-            case _:
-                print("Необходимо выбрать тип графика")
-                return
-
-        self.draw_graphic(selected_paths, TumorDataVisualizer, plotting_func)
+        checkboxes_state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(),
+                            self.checkBox_5.isChecked(), self.checkBox_6.isChecked())
+        try:
+            plotting_func, selected_path = self.data_processor.process_for_single_experiment(selected_paths[0],
+                                                                                        checkboxes_state)
+            self.draw_graphic([selected_path], TumorDataVisualizer, plotting_func)
+        except ValueError as e:
+            print(e)
 
     def handle_compare_rats(self):
         selected_paths = self.get_selected_experiments()
@@ -301,19 +327,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             print("Необходимо выбрать два или более экспериментов")
             return
 
-        # Подготовка состояний чекбоксов
-        state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(), self.checkBox_6.isChecked())
-        # Использование match-case для определения функции визуализации
-        match state:
-            case (True, False, True):
-                plotting_func = TumorDataComparatorAdvanced.compare_mean_volumes
-            case (False, True, True):
-                plotting_func = TumorDataComparatorAdvanced.compare_relative_volumes
-            case _:
-                print("Необходимо выбрать тип графика")
-                return
-
-        self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func)
+        checkboxes_state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(), self.checkBox_6.isChecked())
+        try:
+            plotting_func, selected_paths = self.data_processor.process_for_comparison(selected_paths, checkboxes_state)
+            self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func)
+        except ValueError as e:
+            print(e)
 
     def handle_compare_with_control(self):
         selected_paths = self.get_selected_experiments()
@@ -329,18 +348,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             print("Необходимо указать путь к контрольной группе")
             return
 
-        # Подготовка состояний чекбоксов
-        state = (self.checkBox_4.isChecked(), self.checkBox_6.isChecked())
-        # Использование match-case для определения функции визуализации
-        match state:
-            case (True, True):
-                plotting_func = TumorDataComparatorAdvanced.compare_control_and_experiment
-                control_visualizer = ControlGroupVisualizer(control_path)
-            case _:
-                print("Необходимо выбрать тип графика")
-                return
-
-        self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func, control_visualizer)
+        checkboxes_state = (self.checkBox_4.isChecked(), self.checkBox_6.isChecked())
+        try:
+            plotting_func, selected_paths, control_visualizer = self.data_processor.process_for_control_comparison(
+                selected_paths, control_path, checkboxes_state)
+            self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func, control_visualizer)
+        except ValueError as e:
+            print(e)
 
     def draw_graphic(self, selected_paths, visualizer, plotting_func, current_control=None):
         self.current_selected_paths = selected_paths
