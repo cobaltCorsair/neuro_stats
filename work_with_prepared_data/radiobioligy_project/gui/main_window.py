@@ -6,6 +6,7 @@ import sys
 
 # Импорт сгенерированного класса из gui.py
 from gui import Ui_MainWindow
+from work_with_prepared_data.radiobioligy_project.controls import ControlGroupVisualizer
 from work_with_prepared_data.radiobioligy_project.draw_abs_rel_graph_compare import TumorDataComparatorAdvanced
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs import TumorDataVisualizer
 import matplotlib
@@ -26,23 +27,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self, parent=None):
         """Инициализация главного окна приложения."""
         super(MainWindow, self).__init__(parent)
+        self.control_path = None
         self.ax = None
         self.canvas = None
         self.figure = None
         self.current_visualizer = None
         self.current_plotting_func = None
         self.current_selected_paths = []
+        self.current_control = None
         self.setupUi(self)
         self.action.triggered.connect(self.open_files)
         # Настраиваем модель для 2 столбцов
-        self.model = QStandardItemModel(0, 2, self)
+        self.model = QStandardItemModel(0, 3, self)
         self.change_table()
         # Кнопки по умолчанию неактивны
         self.pushButton.setEnabled(False)
         self.pushButton_3.setEnabled(False)
+        self.pushButton_7.setEnabled(False)
         # Биндинг кнопок
         self.pushButton.clicked.connect(self.handle_all_of_rats)
         self.pushButton_3.clicked.connect(self.handle_compare_rats)
+        self.pushButton_7.clicked.connect(self.handle_compare_with_control)
         # Подключаем сигналы изменения состояния чекбоксов
         self.checkBox_3.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_3, self.checkBox_4))
         self.checkBox_4.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_4, self.checkBox_3))
@@ -50,6 +55,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.checkBox_6.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_6, self.checkBox_5))
         self.model.itemChanged.connect(self.update_first_button_state)
         self.model.itemChanged.connect(self.update_third_button_state)
+        self.model.itemChanged.connect(self.update_seventh_button_state)
+        self.model.itemChanged.connect(self.on_control_checkbox_changed)
+        self.comboBox_2.currentTextChanged.connect(self.update_control_path)
 
     def change_table(self):
         """
@@ -65,14 +73,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Returns:
             None.
         """
-        self.model.setHorizontalHeaderLabels(['Выбор файла', 'Путь к файлу эксперимента'])
+        self.model.setHorizontalHeaderLabels(['Выбор файла', 'Путь к файлу эксперимента', 'Пометить как контрольный'])
         self.tableView.setModel(self.model)
         # Настройка ширины столбцов
         header = self.tableView.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         # Устанавливаем фиксированную ширину для столбца с чекбоксами и именем файла
-        header.resizeSection(0, 300)  # Подстраиваем под нужный размер
+        header.resizeSection(0, 150)  # Подстраиваем под нужный размер
+        header.resizeSection(1, 250)  # Подстраиваем под нужный размер
+        header.resizeSection(2, 170)  # Подстраиваем под нужный размер
         # Настройка внешнего вида таблицы
         self.tableView.setShowGrid(True)  # Показать сетку
         # Устанавливаем размеры политики для таблицы, чтобы она заполняла все доступное пространство
@@ -109,16 +120,42 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             check_and_name_item = QStandardItem(file_name)
             check_and_name_item.setCheckable(True)
             check_and_name_item.setEditable(False)
+            file_path_item = QStandardItem(file_path)
+
+            # Создаем чекбокс "Пометить как контрольный"
+            control_checkbox_item = QStandardItem()
+            control_checkbox_item.setCheckable(True)
+            control_checkbox_item.setEditable(False)
 
             # Элемент для пути к файлу
             file_path_item = QStandardItem(file_path)
 
             # Добавление строки в модель
-            self.model.appendRow([check_and_name_item, file_path_item])
+            self.model.appendRow([check_and_name_item, file_path_item, control_checkbox_item])
 
             # Устанавливаем высоту строк
             for row in range(self.model.rowCount()):
                 self.tableView.setRowHeight(row, 20)  # Задаем желаемую высоту строки
+
+    def update_control_path(self, text):
+        self.control_path = text
+
+    def on_control_checkbox_changed(self, item):
+        if item.column() == 2:  # Проверяем, что изменение произошло в столбце "Пометить как контрольный"
+            if item.checkState() == Qt.CheckState.Checked:
+                # Проходимся по всем чекбоксам и снимаем отметку, кроме текущего
+                for row in range(self.model.rowCount()):
+                    otherItem = self.model.item(row, 2)
+                    if otherItem != item:
+                        otherItem.setCheckState(Qt.CheckState.Unchecked)
+                file_path = self.model.item(item.row(), 1).text()
+                self.comboBox_2.clear()
+                self.comboBox_2.addItem(file_path)
+                self.control_path = file_path  # Обновляем контрольный путь
+            else:
+                self.comboBox_2.clear()
+                self.control_path = None
+            self.update_seventh_button_state()
 
     def get_selected_experiments(self):
         """
@@ -159,6 +196,49 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                               (self.checkBox_5.isChecked() or self.checkBox_6.isChecked()))
         self.pushButton.setEnabled(oneExperimentSelected and anyCheckboxChecked)
 
+    def update_third_button_state(self):
+        """
+        Обновляет состояние кнопки в зависимости от выбранных экспериментов и чекбоксов.
+
+        Этот метод проверяет, выбран ли ровно один эксперимент и отмечен ли хотя бы один
+        из двух наборов чекбоксов (checkBox_3 или checkBox_4, и checkBox_6).
+        Если оба условия удовлетворены, кнопка становится активной. В противном случае
+        кнопка деактивируется.
+
+        Args:
+            Нет аргументов.
+
+        Returns:
+            Ничего не возвращает, но изменяет состояние активности pushButton.
+        """
+        selected_paths = self.get_selected_experiments()
+        oneExperimentSelected = len(selected_paths) >= 2
+        anyCheckboxChecked = (
+                                     self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and self.checkBox_6.isChecked()
+        self.pushButton_3.setEnabled(oneExperimentSelected and anyCheckboxChecked)
+
+    def update_seventh_button_state(self):
+        """
+        Обновляет состояние кнопки в зависимости от выбранных экспериментов и чекбоксов.
+
+        Этот метод проверяет, выбран ли ровно один эксперимент и отмечен ли хотя бы один
+        из двух наборов чекбоксов (checkBox_4, и checkBox_6).
+        Если оба условия удовлетворены, кнопка становится активной. В противном случае
+        кнопка деактивируется.
+
+        Args:
+            Нет аргументов.
+
+        Returns:
+            Ничего не возвращает, но изменяет состояние активности pushButton.
+        """
+        selected_paths = self.get_selected_experiments()
+        oneExperimentSelected = len(selected_paths) >= 1
+        anyCheckboxChecked = self.checkBox_4.isChecked() and self.checkBox_6.isChecked()
+        controlChecked = self.comboBox_2.count() > 0
+
+        self.pushButton_7.setEnabled(oneExperimentSelected and anyCheckboxChecked and controlChecked)
+
     def on_checkbox_pair_changed(self, thisCheckbox, pairedCheckbox):
         """Обработка изменения состояния пары взаимоисключающих чекбоксов.
 
@@ -171,6 +251,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             pairedCheckbox.setChecked(False)
         self.update_first_button_state()
         self.update_third_button_state()
+        self.update_seventh_button_state()
 
     def handle_all_of_rats(self):
         """
@@ -236,15 +317,36 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def handle_compare_with_control(self):
         selected_paths = self.get_selected_experiments()
-        if len(selected_paths) < 2:
-            print("Необходимо выбрать два или более экспериментов")
+        if len(selected_paths) < 1:
+            print("Необходимо выбрать хотя бы один или более экспериментов")
             return
-    # TODO: Необходимо доделать
 
-    def draw_graphic(self, selected_paths, visualizer, plotting_func):
+        # Предположим, что контрольный путь уже сохранен в атрибуте класса
+        control_path = self.control_path
+
+        # Проверка наличия контрольного пути
+        if not control_path:
+            print("Необходимо указать путь к контрольной группе")
+            return
+
+        # Подготовка состояний чекбоксов
+        state = (self.checkBox_4.isChecked(), self.checkBox_6.isChecked())
+        # Использование match-case для определения функции визуализации
+        match state:
+            case (True, True):
+                plotting_func = TumorDataComparatorAdvanced.compare_control_and_experiment
+                control_visualizer = ControlGroupVisualizer(control_path)
+            case _:
+                print("Необходимо выбрать тип графика")
+                return
+
+        self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func, control_visualizer)
+
+    def draw_graphic(self, selected_paths, visualizer, plotting_func, current_control=None):
         self.current_selected_paths = selected_paths
         self.current_visualizer = visualizer
         self.current_plotting_func = plotting_func
+        self.current_control = current_control
         self.create_graphic()
 
     def draw_figure_to_pixmap(self, visualizer, plotting_func):
@@ -266,7 +368,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         # Перенаправляем вывод графика в объект BytesIO вместо отображения в окне
         with io.BytesIO() as buf:
-            plotting_func(visualizer)
+            if self.current_control is not None:
+                plotting_func(visualizer, [self.current_control])
+            else:
+                plotting_func(visualizer)
             # После генерации графика нужно сохранить текущий рисунок в buf
             plt.savefig(buf, format='png')
             plt.close()  # Закрываем текущее окно plt, чтобы оно не отображалось
@@ -274,27 +379,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             pixmap = QPixmap()
             pixmap.loadFromData(buf.getvalue())
             return pixmap
-
-    def update_third_button_state(self):
-        """
-        Обновляет состояние кнопки в зависимости от выбранных экспериментов и чекбоксов.
-
-        Этот метод проверяет, выбран ли ровно один эксперимент и отмечен ли хотя бы один
-        из двух наборов чекбоксов (checkBox_3 или checkBox_4, и checkBox_6).
-        Если оба условия удовлетворены, кнопка становится активной. В противном случае
-        кнопка деактивируется.
-
-        Args:
-            Нет аргументов.
-
-        Returns:
-            Ничего не возвращает, но изменяет состояние активности pushButton.
-        """
-        selected_paths = self.get_selected_experiments()
-        oneExperimentSelected = len(selected_paths) >= 2
-        anyCheckboxChecked = (
-                                         self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and self.checkBox_6.isChecked()
-        self.pushButton_3.setEnabled(oneExperimentSelected and anyCheckboxChecked)
 
     def create_graphic(self):
         """
@@ -328,8 +412,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.current_visualizer is TumorDataVisualizer:
             # Случай для одного эксперимента
             visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
-        elif self.current_visualizer is TumorDataComparatorAdvanced:
+        elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is None:
             # Случай для сравнения нескольких экспериментов
+            visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
+            visualizer_instance = self.current_visualizer(*visualizer_instances)
+        elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is not None:
+            # Случай для сравнения нескольких экспериментов с контрольной группой
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
             visualizer_instance = self.current_visualizer(*visualizer_instances)
 

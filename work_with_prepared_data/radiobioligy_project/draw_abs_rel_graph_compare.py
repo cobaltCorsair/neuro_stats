@@ -185,6 +185,7 @@ class TumorDataComparatorAdvanced:
             True,  # Указываем, что нужно рассчитать AUC
             True,
             [self.visualizers[0], self.visualizers[1]],
+            # TODO: Необходимо предусмотреть, что группа может быть одна
             'up'
         )
 
