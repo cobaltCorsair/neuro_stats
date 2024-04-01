@@ -11,6 +11,8 @@ from work_with_prepared_data.radiobioligy_project.draw_abs_rel_graph_compare imp
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs import TumorDataVisualizer
 import matplotlib
 
+from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf import SkinReactionsVisualizer
+
 matplotlib.use('QT5Agg')
 import matplotlib.pyplot as plt
 
@@ -31,6 +33,13 @@ class DataProcessor:
             plotting_func = TumorDataVisualizer.plot_average_relative_tumor_volume
         else:
             raise ValueError("Invalid checkbox state")
+        return plotting_func, selected_path
+
+    def process_skin_reactions(self, selected_path, checkboxes_state):
+        if checkboxes_state == (True, False, True, False) and "skin_reactions" in selected_path:
+            plotting_func = SkinReactionsVisualizer.plot_skin_reactions
+        else:
+            raise ValueError("Invalid checkbox state or name")
         return plotting_func, selected_path
 
     def process_for_comparison(self, selected_paths, checkboxes_state):
@@ -79,10 +88,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.change_table()
         # Кнопки по умолчанию неактивны
         self.pushButton.setEnabled(False)
+        self.pushButton_2.setEnabled(False)
         self.pushButton_3.setEnabled(False)
         self.pushButton_7.setEnabled(False)
         # Биндинг кнопок
         self.pushButton.clicked.connect(self.handle_all_of_rats)
+        self.pushButton_2.clicked.connect(self.handle_skin_reactions)
         self.pushButton_3.clicked.connect(self.handle_compare_rats)
         self.pushButton_7.clicked.connect(self.handle_compare_with_control)
         # Подключаем сигналы изменения состояния чекбоксов
@@ -91,6 +102,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.checkBox_5.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_5, self.checkBox_6))
         self.checkBox_6.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_6, self.checkBox_5))
         self.model.itemChanged.connect(self.update_first_button_state)
+        self.model.itemChanged.connect(self.update_second_button_state)
         self.model.itemChanged.connect(self.update_third_button_state)
         self.model.itemChanged.connect(self.update_seventh_button_state)
         self.model.itemChanged.connect(self.on_control_checkbox_changed)
@@ -231,7 +243,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         oneExperimentSelected = len(selected_paths) == 1
         anyCheckboxChecked = ((self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and
                               (self.checkBox_5.isChecked() or self.checkBox_6.isChecked()))
-        self.pushButton.setEnabled(oneExperimentSelected and anyCheckboxChecked)
+        fileName = "skin_reactions" not in selected_paths[0] if oneExperimentSelected else False
+        self.pushButton.setEnabled(oneExperimentSelected and anyCheckboxChecked and fileName)
+
+    def update_second_button_state(self):
+        """
+        Обновляет состояние кнопки в зависимости от выбранных экспериментов и чекбоксов.
+
+        Этот метод проверяет, выбран ли ровно один эксперимент и отмечен ли хотя бы один
+        из двух наборов чекбоксов (checkBox_3 или checkBox_4, и checkBox_5 или checkBox_6).
+        Если оба условия удовлетворены, кнопка становится активной. В противном случае
+        кнопка деактивируется.
+
+        Args:
+            Нет аргументов.
+
+        Returns:
+            Ничего не возвращает, но изменяет состояние активности pushButton.
+        """
+        selected_paths = self.get_selected_experiments()
+        oneExperimentSelected = len(selected_paths) == 1
+        anyCheckboxChecked = self.checkBox_3.isChecked() and self.checkBox_5.isChecked()
+        fileName = "skin_reactions" in selected_paths[0] if oneExperimentSelected else False
+        self.pushButton_2.setEnabled(oneExperimentSelected and anyCheckboxChecked and fileName)
 
     def update_third_button_state(self):
         """
@@ -250,9 +284,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         selected_paths = self.get_selected_experiments()
         oneExperimentSelected = len(selected_paths) >= 2
-        anyCheckboxChecked = (
-                                     self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and self.checkBox_6.isChecked()
-        self.pushButton_3.setEnabled(oneExperimentSelected and anyCheckboxChecked)
+        anyCheckboxChecked = (self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and self.checkBox_6.isChecked()
+        # Проверяем, что во всех выбранных путях отсутствует "skin_reactions"
+        allPathsValid = all("skin_reactions" not in path for path in selected_paths)
+        self.pushButton_3.setEnabled(oneExperimentSelected and anyCheckboxChecked and allPathsValid)
 
     def update_seventh_button_state(self):
         """
@@ -273,8 +308,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         oneExperimentSelected = len(selected_paths) >= 1
         anyCheckboxChecked = self.checkBox_4.isChecked() and self.checkBox_6.isChecked()
         controlChecked = self.comboBox_2.count() > 0
-
-        self.pushButton_7.setEnabled(oneExperimentSelected and anyCheckboxChecked and controlChecked)
+        # Проверяем, что во всех выбранных путях отсутствует "skin_reactions"
+        allPathsValid = all("skin_reactions" not in path for path in selected_paths)
+        self.pushButton_7.setEnabled(oneExperimentSelected and anyCheckboxChecked and controlChecked and allPathsValid)
 
     def on_checkbox_pair_changed(self, thisCheckbox, pairedCheckbox):
         """Обработка изменения состояния пары взаимоисключающих чекбоксов.
@@ -287,6 +323,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if thisCheckbox.isChecked():
             pairedCheckbox.setChecked(False)
         self.update_first_button_state()
+        self.update_second_button_state()
         self.update_third_button_state()
         self.update_seventh_button_state()
 
@@ -316,7 +353,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                             self.checkBox_5.isChecked(), self.checkBox_6.isChecked())
         try:
             plotting_func, selected_path = self.data_processor.process_for_single_experiment(selected_paths[0],
-                                                                                        checkboxes_state)
+                                                                                             checkboxes_state)
             self.draw_graphic([selected_path], TumorDataVisualizer, plotting_func)
         except ValueError as e:
             print(e)
@@ -353,6 +390,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             plotting_func, selected_paths, control_visualizer = self.data_processor.process_for_control_comparison(
                 selected_paths, control_path, checkboxes_state)
             self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func, control_visualizer)
+        except ValueError as e:
+            print(e)
+
+    def handle_skin_reactions(self):
+        selected_paths = self.get_selected_experiments()
+        if len(selected_paths) < 1:
+            print("Выберите хотя бы один эксперимент")
+            return
+        elif len(selected_paths) > 1:
+            print("Для построения данного графика нужен лишь один эксперимент")
+            return
+
+        checkboxes_state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(),
+                            self.checkBox_5.isChecked(), self.checkBox_6.isChecked())
+        try:
+            plotting_func, selected_path = self.data_processor.process_skin_reactions(selected_paths[0],
+                                                                                      checkboxes_state)
+            self.draw_graphic([selected_path], SkinReactionsVisualizer, plotting_func)
         except ValueError as e:
             print(e)
 
@@ -434,6 +489,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # Случай для сравнения нескольких экспериментов с контрольной группой
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
             visualizer_instance = self.current_visualizer(*visualizer_instances)
+        elif self.current_visualizer is SkinReactionsVisualizer:
+            visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
 
         pixmap = self.draw_figure_to_pixmap(visualizer_instance, self.current_plotting_func)
 
