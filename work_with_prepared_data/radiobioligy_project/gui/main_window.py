@@ -38,6 +38,8 @@ class DataProcessor:
     def process_skin_reactions(self, selected_path, checkboxes_state):
         if checkboxes_state == (True, False, True, False) and "skin_reactions" in selected_path:
             plotting_func = SkinReactionsVisualizer.plot_skin_reactions
+        elif checkboxes_state == (True, False, False, True) and all("skin_reactions" in path for path in selected_path):
+            plotting_func = SkinReactionsVisualizer.plot_mean_skin_reactions
         else:
             raise ValueError("Invalid checkbox state or name")
         return plotting_func, selected_path
@@ -90,11 +92,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton.setEnabled(False)
         self.pushButton_2.setEnabled(False)
         self.pushButton_3.setEnabled(False)
+        self.pushButton_4.setEnabled(False)
         self.pushButton_7.setEnabled(False)
         # Биндинг кнопок
         self.pushButton.clicked.connect(self.handle_all_of_rats)
         self.pushButton_2.clicked.connect(self.handle_skin_reactions)
         self.pushButton_3.clicked.connect(self.handle_compare_rats)
+        self.pushButton_4.clicked.connect(self.handle_compare_skin_reactions)
         self.pushButton_7.clicked.connect(self.handle_compare_with_control)
         # Подключаем сигналы изменения состояния чекбоксов
         self.checkBox_3.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_3, self.checkBox_4))
@@ -104,6 +108,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.model.itemChanged.connect(self.update_first_button_state)
         self.model.itemChanged.connect(self.update_second_button_state)
         self.model.itemChanged.connect(self.update_third_button_state)
+        self.model.itemChanged.connect(self.update_fourth_button_state)
         self.model.itemChanged.connect(self.update_seventh_button_state)
         self.model.itemChanged.connect(self.on_control_checkbox_changed)
         self.comboBox_2.currentTextChanged.connect(self.update_control_path)
@@ -263,7 +268,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         selected_paths = self.get_selected_experiments()
         oneExperimentSelected = len(selected_paths) == 1
-        anyCheckboxChecked = self.checkBox_3.isChecked() and self.checkBox_5.isChecked()
+        anyCheckboxChecked = (self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and self.checkBox_5.isChecked()
         fileName = "skin_reactions" in selected_paths[0] if oneExperimentSelected else False
         self.pushButton_2.setEnabled(oneExperimentSelected and anyCheckboxChecked and fileName)
 
@@ -288,6 +293,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Проверяем, что во всех выбранных путях отсутствует "skin_reactions"
         allPathsValid = all("skin_reactions" not in path for path in selected_paths)
         self.pushButton_3.setEnabled(oneExperimentSelected and anyCheckboxChecked and allPathsValid)
+
+    def update_fourth_button_state(self):
+        selected_paths = self.get_selected_experiments()
+        oneExperimentSelected = len(selected_paths) >= 2
+        anyCheckboxChecked = self.checkBox_3.isChecked() and self.checkBox_6.isChecked()
+        # Проверяем, что во всех выбранных путях отсутствует "skin_reactions"
+        allPathsValid = all("skin_reactions" in path for path in selected_paths)
+        self.pushButton_4.setEnabled(oneExperimentSelected and anyCheckboxChecked and allPathsValid)
 
     def update_seventh_button_state(self):
         """
@@ -325,6 +338,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.update_first_button_state()
         self.update_second_button_state()
         self.update_third_button_state()
+        self.update_fourth_button_state()
         self.update_seventh_button_state()
 
     def handle_all_of_rats(self):
@@ -411,6 +425,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         except ValueError as e:
             print(e)
 
+    def handle_compare_skin_reactions(self):
+        selected_paths = self.get_selected_experiments()
+        if len(selected_paths) < 2:
+            print("Необходимо выбрать два или более экспериментов")
+            return
+
+        checkboxes_state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(),
+                            self.checkBox_5.isChecked(), self.checkBox_6.isChecked())
+        try:
+            plotting_func, selected_path = self.data_processor.process_skin_reactions(selected_paths,
+                                                                                      checkboxes_state)
+            self.draw_graphic(selected_path, SkinReactionsVisualizer, plotting_func)
+        except ValueError as e:
+            print(e)
+
     def draw_graphic(self, selected_paths, visualizer, plotting_func, current_control=None):
         self.current_selected_paths = selected_paths
         self.current_visualizer = visualizer
@@ -437,10 +466,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         # Перенаправляем вывод графика в объект BytesIO вместо отображения в окне
         with io.BytesIO() as buf:
-            if self.current_control is not None:
-                plotting_func(visualizer, [self.current_control])
+            if isinstance(visualizer, SkinReactionsVisualizer) and len(self.current_selected_paths) > 1:
+                # Вызов статического метода для рисования графика
+                SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths)
             else:
-                plotting_func(visualizer)
+                # Для других случаев, когда используется один файл или другие типы визуализаторов
+                if self.current_control is not None:
+                    plotting_func(visualizer, [self.current_control])
+                else:
+                    plotting_func(visualizer)
+            # Сохраняем генерируемый график в буфер
             # После генерации графика нужно сохранить текущий рисунок в buf
             plt.savefig(buf, format='png')
             plt.close()  # Закрываем текущее окно plt, чтобы оно не отображалось
@@ -490,7 +525,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
             visualizer_instance = self.current_visualizer(*visualizer_instances)
         elif self.current_visualizer is SkinReactionsVisualizer:
-            visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
+            if len(self.current_selected_paths) > 1:
+                visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
+            else:
+                visualizer_instance = self.current_visualizer(self.current_selected_paths)
 
         pixmap = self.draw_figure_to_pixmap(visualizer_instance, self.current_plotting_func)
 
