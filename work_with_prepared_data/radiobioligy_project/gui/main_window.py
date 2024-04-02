@@ -38,8 +38,10 @@ class DataProcessor:
     def process_skin_reactions(self, selected_path, checkboxes_state):
         if checkboxes_state == (True, False, True, False) and "skin_reactions" in selected_path:
             plotting_func = SkinReactionsVisualizer.plot_skin_reactions
-        elif checkboxes_state == (True, False, False, True) and all("skin_reactions" in path for path in selected_path):
+        elif checkboxes_state == (False, True, False, True) and "skin_reactions" in selected_path:
             plotting_func = SkinReactionsVisualizer.plot_mean_skin_reactions
+        elif checkboxes_state == (True, False, False, True) and all("skin_reactions" in path for path in selected_path):
+            plotting_func = SkinReactionsVisualizer.plot_multiple_experiments
         else:
             raise ValueError("Invalid checkbox state or name")
         return plotting_func, selected_path
@@ -268,7 +270,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         selected_paths = self.get_selected_experiments()
         oneExperimentSelected = len(selected_paths) == 1
-        anyCheckboxChecked = (self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and self.checkBox_5.isChecked()
+        anyCheckboxChecked = ((self.checkBox_3.isChecked() or self.checkBox_6.isChecked()) and
+                              (self.checkBox_4.isChecked() or self.checkBox_5.isChecked()))
         fileName = "skin_reactions" in selected_paths[0] if oneExperimentSelected else False
         self.pushButton_2.setEnabled(oneExperimentSelected and anyCheckboxChecked and fileName)
 
@@ -525,10 +528,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
             visualizer_instance = self.current_visualizer(*visualizer_instances)
         elif self.current_visualizer is SkinReactionsVisualizer:
-            if len(self.current_selected_paths) > 1:
+            if len(self.current_selected_paths) == 1:
                 visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
             else:
-                visualizer_instance = self.current_visualizer(self.current_selected_paths)
+                visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
 
         pixmap = self.draw_figure_to_pixmap(visualizer_instance, self.current_plotting_func)
 
