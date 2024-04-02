@@ -59,8 +59,12 @@ class DataProcessor:
         if checkboxes_state == (True, True):
             plotting_func = TumorDataComparatorAdvanced.compare_control_and_experiment
             control_visualizer = ControlGroupVisualizer(control_path)
+        elif checkboxes_state == (False, True):
+            plotting_func = TumorDataComparatorAdvanced.compare_tumor_growth_inhibition_with_multiple_experiments
+            control_visualizer = ControlGroupVisualizer(control_path)
         else:
             raise ValueError("Invalid checkbox state")
+
         return plotting_func, selected_paths, control_visualizer
 
 
@@ -101,6 +105,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_2.clicked.connect(self.handle_skin_reactions)
         self.pushButton_3.clicked.connect(self.handle_compare_rats)
         self.pushButton_4.clicked.connect(self.handle_compare_skin_reactions)
+        self.pushButton_5.clicked.connect(self.handle_compare_tumor_growth_inhibition)
         self.pushButton_7.clicked.connect(self.handle_compare_with_control)
         # Подключаем сигналы изменения состояния чекбоксов
         self.checkBox_3.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_3, self.checkBox_4))
@@ -443,6 +448,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         except ValueError as e:
             print(e)
 
+    def handle_compare_tumor_growth_inhibition(self):
+        # Получаем выбранные пути
+        selected_paths = self.get_selected_experiments()
+
+        # Проверяем наличие контрольного пути и наличие выбранных экспериментов
+        if not self.control_path or len(selected_paths) < 1:
+            print("Необходимо выбрать контрольную группу и хотя бы один эксперимент")
+            return
+
+        checkboxes_state = (self.checkBox_4.isChecked(), self.checkBox_6.isChecked())
+        try:
+            plotting_func, selected_paths, control_visualizer = self.data_processor.process_for_control_comparison(
+                selected_paths, self.control_path, checkboxes_state)
+            self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func, control_visualizer)
+        except ValueError as e:
+            print(e)
+
     def draw_graphic(self, selected_paths, visualizer, plotting_func, current_control=None):
         self.current_selected_paths = selected_paths
         self.current_visualizer = visualizer
@@ -474,8 +496,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths)
             else:
                 # Для других случаев, когда используется один файл или другие типы визуализаторов
-                if self.current_control is not None:
+                if self.current_control is not None and plotting_func == TumorDataComparatorAdvanced.compare_control_and_experiment:
                     plotting_func(visualizer, [self.current_control])
+                elif self.current_control is not None and plotting_func == TumorDataComparatorAdvanced.compare_tumor_growth_inhibition_with_multiple_experiments:
+                    experiment_visualizers = [TumorDataVisualizer(path) for path in self.current_selected_paths]
+                    plotting_func(visualizer, self.current_control, experiment_visualizers)
                 else:
                     plotting_func(visualizer)
             # Сохраняем генерируемый график в буфер
