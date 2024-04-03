@@ -99,6 +99,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_2.setEnabled(False)
         self.pushButton_3.setEnabled(False)
         self.pushButton_4.setEnabled(False)
+        self.pushButton_5.setEnabled(False)
         self.pushButton_7.setEnabled(False)
         # Биндинг кнопок
         self.pushButton.clicked.connect(self.handle_all_of_rats)
@@ -116,6 +117,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.model.itemChanged.connect(self.update_second_button_state)
         self.model.itemChanged.connect(self.update_third_button_state)
         self.model.itemChanged.connect(self.update_fourth_button_state)
+        self.model.itemChanged.connect(self.update_fifth_button_state)
         self.model.itemChanged.connect(self.update_seventh_button_state)
         self.model.itemChanged.connect(self.on_control_checkbox_changed)
         self.comboBox_2.currentTextChanged.connect(self.update_control_path)
@@ -310,6 +312,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         allPathsValid = all("skin_reactions" in path for path in selected_paths)
         self.pushButton_4.setEnabled(oneExperimentSelected and anyCheckboxChecked and allPathsValid)
 
+    def update_fifth_button_state(self):
+        """
+        Обновляет состояние кнопки в зависимости от выбранных экспериментов и чекбоксов.
+
+        Этот метод проверяет, выбран ли ровно один эксперимент и отмечен ли хотя бы один
+        из двух наборов чекбоксов (checkBox_3, и checkBox_6).
+        Если оба условия удовлетворены, кнопка становится активной. В противном случае
+        кнопка деактивируется.
+
+        Args:
+            Нет аргументов.
+
+        Returns:
+            Ничего не возвращает, но изменяет состояние активности pushButton.
+        """
+        selected_paths = self.get_selected_experiments()
+        oneExperimentSelected = len(selected_paths) >= 1
+        anyCheckboxChecked = self.checkBox_3.isChecked() and self.checkBox_6.isChecked()
+        controlChecked = self.comboBox_2.count() > 0
+        self.pushButton_5.setEnabled(oneExperimentSelected and anyCheckboxChecked and controlChecked)
+
     def update_seventh_button_state(self):
         """
         Обновляет состояние кнопки в зависимости от выбранных экспериментов и чекбоксов.
@@ -347,6 +370,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.update_second_button_state()
         self.update_third_button_state()
         self.update_fourth_button_state()
+        self.update_fifth_button_state()
         self.update_seventh_button_state()
 
     def handle_all_of_rats(self):
