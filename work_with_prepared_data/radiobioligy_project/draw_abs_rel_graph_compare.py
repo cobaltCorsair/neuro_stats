@@ -314,13 +314,15 @@ class TumorDataComparatorAdvanced:
         # Изменение индекса
         df.set_index('Время (сут)', inplace=True)
 
-        # Печать отфильтрованной таблицы с использованием to_string()
-        print(df_filtered.to_string())
+        # # Печать отфильтрованной таблицы с использованием to_string()
+        # print(df_filtered.to_string())
+        #
+        # # Расчет среднего абсолютного значения относительных различий
+        # average_absolute_relative_difference = df_filtered['Relative Difference (%)'].abs().mean()
+        # print(
+        #     f"Среднее абсолютное значение относительного различия начиная с 9-го дня: {average_absolute_relative_difference:.2f}%")
 
-        # Расчет среднего абсолютного значения относительных различий
-        average_absolute_relative_difference = df_filtered['Relative Difference (%)'].abs().mean()
-        print(
-            f"Среднее абсолютное значение относительного различия начиная с 9-го дня: {average_absolute_relative_difference:.2f}%")
+        return df_filtered
 
 
 if __name__ == "__main__":

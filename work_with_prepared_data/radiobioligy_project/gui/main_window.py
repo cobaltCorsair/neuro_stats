@@ -1,7 +1,8 @@
 import io
 from PyQt6.QtCore import QFileInfo, Qt
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QPixmap
-from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel, \
+    QTableWidget, QTableWidgetItem
 import sys
 
 # Импорт сгенерированного класса из gui.py
@@ -107,6 +108,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_3.clicked.connect(self.handle_compare_rats)
         self.pushButton_4.clicked.connect(self.handle_compare_skin_reactions)
         self.pushButton_5.clicked.connect(self.handle_compare_tumor_growth_inhibition)
+        self.pushButton_6.clicked.connect(self.handle_tumor_growth_inhibition_table)
         self.pushButton_7.clicked.connect(self.handle_compare_with_control)
         # Подключаем сигналы изменения состояния чекбоксов
         self.checkBox_3.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_3, self.checkBox_4))
@@ -219,6 +221,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.comboBox_2.clear()
                 self.control_path = None
             self.update_seventh_button_state()
+            self.update_fifth_button_state()
 
     def get_selected_experiments(self):
         """
@@ -489,6 +492,37 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         except ValueError as e:
             print(e)
 
+    def handle_tumor_growth_inhibition_table(self):
+        selected_paths = self.get_selected_experiments()
+
+        # Проверяем наличие контрольного пути и наличие выбранных экспериментов
+        if not self.control_path or len(selected_paths) != 2:
+            print("Необходимо выбрать контрольную группу и два эксперимента")
+            return
+
+        # Получение контрольного и экспериментальных визуализаторов
+        visualizer = TumorDataComparatorAdvanced(*[TumorDataVisualizer(path) for path in selected_paths])
+        control_visualizer = ControlGroupVisualizer(self.control_path)
+        experiment_visualizers = [TumorDataVisualizer(path) for path in selected_paths]
+
+        # Предполагаем, что функция модифицирована для возврата DataFrame
+        df = (TumorDataComparatorAdvanced.
+              create_tumor_growth_inhibition_table(visualizer, control_visualizer, experiment_visualizers))
+
+        # Очистка layout перед добавлением нового содержимого
+        self.clear_layout(self.frame.layout())
+
+        # Проверка, существует ли layout. Если нет, создаем новый.
+        if self.frame.layout() is None:
+            layout = QVBoxLayout(self.frame)
+            self.frame.setLayout(layout)
+        else:
+            layout = self.frame.layout()
+
+        # Создание QTableWidget и заполнение его данными из DataFrame
+        table = self.dataframe_to_qtablewidget(df)
+        layout.addWidget(table)
+
     def draw_graphic(self, selected_paths, visualizer, plotting_func, current_control=None):
         self.current_selected_paths = selected_paths
         self.current_visualizer = visualizer
@@ -590,10 +624,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         label.setScaledContents(True)
         self.frame.layout().addWidget(label)
 
+    def dataframe_to_qtablewidget(self, df):
+        table_widget = QTableWidget()
+        table_widget.setRowCount(df.shape[0])
+        table_widget.setColumnCount(df.shape[1])
+        table_widget.setHorizontalHeaderLabels(df.columns)
+
+        for i, (index, row) in enumerate(df.iterrows()):
+            for j, value in enumerate(row):
+                if j == 0:
+                    item = QTableWidgetItem(str(int(value)))
+                else:
+                    # Остальные значения округляем до трех знаков после запятой
+                    item = QTableWidgetItem(f"{value:.3f}")
+                table_widget.setItem(i, j, item)
+
+        table_widget.resizeColumnsToContents()
+        return table_widget
+
     def resizeEvent(self, event):
         """Вызывается при изменении размера окна."""
         super(MainWindow, self).resizeEvent(event)
         self.create_graphic()
+
+    def clear_layout(self, layout):
+        if layout is not None:
+            while layout.count():
+                child = layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
 
 
 def main():
