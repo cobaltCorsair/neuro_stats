@@ -367,6 +367,7 @@
     </property>
     <addaction name="action"/>
     <addaction name="action_2"/>
+    <addaction name="action_4"/>
    </widget>
    <widget class="QMenu" name="menu_2">
     <property name="title">
@@ -403,6 +404,11 @@
   <action name="action_pdf">
    <property name="text">
     <string>Распознать pdf-файл эксперимента</string>
+   </property>
+  </action>
+  <action name="action_4">
+   <property name="text">
+    <string>Сохранить таблицу</string>
    </property>
   </action>
  </widget>

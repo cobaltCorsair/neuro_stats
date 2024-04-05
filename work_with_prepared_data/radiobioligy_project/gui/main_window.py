@@ -10,11 +10,12 @@ from gui import Ui_MainWindow
 from work_with_prepared_data.radiobioligy_project.controls import ControlGroupVisualizer
 from work_with_prepared_data.radiobioligy_project.draw_abs_rel_graph_compare import TumorDataComparatorAdvanced
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs import TumorDataVisualizer
-import matplotlib
-
+from work_with_prepared_data.radiobioligy_project.draw_base_graphs_compare import TumorDataComparator
 from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf import SkinReactionsVisualizer
 
-matplotlib.use('QT5Agg')
+import matplotlib
+
+matplotlib.use('QT5Agg')  # Установка бэкенда до импорта pyplot.
 import matplotlib.pyplot as plt
 
 
@@ -48,10 +49,14 @@ class DataProcessor:
         return plotting_func, selected_path
 
     def process_for_comparison(self, selected_paths, checkboxes_state):
-        if checkboxes_state == (True, False, True):
+        if checkboxes_state == (True, False, True, False):
             plotting_func = TumorDataComparatorAdvanced.compare_mean_volumes
-        elif checkboxes_state == (False, True, True):
+        elif checkboxes_state == (False, True, True, False):
             plotting_func = TumorDataComparatorAdvanced.compare_relative_volumes
+        elif checkboxes_state == (True, False, False, True):
+            plotting_func = TumorDataComparator.compare_tumor_volumes
+        elif checkboxes_state == (False, True, False, True):
+            plotting_func = TumorDataComparator.compare_relative_tumor_volumes
         else:
             raise ValueError("Invalid checkbox state")
         return plotting_func, selected_paths
@@ -101,6 +106,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_3.setEnabled(False)
         self.pushButton_4.setEnabled(False)
         self.pushButton_5.setEnabled(False)
+        self.pushButton_6.setEnabled(False)
         self.pushButton_7.setEnabled(False)
         # Биндинг кнопок
         self.pushButton.clicked.connect(self.handle_all_of_rats)
@@ -222,6 +228,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.control_path = None
             self.update_seventh_button_state()
             self.update_fifth_button_state()
+            self.update_third_button_state()
 
     def get_selected_experiments(self):
         """
@@ -302,10 +309,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         selected_paths = self.get_selected_experiments()
         oneExperimentSelected = len(selected_paths) >= 2
-        anyCheckboxChecked = (self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and self.checkBox_6.isChecked()
+        anyCheckboxChecked = ((self.checkBox_3.isChecked() or self.checkBox_4.isChecked()) and
+                              (self.checkBox_5.isChecked() or self.checkBox_6.isChecked()))
         # Проверяем, что во всех выбранных путях отсутствует "skin_reactions"
         allPathsValid = all("skin_reactions" not in path for path in selected_paths)
-        self.pushButton_3.setEnabled(oneExperimentSelected and anyCheckboxChecked and allPathsValid)
+        controlChecked = self.comboBox_2.count() == 0
+        self.pushButton_3.setEnabled(oneExperimentSelected and
+                                     anyCheckboxChecked and allPathsValid and controlChecked)
 
     def update_fourth_button_state(self):
         selected_paths = self.get_selected_experiments()
@@ -335,6 +345,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         anyCheckboxChecked = self.checkBox_3.isChecked() and self.checkBox_6.isChecked()
         controlChecked = self.comboBox_2.count() > 0
         self.pushButton_5.setEnabled(oneExperimentSelected and anyCheckboxChecked and controlChecked)
+        self.pushButton_6.setEnabled(oneExperimentSelected and anyCheckboxChecked and controlChecked)
 
     def update_seventh_button_state(self):
         """
@@ -413,7 +424,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             print("Необходимо выбрать два или более экспериментов")
             return
 
-        checkboxes_state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(), self.checkBox_6.isChecked())
+        checkboxes_state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(), self.checkBox_6.isChecked(),
+                            self.checkBox_5.isChecked())
         try:
             plotting_func, selected_paths = self.data_processor.process_for_comparison(selected_paths, checkboxes_state)
             self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func)

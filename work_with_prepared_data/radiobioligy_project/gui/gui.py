@@ -221,8 +221,11 @@ class Ui_MainWindow(object):
         self.action_3.setObjectName("action_3")
         self.action_pdf = QtGui.QAction(parent=MainWindow)
         self.action_pdf.setObjectName("action_pdf")
+        self.action_4 = QtGui.QAction(parent=MainWindow)
+        self.action_4.setObjectName("action_4")
         self.menu.addAction(self.action)
         self.menu.addAction(self.action_2)
+        self.menu.addAction(self.action_4)
         self.menu_2.addAction(self.action_3)
         self.menu_3.addAction(self.action_pdf)
         self.menubar.addAction(self.menu.menuAction())
@@ -267,6 +270,7 @@ class Ui_MainWindow(object):
         self.action_2.setText(_translate("MainWindow", "Сохранить график"))
         self.action_3.setText(_translate("MainWindow", "Редактировать файл эксперимента"))
         self.action_pdf.setText(_translate("MainWindow", "Распознать pdf-файл эксперимента"))
+        self.action_4.setText(_translate("MainWindow", "Сохранить таблицу"))
 
 
 if __name__ == "__main__":
