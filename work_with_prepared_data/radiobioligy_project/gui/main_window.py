@@ -15,6 +15,8 @@ from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf impo
 
 import matplotlib
 
+from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import ExtractOutliers
+
 matplotlib.use('QT5Agg')  # Установка бэкенда до импорта pyplot.
 import matplotlib.pyplot as plt
 
@@ -94,6 +96,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_plotting_func = None
         self.current_selected_paths = []
         self.current_control = None
+        self.selected_outlier_method = None
         self.data_processor = DataProcessor()
         self.setupUi(self)
         self.action.triggered.connect(self.open_files)
@@ -116,6 +119,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_5.clicked.connect(self.handle_compare_tumor_growth_inhibition)
         self.pushButton_6.clicked.connect(self.handle_tumor_growth_inhibition_table)
         self.pushButton_7.clicked.connect(self.handle_compare_with_control)
+        # Подключение сигнала изменения выбора комбобокса к обработчику
+        self.comboBox.currentIndexChanged.connect(self.on_combobox_changed)
         # Подключаем сигналы изменения состояния чекбоксов
         self.checkBox_3.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_3, self.checkBox_4))
         self.checkBox_4.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_4, self.checkBox_3))
@@ -159,6 +164,40 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tableView.setShowGrid(True)  # Показать сетку
         # Устанавливаем размеры политики для таблицы, чтобы она заполняла все доступное пространство
         self.tableView.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def on_combobox_changed(self):
+        self.selected_outlier_method = self.comboBox.currentIndex()
+
+    def apply_selected_outlier_method(self, visualizer_instances):
+        # Если visualizer_instances не список, оборачиваем его в список
+        if not isinstance(visualizer_instances, list):
+            visualizer_instances = [visualizer_instances]
+
+        updated_instances = []
+        for visualizer_instance in visualizer_instances:
+            # Создаем экземпляр ExtractOutliers для каждого визуализатора в списке
+            outlier_extractor = ExtractOutliers(visualizer_instance)
+
+            # Применяем выбранный метод исключения выбросов
+            if self.selected_outlier_method == 1:
+                outlier_extractor.remove_outliers()
+            elif self.selected_outlier_method == 2:
+                outlier_extractor.remove_outliers_iqr(k=1.5)
+            elif self.selected_outlier_method == 3:
+                outlier_extractor.remove_outliers_elliptic_envelope(contamination=0.1)
+            elif self.selected_outlier_method == 4:
+                outlier_extractor.remove_outliers_isolation_forest(contamination=0.1)
+            elif self.selected_outlier_method == 5:
+                outlier_extractor.remove_outliers_mahalanobis(alpha=0.01)
+
+            # Добавляем обновленный визуализатор в список обновленных экземпляров
+            updated_instances.append(outlier_extractor.base_class)
+
+        # Если изначально был передан один экземпляр, возвращаем один экземпляр, а не список
+        if len(updated_instances) == 1:
+            return updated_instances[0]
+        else:
+            return updated_instances
 
     def open_files(self):
         """
@@ -614,19 +653,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.current_visualizer is TumorDataVisualizer:
             # Случай для одного эксперимента
             visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
+            if self.selected_outlier_method is not None:
+                visualizer_instance = self.apply_selected_outlier_method(visualizer_instance)
         elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is None:
             # Случай для сравнения нескольких экспериментов
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
+            if self.selected_outlier_method is not None:
+                visualizer_instances = self.apply_selected_outlier_method(visualizer_instances)
             visualizer_instance = self.current_visualizer(*visualizer_instances)
         elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is not None:
             # Случай для сравнения нескольких экспериментов с контрольной группой
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
+            if self.selected_outlier_method is not None:
+                visualizer_instances = self.apply_selected_outlier_method(visualizer_instances)
             visualizer_instance = self.current_visualizer(*visualizer_instances)
         elif self.current_visualizer is SkinReactionsVisualizer:
             if len(self.current_selected_paths) == 1:
                 visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
             else:
                 visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
+            # TODO: Метод требует правки  для работы с кожными реакциями
+            # if self.selected_outlier_method is not None:
+            #     visualizer_instance = self.apply_selected_outlier_method(visualizer_instance)
 
         pixmap = self.draw_figure_to_pixmap(visualizer_instance, self.current_plotting_func)
 
