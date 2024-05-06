@@ -79,7 +79,7 @@ class TumorDataComparatorAdvanced:
             drawgraph,
             "M/V абс.: ",
             False,
-            True,
+            self.perform_stat_test,
             [self.visualizers[0], self.visualizers[1]],
             'up'
             )
@@ -192,7 +192,7 @@ class TumorDataComparatorAdvanced:
             drawgraph,
             "Эксперимент: ",
             True,  # Указываем, что нужно рассчитать AUC
-            True,
+            self.perform_stat_test,
             [self.visualizers[0], self.visualizers[1]],
             # TODO: Необходимо предусмотреть, что группа может быть одна
             'up'

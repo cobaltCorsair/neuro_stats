@@ -675,6 +675,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if self.selected_outlier_method is not None:
                 visualizer_instances = self.apply_selected_outlier_method(visualizer_instances)
             visualizer_instance = self.current_visualizer(*visualizer_instances)
+            visualizer_instance.perform_stat_test = self.perform_stat_test
         elif self.current_visualizer is SkinReactionsVisualizer:
             if len(self.current_selected_paths) == 1:
                 visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
