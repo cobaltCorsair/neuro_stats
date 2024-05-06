@@ -97,6 +97,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_selected_paths = []
         self.current_control = None
         self.selected_outlier_method = None
+        self.perform_stat_test = False
         self.data_processor = DataProcessor()
         self.setupUi(self)
         self.action.triggered.connect(self.open_files)
@@ -126,6 +127,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.checkBox_4.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_4, self.checkBox_3))
         self.checkBox_5.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_5, self.checkBox_6))
         self.checkBox_6.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_6, self.checkBox_5))
+        self.checkBox_7.stateChanged.connect(self.on_stat_test_checkbox_changed)
         self.model.itemChanged.connect(self.update_first_button_state)
         self.model.itemChanged.connect(self.update_second_button_state)
         self.model.itemChanged.connect(self.update_third_button_state)
@@ -426,6 +428,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.update_fifth_button_state()
         self.update_seventh_button_state()
 
+    def on_stat_test_checkbox_changed(self):
+        """Обновляет состояние perform_stat_test в зависимости от состояния чекбокса."""
+        self.perform_stat_test = self.checkBox_7.isChecked()
+        print(f"Статистический тест {'включен' if self.perform_stat_test else 'выключен'}.")
+
     def handle_all_of_rats(self):
         """
         Обрабатывает запрос на создание графика на основе выбранных экспериментов и условий выбора чекбоксов.
@@ -661,6 +668,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if self.selected_outlier_method is not None:
                 visualizer_instances = self.apply_selected_outlier_method(visualizer_instances)
             visualizer_instance = self.current_visualizer(*visualizer_instances)
+            visualizer_instance.perform_stat_test = self.perform_stat_test
         elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is not None:
             # Случай для сравнения нескольких экспериментов с контрольной группой
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]

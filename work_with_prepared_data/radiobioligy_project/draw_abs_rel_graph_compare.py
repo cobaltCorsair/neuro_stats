@@ -32,6 +32,15 @@ class TumorDataComparatorAdvanced:
 
     def __init__(self, *visualizers: TumorDataVisualizer):
         self.visualizers = visualizers
+        self._perform_stat_test = False  # Значение по умолчанию
+
+    @property
+    def perform_stat_test(self):
+        return self._perform_stat_test
+
+    @perform_stat_test.setter
+    def perform_stat_test(self, value: bool):
+        self._perform_stat_test = value
 
     def compare_mean_volumes(self):
         """
@@ -121,7 +130,7 @@ class TumorDataComparatorAdvanced:
             drawgraph,
             "",
             True,
-            True,
+            self.perform_stat_test,
             [self.visualizers[0], self.visualizers[1]],
             'down'
         )
