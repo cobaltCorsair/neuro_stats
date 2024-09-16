@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 from scipy.stats import zscore, t
 from sklearn.covariance import EllipticEnvelope
+from fastdtw import fastdtw
+from scipy.spatial.distance import euclidean
+from sklearn.neighbors import KernelDensity
 
 
 class ExtractOutliers:
@@ -204,6 +207,77 @@ class ExtractOutliers:
         # Обновление меток крыс и данных
         self.base_class.rat_labels = [self.base_class.rat_labels[i] for i in non_outlier_indices]
         self.base_class.tumor_volumes = [self.base_class.tumor_volumes[i] for i in non_outlier_indices]
+
+    def remove_outliers_by_euclidean(self, percentile_threshold=90):
+        """
+        Удаляет выбросы, сравнивая каждую кривую с средней кривой по Евклидовому расстоянию.
+
+        Args:
+            percentile_threshold (float): Процентиль для определения выбросов (на основе отклонений).
+        """
+        # Преобразуем данные в массив numpy для обработки
+        data = np.array(self.base_class.tumor_volumes)
+
+        # Рассчитываем среднюю кривую (среднее значение для каждого временного шага)
+        mean_curve = np.mean(data, axis=0)
+
+        # Вычисляем Евклидово расстояние каждой кривой до средней кривой
+        distances = []
+        for curve in data:
+            distance = np.linalg.norm(curve - mean_curve)  # Евклидово расстояние
+            distances.append(distance)
+
+        # Определяем пороговое значение на основе заданного процентиля
+        threshold = np.percentile(distances, percentile_threshold)
+        outlier_indices = np.where(np.array(distances) > threshold)[0]
+
+        # Удаляем выбросы
+        self.base_class.rat_labels = [label for i, label in enumerate(self.base_class.rat_labels) if
+                                      i not in outlier_indices]
+        self.base_class.tumor_volumes = [volume for i, volume in enumerate(self.base_class.tumor_volumes) if
+                                         i not in outlier_indices]
+
+        print(f'Выбросы удалены. Количество выбросов: {len(outlier_indices)}')
+
+    def remove_outliers_kl_divergence(self, bandwidth=0.5, percentile_threshold=90):
+        """
+        Удаляет выбросы из данных, используя дивергенцию Кульбака-Лейблера (KL Divergence).
+
+        Args:
+            bandwidth (float): Ширина полосы для ядерной оценки плотности.
+            percentile_threshold (float): Процентиль для определения выбросов (на основе дивергенции).
+        """
+        # Преобразуем данные в массив numpy для обработки
+        data = np.array(self.base_class.tumor_volumes)
+
+        # Убедимся, что данные имеют двумерную форму (n_samples, 1)
+        data_reshaped = data.reshape(-1, 1)
+
+        # Оценка плотности распределения данных с помощью KDE (Ядерная оценка плотности)
+        kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth).fit(data_reshaped)
+        log_dens = kde.score_samples(data_reshaped)
+        dens = np.exp(log_dens)
+
+        # Рассчитываем среднюю плотность всех элементов
+        global_density_mean = np.mean(dens)
+
+        # Вычисляем "аномальность" каждого элемента на основе его отклонения от средней плотности
+        kl_divergences = []
+        for i in range(len(data)):
+            kl_divergence = abs(dens[i] - global_density_mean)  # Простая разница плотности
+            kl_divergences.append(kl_divergence)
+
+        # Определяем выбросы на основе заданного процентиля
+        threshold = np.percentile(kl_divergences, percentile_threshold)
+        outlier_indices = np.where(np.array(kl_divergences) > threshold)[0]
+
+        # Удаляем выбросы на основе "аномальной" плотности
+        self.base_class.rat_labels = [label for i, label in enumerate(self.base_class.rat_labels) if
+                                      i not in outlier_indices]
+        self.base_class.tumor_volumes = [volume for i, volume in enumerate(self.base_class.tumor_volumes) if
+                                         i not in outlier_indices]
+
+        print(f'Выбросы удалены. Количество выбросов: {len(outlier_indices)}')
 
     def exclude_rats(self, excluded_rats: List[str], data_attribute_name: str):
         """

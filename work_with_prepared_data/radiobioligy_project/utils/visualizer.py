@@ -66,7 +66,7 @@ class GraphVisualizer:
     @staticmethod
     def prepare_and_add_data_to_graph(visualizers, value_extractor_func, graph_visualizer, label_prefix,
                                       calculate_auc=False, perform_stat_test=False, experiments_to_compare=None,
-                                      annotation_offset_direction='up'):
+                                      annotation_offset_direction='up', annotation_multiplier=0.0):
         """
         Подготавливает данные от нескольких экспериментов и добавляет их на график.
 
@@ -82,6 +82,7 @@ class GraphVisualizer:
             experiments_to_compare (List[VisualizerType]): Эксперименты для теста
             perform_stat_test (bool, optional): Флаг, необходим ли тест
             annotation_offset_direction (str): Направление сдвига звёздочки
+            annotation_multiplier (float): Множитель для сдвига аннотаций
 
         Примечание:
             Для расчета стандартного отклонения и погрешности используются функции `calculate_std_dev` и
@@ -90,6 +91,7 @@ class GraphVisualizer:
         x_data_lists = []
         y_positions_for_annotations = []
         upper_bounds_dict = {}
+
         if perform_stat_test and experiments_to_compare:
             p_values, x_positions_for_annotations = GraphVisualizer.prepare_mann_whitney_test(
                 experiments_to_compare, perform_stat_test)
@@ -105,7 +107,7 @@ class GraphVisualizer:
                                       error_margin, calculate_auc)
             x_data_lists.append(visualizer.time_data)
 
-            # Если проводится статистический тест, то здесь нам нужно вычислить y_position для аннотации
+            # Если проводится статистический тест, то здесь нужно вычислить y_position для аннотации
             if perform_stat_test and experiments_to_compare:
                 # Рассчитываем верхние или нижние границы в зависимости от направления аннотации
                 if annotation_offset_direction == 'up':
@@ -113,12 +115,17 @@ class GraphVisualizer:
                 elif annotation_offset_direction == 'down':  # Если направление вниз
                     upper_bounds = [val - err for val, err in zip(values, error_margin)]
 
+                # Применяем множитель для сдвига аннотации
+                if annotation_multiplier != 0.0:
+                    upper_bounds = [ub * (1 + annotation_multiplier) for ub in upper_bounds]
+
                 # Сохраняем верхние границы в словарь
                 upper_bounds_dict[visualizer] = upper_bounds
                 y_positions_for_annotations = upper_bounds_dict
 
         # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
         graph_visualizer.update_axes_limits(x_data_lists)
+
         # Добавление аннотаций значимости на график, если требуется
         if perform_stat_test and experiments_to_compare:
             GraphVisualizer.add_significance_annotation(visualizers, p_values, x_positions_for_annotations,
@@ -144,18 +151,33 @@ class GraphVisualizer:
             p_values = []
             x_positions_for_annotations = []
 
-            # Проходимся по всем временным точкам, предполагая, что они одинаковы для всех экспериментов
-            for time_index in range(len(experiments_to_compare[0].time_data)):
-                group1_volumes = [vol[time_index] for vol in experiments_to_compare[0].tumor_volumes]
-                group2_volumes = [vol[time_index] for vol in experiments_to_compare[1].tumor_volumes]
-                # TODO: тест падает, потому что возникает IndexError: list index out of range на vol[time_index]
-                # Выполнение теста Манна-Уитни
-                p_value = GraphVisualizer.perform_mann_whitney_test(group1_volumes, group2_volumes)
-                p_values.append(p_value)
+            # Получаем минимальное количество временных точек среди двух групп
+            min_time_length = min(len(experiments_to_compare[0].time_data), len(experiments_to_compare[1].time_data))
 
-                # Добавляем позиции для аннотаций
-                # индекс тут — это то, для какого эксперимента мы делаем "звёздочки"
-                x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
+            # Проходимся по временным точкам, но только до минимальной длины
+            for time_index in range(min_time_length):
+                # Проверяем, что данные для текущей временной точки есть в обеих группах
+                group1_volumes = [
+                    vol[time_index] for vol in experiments_to_compare[0].tumor_volumes
+                    if len(vol) > time_index  # Проверяем, что объемы существуют для данной точки времени
+                ]
+                group2_volumes = [
+                    vol[time_index] for vol in experiments_to_compare[1].tumor_volumes
+                    if len(vol) > time_index  # Проверяем, что объемы существуют для данной точки времени
+                ]
+
+                # Если обе группы имеют данные для данной временной точки, выполняем тест Манна-Уитни
+
+                if group1_volumes and group2_volumes:
+                    p_value = GraphVisualizer.perform_mann_whitney_test(group1_volumes, group2_volumes)
+                    p_values.append(p_value)
+                    # Добавляем позиции для аннотаций
+                    # индекс тут — это то, для какого эксперимента мы делаем "звёздочки"
+                    x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
+                else:
+                    # Если данных нет для одной из групп, добавляем None, чтобы пропустить аннотацию
+                    p_values.append(None)
+                    x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
 
         return p_values, x_positions_for_annotations
 

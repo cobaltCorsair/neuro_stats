@@ -33,6 +33,7 @@ class TumorDataComparatorAdvanced:
     def __init__(self, *visualizers: TumorDataVisualizer):
         self.visualizers = visualizers
         self._perform_stat_test = False  # Значение по умолчанию
+        self._annotation_multiplier = 0
 
     @property
     def perform_stat_test(self):
@@ -41,6 +42,15 @@ class TumorDataComparatorAdvanced:
     @perform_stat_test.setter
     def perform_stat_test(self, value: bool):
         self._perform_stat_test = value
+
+    @property
+    def annotation_multiplier(self):
+        return self._annotation_multiplier
+
+    @annotation_multiplier.setter
+    def annotation_multiplier(self, value: int):
+        self._annotation_multiplier = value
+        print(self._annotation_multiplier)
 
     def compare_mean_volumes(self):
         """
@@ -78,10 +88,11 @@ class TumorDataComparatorAdvanced:
             lambda visualizer: visualizer.data_processor.get_mean_tumor_volumes(),
             drawgraph,
             "M/V абс.: ",
-            False,
+            True,
             self.perform_stat_test,
             [self.visualizers[0], self.visualizers[1]],
-            'up'
+            'up',
+            self.annotation_multiplier
             )
 
         drawgraph.finalize_figure('')
@@ -132,7 +143,8 @@ class TumorDataComparatorAdvanced:
             True,
             self.perform_stat_test,
             [self.visualizers[0], self.visualizers[1]],
-            'down'
+            'down',
+            self.annotation_multiplier
         )
         # Добавляем легенду с интервалами (при необходимости)
         time_labels = [f"Интервал: {interval}" for interval in time_intervals]
@@ -195,7 +207,8 @@ class TumorDataComparatorAdvanced:
             self.perform_stat_test,
             [self.visualizers[0], self.visualizers[1]],
             # TODO: Необходимо предусмотреть, что группа может быть одна
-            'up'
+            'up',
+            self.annotation_multiplier
         )
 
         drawgraph.finalize_figure('')

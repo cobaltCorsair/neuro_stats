@@ -98,6 +98,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_control = None
         self.selected_outlier_method = None
         self.perform_stat_test = False
+        self.annotation_multiplier = 0
         self.data_processor = DataProcessor()
         self.setupUi(self)
         self.action.triggered.connect(self.open_files)
@@ -136,6 +137,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.model.itemChanged.connect(self.update_seventh_button_state)
         self.model.itemChanged.connect(self.on_control_checkbox_changed)
         self.comboBox_2.currentTextChanged.connect(self.update_control_path)
+        self.doubleSpinBox.valueChanged.connect(self.update_annotation_multiplier)
 
     def change_table(self):
         """
@@ -190,7 +192,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             elif self.selected_outlier_method == 4:
                 outlier_extractor.remove_outliers_isolation_forest(contamination=0.1)
             elif self.selected_outlier_method == 5:
+            # TODO: Добавить метод ручного выброса под номером 6 и переместить его на 2
                 outlier_extractor.remove_outliers_mahalanobis(alpha=0.01)
+            elif self.selected_outlier_method == 7:  # Новый метод для KL-дивергенции
+                outlier_extractor.remove_outliers_by_euclidean(percentile_threshold=90)
+            elif self.selected_outlier_method == 8:  # Новый метод для KL-дивергенции
+                outlier_extractor.remove_outliers_kl_divergence(bandwidth=0.5, percentile_threshold=90)
 
             # Добавляем обновленный визуализатор в список обновленных экземпляров
             updated_instances.append(outlier_extractor.base_class)
@@ -669,6 +676,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 visualizer_instances = self.apply_selected_outlier_method(visualizer_instances)
             visualizer_instance = self.current_visualizer(*visualizer_instances)
             visualizer_instance.perform_stat_test = self.perform_stat_test
+            visualizer_instance.annotation_multiplier = self.annotation_multiplier
         elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is not None:
             # Случай для сравнения нескольких экспериментов с контрольной группой
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
@@ -676,6 +684,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 visualizer_instances = self.apply_selected_outlier_method(visualizer_instances)
             visualizer_instance = self.current_visualizer(*visualizer_instances)
             visualizer_instance.perform_stat_test = self.perform_stat_test
+            visualizer_instance.annotation_multiplier = self.annotation_multiplier
         elif self.current_visualizer is SkinReactionsVisualizer:
             if len(self.current_selected_paths) == 1:
                 visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
@@ -722,6 +731,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 child = layout.takeAt(0)
                 if child.widget():
                     child.widget().deleteLater()
+
+    def update_annotation_multiplier(self, value):
+        self.annotation_multiplier = self.doubleSpinBox.value()
+        #print(f"Сдвиг равен {self.annotation_multiplier}")
 
 
 def main():

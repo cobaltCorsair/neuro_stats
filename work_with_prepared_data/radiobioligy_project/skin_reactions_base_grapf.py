@@ -116,7 +116,7 @@ class SkinReactionsVisualizer:
         # Получение средних кожных реакций и их статистических характеристик
         mean_reactions, std_dev, error_margin = self.data_processor.get_mean_skin_reactions()
         # Добавление данных на график
-        drawgraph.add_plot(self.time_data, mean_reactions, self.experiment_params, "", error_margin)
+        drawgraph.add_plot(self.time_data, mean_reactions, self.experiment_params, "", None)
         drawgraph.finalize_figure('', '', 1, 25)
 
     @staticmethod
@@ -168,7 +168,7 @@ class SkinReactionsVisualizer:
             label = format_experiment_params(visualizer.experiment_params)
 
             # Добавление данных на график с автоматическим выбором стиля линии и маркера
-            drawgraph.add_plot(common_timepoints, interpolated_values, {}, label, error_margin, calculate_auc=True)
+            drawgraph.add_plot(common_timepoints, interpolated_values, {}, label, None, calculate_auc=False)
 
         base_file_name = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths])
         drawgraph.finalize_figure(base_file_name, ncol=1, legend_fontsize='20')
