@@ -98,6 +98,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_control = None
         self.selected_outlier_method = None
         self.perform_stat_test = False
+        self.use_ttest = False
         self.annotation_multiplier = 0
         self.data_processor = DataProcessor()
         self.setupUi(self)
@@ -124,6 +125,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Подключение сигнала изменения выбора комбобокса к обработчику
         self.comboBox.currentIndexChanged.connect(self.on_combobox_changed)
         # Подключаем сигналы изменения состояния чекбоксов
+        self.checkBox.stateChanged.connect(self.on_t_test_checkbox_changed)
         self.checkBox_3.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_3, self.checkBox_4))
         self.checkBox_4.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_4, self.checkBox_3))
         self.checkBox_5.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_5, self.checkBox_6))
@@ -438,7 +440,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def on_stat_test_checkbox_changed(self):
         """Обновляет состояние perform_stat_test в зависимости от состояния чекбокса."""
         self.perform_stat_test = self.checkBox_7.isChecked()
-        print(f"Статистический тест {'включен' if self.perform_stat_test else 'выключен'}.")
+        print(f"Статистический тест Манна-Уитни {'включен' if self.perform_stat_test else 'выключен'}.")
+
+    def on_t_test_checkbox_changed(self):
+        """Обновляет состояние use_ttest в зависимости от состояния чекбокса."""
+        self.use_ttest = self.checkBox.isChecked()
+        print(f"Статистический тест Стьюдента {'включен' if self.use_ttest else 'выключен'}.")
 
     def handle_all_of_rats(self):
         """
@@ -677,6 +684,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instance = self.current_visualizer(*visualizer_instances)
             visualizer_instance.perform_stat_test = self.perform_stat_test
             visualizer_instance.annotation_multiplier = self.annotation_multiplier
+            visualizer_instance.use_ttest = self.use_ttest
         elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is not None:
             # Случай для сравнения нескольких экспериментов с контрольной группой
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
@@ -685,6 +693,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instance = self.current_visualizer(*visualizer_instances)
             visualizer_instance.perform_stat_test = self.perform_stat_test
             visualizer_instance.annotation_multiplier = self.annotation_multiplier
+            visualizer_instance.use_ttest = self.use_ttest
         elif self.current_visualizer is SkinReactionsVisualizer:
             if len(self.current_selected_paths) == 1:
                 visualizer_instance = self.current_visualizer(self.current_selected_paths[0])

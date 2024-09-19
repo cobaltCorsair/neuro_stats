@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.stats import mannwhitneyu
+from scipy.stats import ttest_ind
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
 from work_with_prepared_data.radiobioligy_project.utils.plot_saver import save_plot
 from work_with_prepared_data.radiobioligy_project.utils.plotting_helpers import format_experiment_params
@@ -66,7 +67,8 @@ class GraphVisualizer:
     @staticmethod
     def prepare_and_add_data_to_graph(visualizers, value_extractor_func, graph_visualizer, label_prefix,
                                       calculate_auc=False, perform_stat_test=False, experiments_to_compare=None,
-                                      annotation_offset_direction='up', annotation_multiplier=0.0):
+                                      annotation_offset_direction='up', annotation_multiplier=0.0,
+                                      use_ttest=False):  # Новый параметр для выбора t-теста
         """
         Подготавливает данные от нескольких экспериментов и добавляет их на график.
 
@@ -79,10 +81,11 @@ class GraphVisualizer:
             label_prefix (str): Префикс для легенды, добавляемый к метке каждой серии данных на графике.
             calculate_auc (bool, optional): Флаг, указывающий, нужно ли вычислять площадь под кривой (AUC).
             По умолчанию False.
-            experiments_to_compare (List[VisualizerType]): Эксперименты для теста
-            perform_stat_test (bool, optional): Флаг, необходим ли тест
-            annotation_offset_direction (str): Направление сдвига звёздочки
-            annotation_multiplier (float): Множитель для сдвига аннотаций
+            experiments_to_compare (List[VisualizerType]): Эксперименты для теста.
+            perform_stat_test (bool, optional): Флаг, необходим ли тест.
+            annotation_offset_direction (str): Направление сдвига звёздочки.
+            annotation_multiplier (float): Множитель для сдвига аннотаций.
+            use_ttest (bool, optional): Если True, выполняется t-тест, иначе используется тест Манна-Уитни.
 
         Примечание:
             Для расчета стандартного отклонения и погрешности используются функции `calculate_std_dev` и
@@ -92,9 +95,13 @@ class GraphVisualizer:
         y_positions_for_annotations = []
         upper_bounds_dict = {}
 
+        # Выбор статистического теста
         if perform_stat_test and experiments_to_compare:
             p_values, x_positions_for_annotations = GraphVisualizer.prepare_mann_whitney_test(
                 experiments_to_compare, perform_stat_test)
+        if use_ttest and experiments_to_compare:
+            p_values, x_positions_for_annotations = GraphVisualizer.prepare_ttest(
+                experiments_to_compare, use_ttest)
 
         for index, visualizer in enumerate(visualizers):
             values = value_extractor_func(visualizer)
@@ -108,7 +115,7 @@ class GraphVisualizer:
             x_data_lists.append(visualizer.time_data)
 
             # Если проводится статистический тест, то здесь нужно вычислить y_position для аннотации
-            if perform_stat_test and experiments_to_compare:
+            if (perform_stat_test or use_ttest) and experiments_to_compare:
                 # Рассчитываем верхние или нижние границы в зависимости от направления аннотации
                 if annotation_offset_direction == 'up':
                     upper_bounds = [val + err for val, err in zip(values, error_margin)]
@@ -127,7 +134,7 @@ class GraphVisualizer:
         graph_visualizer.update_axes_limits(x_data_lists)
 
         # Добавление аннотаций значимости на график, если требуется
-        if perform_stat_test and experiments_to_compare:
+        if (perform_stat_test or use_ttest) and experiments_to_compare:
             GraphVisualizer.add_significance_annotation(visualizers, p_values, x_positions_for_annotations,
                                                         y_positions_for_annotations)
 
@@ -178,6 +185,58 @@ class GraphVisualizer:
                     # Если данных нет для одной из групп, добавляем None, чтобы пропустить аннотацию
                     p_values.append(None)
                     x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
+
+        return p_values, x_positions_for_annotations
+
+    @staticmethod
+    def prepare_ttest(experiments_to_compare, use_ttest):
+        """
+        Подготавливает и выполняет t-тест (критерий Стьюдента) для сравнения экспериментальных групп.
+
+        Для каждой временной точки данных сравнивает группы экспериментов, используя t-тест,
+        и собирает значения p для последующей аннотации значимости на графике.
+
+        Args:
+            experiments_to_compare (List[VisualizerType]): Список из двух экспериментов для сравнения.
+            use_ttest (bool): Флаг, указывающий на выполнение t-теста.
+
+        Returns:
+            Tuple[List[float], List[float]]: Возвращает два списка - значения p и позиции по оси X для аннотаций.
+        """
+        # Инициализируем списки для результатов тестов и аннотаций
+        p_values = []
+        x_positions_for_annotations = []
+
+        # Проверка входных данных
+        if use_ttest and experiments_to_compare and len(experiments_to_compare) == 2:
+            # Получаем минимальное количество временных точек среди двух групп
+            min_time_length = min(len(experiments_to_compare[0].time_data), len(experiments_to_compare[1].time_data))
+
+            # Проходимся по временным точкам
+            for time_index in range(min_time_length):
+                # Проверяем, что данные для текущей временной точки есть в обеих группах
+                group1_volumes = [
+                    vol[time_index] for vol in experiments_to_compare[0].tumor_volumes
+                    if len(vol) > time_index  # Проверяем, что объемы существуют для данной точки времени
+                ]
+                group2_volumes = [
+                    vol[time_index] for vol in experiments_to_compare[1].tumor_volumes
+                    if len(vol) > time_index  # Проверяем, что объемы существуют для данной точки времени
+                ]
+
+                # Если обе группы имеют данные для данной временной точки, выполняем t-тест
+                if group1_volumes and group2_volumes:
+                    t_stat, p_value = ttest_ind(group1_volumes, group2_volumes,
+                                                equal_var=False)  # t-тест с неравными дисперсиями
+                    p_values.append(p_value)
+                    x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
+                else:
+                    # Если данных нет для одной из групп, добавляем None
+                    p_values.append(None)
+                    x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
+
+        else:
+            print("Тест не был выполнен, проверьте входные данные.")
 
         return p_values, x_positions_for_annotations
 
