@@ -1,4 +1,4 @@
-# Form implementation generated from reading ui file 'gui2.ui'
+# Form implementation generated from reading ui file 'gui3.ui'
 #
 # Created by: PyQt6 UI code generator 6.4.2
 #
@@ -87,7 +87,18 @@ class Ui_MainWindow(object):
         self.doubleSpinBox.setMinimum(-99.9)
         self.doubleSpinBox.setObjectName("doubleSpinBox")
         self.horizontalLayout.addWidget(self.doubleSpinBox)
+        self.line_6 = QtWidgets.QFrame(parent=self.centralwidget)
+        self.line_6.setFrameShape(QtWidgets.QFrame.Shape.VLine)
+        self.line_6.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        self.line_6.setObjectName("line_6")
+        self.horizontalLayout.addWidget(self.line_6)
+        self.label_4 = QtWidgets.QLabel(parent=self.centralwidget)
+        self.label_4.setObjectName("label_4")
+        self.horizontalLayout.addWidget(self.label_4)
         self.horizontalLayout_2.addLayout(self.horizontalLayout)
+        self.doubleSpinBox_2 = QtWidgets.QDoubleSpinBox(parent=self.centralwidget)
+        self.doubleSpinBox_2.setObjectName("doubleSpinBox_2")
+        self.horizontalLayout_2.addWidget(self.doubleSpinBox_2)
         self.verticalLayout_2.addLayout(self.horizontalLayout_2)
         self.horizontalLayout_7 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_7.setObjectName("horizontalLayout_7")
@@ -248,6 +259,7 @@ class Ui_MainWindow(object):
         self.checkBox_7.setText(_translate("MainWindow", "Критерий Манна-Уитни"))
         self.checkBox.setText(_translate("MainWindow", "Критерий Стьюдента"))
         self.label_3.setText(_translate("MainWindow", "Сдвиг критерия"))
+        self.label_4.setText(_translate("MainWindow", "Коэффициент"))
         self.label.setText(_translate("MainWindow", "Контроль:"))
         self.label_5.setText(_translate("MainWindow", "Исключение выбросов:"))
         self.comboBox.setItemText(0, _translate("MainWindow", "Без исключения"))
@@ -275,13 +287,3 @@ class Ui_MainWindow(object):
         self.action_3.setText(_translate("MainWindow", "Редактировать файл эксперимента"))
         self.action_pdf.setText(_translate("MainWindow", "Распознать pdf-файл эксперимента"))
         self.action_4.setText(_translate("MainWindow", "Сохранить таблицу"))
-
-
-if __name__ == "__main__":
-    import sys
-    app = QtWidgets.QApplication(sys.argv)
-    MainWindow = QtWidgets.QMainWindow()
-    ui = Ui_MainWindow()
-    ui.setupUi(MainWindow)
-    MainWindow.show()
-    sys.exit(app.exec())
