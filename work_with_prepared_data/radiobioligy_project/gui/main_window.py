@@ -125,12 +125,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Подключение сигнала изменения выбора комбобокса к обработчику
         self.comboBox.currentIndexChanged.connect(self.on_combobox_changed)
         # Подключаем сигналы изменения состояния чекбоксов
-        self.checkBox.stateChanged.connect(self.on_t_test_checkbox_changed)
         self.checkBox_3.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_3, self.checkBox_4))
         self.checkBox_4.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_4, self.checkBox_3))
         self.checkBox_5.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_5, self.checkBox_6))
         self.checkBox_6.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_6, self.checkBox_5))
-        self.checkBox_7.stateChanged.connect(self.on_stat_test_checkbox_changed)
+        self.checkBox_7.stateChanged.connect(lambda: self.on_checkbox_tests_changed(self.checkBox_7, self.checkBox))
+        self.checkBox.stateChanged.connect(lambda: self.on_checkbox_tests_changed(self.checkBox, self.checkBox_7))
         self.model.itemChanged.connect(self.update_first_button_state)
         self.model.itemChanged.connect(self.update_second_button_state)
         self.model.itemChanged.connect(self.update_third_button_state)
@@ -437,14 +437,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.update_fifth_button_state()
         self.update_seventh_button_state()
 
-    def on_stat_test_checkbox_changed(self):
-        """Обновляет состояние perform_stat_test в зависимости от состояния чекбокса."""
-        self.perform_stat_test = self.checkBox_7.isChecked()
-        print(f"Статистический тест Манна-Уитни {'включен' if self.perform_stat_test else 'выключен'}.")
+    def on_checkbox_tests_changed(self, thisCheckbox, pairedCheckbox):
+        """
+        Обрабатывает изменение состояния пары чекбоксов и обновляет соответствующие переменные.
+        Убирает выделение с другого чекбокса, если текущий активирован.
+        """
+        if thisCheckbox.isChecked():
+            pairedCheckbox.setChecked(False)  # Отключаем другой чекбокс
 
-    def on_t_test_checkbox_changed(self):
-        """Обновляет состояние use_ttest в зависимости от состояния чекбокса."""
+        # Обновляем состояние переменных
+        self.perform_stat_test = self.checkBox_7.isChecked()
         self.use_ttest = self.checkBox.isChecked()
+
+        # Выводим сообщения
+        print(f"Статистический тест Манна-Уитни {'включен' if self.perform_stat_test else 'выключен'}.")
         print(f"Статистический тест Стьюдента {'включен' if self.use_ttest else 'выключен'}.")
 
     def handle_all_of_rats(self):
