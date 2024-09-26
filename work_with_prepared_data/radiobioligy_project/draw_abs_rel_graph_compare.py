@@ -35,6 +35,7 @@ class TumorDataComparatorAdvanced:
         self._perform_stat_test = False  # Значение по умолчанию
         self._annotation_multiplier = 0
         self._use_ttest = False
+        self._use_AUC = False
 
     @property
     def perform_stat_test(self):
@@ -59,7 +60,14 @@ class TumorDataComparatorAdvanced:
     @use_ttest.setter
     def use_ttest(self, value: int):
         self._use_ttest = value
-        print(self._use_ttest)
+
+    @property
+    def use_AUC(self):
+        return self._use_AUC
+
+    @use_AUC.setter
+    def use_AUC(self, value: int):
+        self._use_AUC = value
 
     def compare_mean_volumes(self):
         """
@@ -97,7 +105,7 @@ class TumorDataComparatorAdvanced:
             lambda visualizer: visualizer.data_processor.get_mean_tumor_volumes(),
             drawgraph,
             "M/V абс.: ",
-            True,
+            self._use_AUC,
             self.perform_stat_test,
             [self.visualizers[0], self.visualizers[1]],
             'up',
@@ -150,7 +158,7 @@ class TumorDataComparatorAdvanced:
             lambda visualizer: visualizer.data_processor.get_mean_relative_tumor_volumes(),  # Лямбда-функция
             drawgraph,
             "",
-            True,
+            self._use_AUC,
             self.perform_stat_test,
             [self.visualizers[0], self.visualizers[1]],
             'down',
@@ -205,7 +213,7 @@ class TumorDataComparatorAdvanced:
             value_extractor,
             drawgraph,
             "Контроль: без облучения",
-            True,  # Указываем, что нужно рассчитать AUC
+            self._use_AUC,  # Указываем, что нужно рассчитать AUC
         )
 
         # Добавляем данные экспериментальных групп
@@ -214,7 +222,7 @@ class TumorDataComparatorAdvanced:
             value_extractor,
             drawgraph,
             "Эксперимент: ",
-            True,  # Указываем, что нужно рассчитать AUC
+            self._use_AUC,  # Указываем, что нужно рассчитать AUC
             self.perform_stat_test,
             [self.visualizers[0], self.visualizers[1]],
             # TODO: Необходимо предусмотреть, что группа может быть одна

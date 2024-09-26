@@ -288,7 +288,7 @@ class Ui_MainWindow(object):
         self.comboBox.setItemText(6, _translate("MainWindow", "Метод ручного исключения"))
         self.comboBox.setItemText(7, _translate("MainWindow", "Метод Евклидового расстояния"))
         self.comboBox.setItemText(8, _translate("MainWindow", "Метод дивергенции Кульбака-Лейблера"))
-        self.label_6.setText(_translate("MainWindow", "Положение легенды"))
+        self.label_6.setText(_translate("MainWindow", "Положение основной легенды"))
         self.comboBox_3.setItemText(0, _translate("MainWindow", "best"))
         self.comboBox_3.setItemText(1, _translate("MainWindow", "upper right"))
         self.comboBox_3.setItemText(2, _translate("MainWindow", "upper left"))

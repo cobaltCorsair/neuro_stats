@@ -98,6 +98,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.selected_outlier_method = None
         self.perform_stat_test = False
         self.use_ttest = False
+        self.use_AUC = False
         self.annotation_multiplier = 0
         self.data_processor = DataProcessor()
         self.setupUi(self)
@@ -113,10 +114,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_5.setEnabled(False)
         self.pushButton_6.setEnabled(False)
         self.pushButton_7.setEnabled(False)
+        self.checkBox_2.setDisabled(True)
+        self.checkBox_7.setDisabled(True)
+        self.checkBox.setDisabled(True)
         # Биндинг кнопок
         self.pushButton.clicked.connect(self.handle_all_of_rats)
         self.pushButton_2.clicked.connect(self.handle_skin_reactions)
         self.pushButton_3.clicked.connect(self.handle_compare_rats)
+        # Связь сигнала изменения состояния кнопки с проверкой состояния чекбокса
+        self.pushButton_3.clicked.connect(self.set_state_of_auc_and_tests_checkbox)
         self.pushButton_4.clicked.connect(self.handle_compare_skin_reactions)
         self.pushButton_5.clicked.connect(self.handle_compare_tumor_growth_inhibition)
         self.pushButton_6.clicked.connect(self.handle_tumor_growth_inhibition_table)
@@ -130,6 +136,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.checkBox_6.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_6, self.checkBox_5))
         self.checkBox_7.stateChanged.connect(lambda: self.on_checkbox_tests_changed(self.checkBox_7, self.checkBox))
         self.checkBox.stateChanged.connect(lambda: self.on_checkbox_tests_changed(self.checkBox, self.checkBox_7))
+        self.checkBox_2.stateChanged.connect(self.set_auc_checkbox)
         self.model.itemChanged.connect(self.update_first_button_state)
         self.model.itemChanged.connect(self.update_second_button_state)
         self.model.itemChanged.connect(self.update_third_button_state)
@@ -173,6 +180,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def on_combobox_changed(self):
         self.selected_outlier_method = self.comboBox.currentIndex()
+
+    def set_auc_checkbox(self):
+        if self.checkBox_2.isChecked():
+            self.use_AUC = True
+        else:
+            self.use_AUC = False
+
+    def set_state_of_auc_and_tests_checkbox(self):
+        if self.pushButton_3.isEnabled() and self.checkBox_6.isChecked():
+            self.checkBox_2.setEnabled(True)
+            self.checkBox_7.setEnabled(True)
+            self.checkBox.setEnabled(True)
+        else:
+            self.checkBox_2.setEnabled(False)
+            self.checkBox_2.setChecked(False)
+
+            self.checkBox_7.setEnabled(False)
+            self.checkBox_7.setChecked(False)
+
+            self.checkBox.setEnabled(False)
+            self.checkBox.setChecked(False)
 
     def on_legend_position_changed(self):
         selected_position = self.comboBox_3.currentText()
@@ -440,6 +468,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.update_fourth_button_state()
         self.update_fifth_button_state()
         self.update_seventh_button_state()
+        self.set_state_of_auc_and_tests_checkbox()
 
     def on_checkbox_tests_changed(self, thisCheckbox, pairedCheckbox):
         """
@@ -452,10 +481,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Обновляем состояние переменных
         self.perform_stat_test = self.checkBox_7.isChecked()
         self.use_ttest = self.checkBox.isChecked()
-
-        # Выводим сообщения
-        print(f"Статистический тест Манна-Уитни {'включен' if self.perform_stat_test else 'выключен'}.")
-        print(f"Статистический тест Стьюдента {'включен' if self.use_ttest else 'выключен'}.")
 
     def handle_all_of_rats(self):
         """
@@ -695,6 +720,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instance.perform_stat_test = self.perform_stat_test
             visualizer_instance.annotation_multiplier = self.annotation_multiplier
             visualizer_instance.use_ttest = self.use_ttest
+            visualizer_instance.use_AUC = self.use_AUC
         elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is not None:
             # Случай для сравнения нескольких экспериментов с контрольной группой
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
@@ -704,6 +730,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instance.perform_stat_test = self.perform_stat_test
             visualizer_instance.annotation_multiplier = self.annotation_multiplier
             visualizer_instance.use_ttest = self.use_ttest
+            visualizer_instance.use_AUC = self.use_AUC
         elif self.current_visualizer is SkinReactionsVisualizer:
             if len(self.current_selected_paths) == 1:
                 visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
