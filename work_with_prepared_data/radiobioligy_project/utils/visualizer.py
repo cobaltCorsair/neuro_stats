@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 from scipy.stats import mannwhitneyu
 from scipy.stats import ttest_ind
 
+from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
 from work_with_prepared_data.radiobioligy_project.utils.plot_saver import save_plot
 from work_with_prepared_data.radiobioligy_project.utils.plotting_helpers import format_experiment_params
@@ -49,18 +50,10 @@ class GraphVisualizer:
         self.max_x = None
         self.max_y = None
         self.legend_info = []
-        # Register this instance with the manager
         self.legend_position = 'best'
-        from work_with_prepared_data.radiobioligy_project.gui.graph_manager import GraphManager
-        GraphManager.instance().register_visualizer(self)
-        print(f"GraphVisualizer initialized with legend position: {self.legend_position}")
-
-        # Сразу обновляем положение легенды на актуальное из GraphManager
-        current_legend_position = GraphManager.instance().get_current_legend_position()
-        self.update_legend_position(current_legend_position)
+        graph_manager.register_visualizer(self)
 
     def update_legend_position(self, position):
-        print(f"Updating legend position to: {position}")  # Отладочное сообщение
         self.legend_position = position
 
     def setup_figure(self):
@@ -403,9 +396,7 @@ class GraphVisualizer:
         """
         if not isinstance(labels, list):  # Если labels не список, преобразуем в список
             labels = [labels]
-        print(f"Adding legend at position: {self.legend_position}")
-        self.legend_info.append((labels, title, self.legend_position, display_marker))
-        print(f"Final legend position before adding: {self.legend_position}")
+        self.legend_info.append((labels, title, loc, display_marker))
 
     def update_axes_limits(self, x_data_lists):
         """
@@ -447,11 +438,9 @@ class GraphVisualizer:
 
         # Создаем и добавляем основную легенду
         if self.lines:
-            print(f"Adding legend at position: {self.legend_position}")
             first_legend = plt.legend(handles=self.lines, loc=self.legend_position, title=main_legend_title, ncol=ncol,
                                       fontsize=legend_fontsize)
             ax.add_artist(first_legend)  # Важно использовать add_artist для сохранения основной легенды
-            print(f"Final legend position before adding: {self.legend_position}")
 
         # Создаем и добавляем легенду AUC, если есть значения AUC
         if self.aucs:

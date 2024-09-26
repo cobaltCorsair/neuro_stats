@@ -11,12 +11,12 @@ from work_with_prepared_data.radiobioligy_project.controls import ControlGroupVi
 from work_with_prepared_data.radiobioligy_project.draw_abs_rel_graph_compare import TumorDataComparatorAdvanced
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs import TumorDataVisualizer
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs_compare import TumorDataComparator
+from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf import SkinReactionsVisualizer
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import ExtractOutliers
 
 import matplotlib
 import matplotlib.pyplot as plt
-from graph_manager import GraphManager
 matplotlib.use('QT5Agg')  # Установка бэкенда до импорта pyplot.
 
 
@@ -176,8 +176,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def on_legend_position_changed(self):
         selected_position = self.comboBox_3.currentText()
-        print(f"Legend position changed to: {selected_position}")  # Отладка
-        GraphManager.instance().update_legend_position(selected_position)
+        graph_manager.update_legend_position(selected_position)
 
     def apply_selected_outlier_method(self, visualizer_instances):
         # Если visualizer_instances не список, оборачиваем его в список
