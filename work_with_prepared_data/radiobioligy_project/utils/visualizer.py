@@ -2,6 +2,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.stats import mannwhitneyu
 from scipy.stats import ttest_ind
+
+from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
 from work_with_prepared_data.radiobioligy_project.utils.plot_saver import save_plot
 from work_with_prepared_data.radiobioligy_project.utils.plotting_helpers import format_experiment_params
@@ -48,6 +50,11 @@ class GraphVisualizer:
         self.max_x = None
         self.max_y = None
         self.legend_info = []
+        self.legend_position = 'best'
+        graph_manager.register_visualizer(self)
+
+    def update_legend_position(self, position):
+        self.legend_position = position
 
     def setup_figure(self):
         """
@@ -431,7 +438,7 @@ class GraphVisualizer:
 
         # Создаем и добавляем основную легенду
         if self.lines:
-            first_legend = plt.legend(handles=self.lines, loc='upper left', title=main_legend_title, ncol=ncol,
+            first_legend = plt.legend(handles=self.lines, loc=self.legend_position, title=main_legend_title, ncol=ncol,
                                       fontsize=legend_fontsize)
             ax.add_artist(first_legend)  # Важно использовать add_artist для сохранения основной легенды
 

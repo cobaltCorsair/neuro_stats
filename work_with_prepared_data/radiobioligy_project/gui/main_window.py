@@ -11,14 +11,13 @@ from work_with_prepared_data.radiobioligy_project.controls import ControlGroupVi
 from work_with_prepared_data.radiobioligy_project.draw_abs_rel_graph_compare import TumorDataComparatorAdvanced
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs import TumorDataVisualizer
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs_compare import TumorDataComparator
+from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf import SkinReactionsVisualizer
-
-import matplotlib
-
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import ExtractOutliers
 
-matplotlib.use('QT5Agg')  # Установка бэкенда до импорта pyplot.
+import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use('QT5Agg')  # Установка бэкенда до импорта pyplot.
 
 
 class DataProcessor:
@@ -140,6 +139,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.model.itemChanged.connect(self.on_control_checkbox_changed)
         self.comboBox_2.currentTextChanged.connect(self.update_control_path)
         self.doubleSpinBox.valueChanged.connect(self.update_annotation_multiplier)
+        self.comboBox_3.currentIndexChanged.connect(self.on_legend_position_changed)
 
     def change_table(self):
         """
@@ -173,6 +173,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def on_combobox_changed(self):
         self.selected_outlier_method = self.comboBox.currentIndex()
+
+    def on_legend_position_changed(self):
+        selected_position = self.comboBox_3.currentText()
+        graph_manager.update_legend_position(selected_position)
 
     def apply_selected_outlier_method(self, visualizer_instances):
         # Если visualizer_instances не список, оборачиваем его в список
