@@ -147,6 +147,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.comboBox_2.currentTextChanged.connect(self.update_control_path)
         self.doubleSpinBox.valueChanged.connect(self.update_annotation_multiplier)
         self.comboBox_3.currentIndexChanged.connect(self.on_legend_position_changed)
+        self.comboBox.currentIndexChanged.connect(self.update_doubleSpinBox_value)
 
     def change_table(self):
         """
@@ -206,32 +207,63 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         selected_position = self.comboBox_3.currentText()
         graph_manager.update_legend_position(selected_position)
 
+    def update_doubleSpinBox_value(self):
+        """
+        Обновляет значение в doubleSpinBox_2 на основе выбранного метода исключения выбросов.
+        """
+        # Получаем выбранный индекс из выпадающего списка
+        selected_method = self.comboBox.currentIndex()
+
+        # В зависимости от выбранного метода подставляем оптимальное значение
+        if selected_method == 1:  # Метод с Z-score
+            self.doubleSpinBox_2.setValue(2.0)  # Оптимальный порог для Z-score
+        elif selected_method == 2:  # Метод с IQR
+            self.doubleSpinBox_2.setValue(1.5)  # Оптимальное значение для k в IQR
+        elif selected_method == 3:  # Elliptic Envelope
+            self.doubleSpinBox_2.setValue(0.1)  # Оптимальная доля выбросов для Elliptic Envelope
+        elif selected_method == 4:  # Isolation Forest
+            self.doubleSpinBox_2.setValue(0.1)  # Оптимальная доля выбросов для Isolation Forest
+        elif selected_method == 5:  # Mahalanobis Distance
+        # TODO: Добавить метод ручного выброса под номером 6 и переместить его на 2
+            self.doubleSpinBox_2.setValue(0.01)  # Оптимальное значение для alpha
+        elif selected_method == 7:  # Euclidean Distance
+            self.doubleSpinBox_2.setValue(90.0)  # Оптимальный процентиль для Euclidean Distance
+        elif selected_method == 8:  # KL Divergence
+            self.doubleSpinBox_2.setValue(0.5)  # Оптимальная ширина полосы для KL Divergence
+
     def apply_selected_outlier_method(self, visualizer_instances):
         # Если visualizer_instances не список, оборачиваем его в список
         if not isinstance(visualizer_instances, list):
             visualizer_instances = [visualizer_instances]
+
+        # Получаем значение из doubleSpinBox_2
+        coefficient = self.doubleSpinBox_2.value()
 
         updated_instances = []
         for visualizer_instance in visualizer_instances:
             # Создаем экземпляр ExtractOutliers для каждого визуализатора в списке
             outlier_extractor = ExtractOutliers(visualizer_instance)
 
-            # Применяем выбранный метод исключения выбросов
+            # Применяем выбранный метод исключения выбросов, используя значение из doubleSpinBox_2 как коэффициент
             if self.selected_outlier_method == 1:
-                outlier_extractor.remove_outliers()
+                outlier_extractor.remove_outliers(threshold=coefficient)  # Используем threshold
             elif self.selected_outlier_method == 2:
-                outlier_extractor.remove_outliers_iqr(k=1.5)
+                outlier_extractor.remove_outliers_iqr(k=coefficient)  # Используем k
             elif self.selected_outlier_method == 3:
-                outlier_extractor.remove_outliers_elliptic_envelope(contamination=0.1)
+                outlier_extractor.remove_outliers_elliptic_envelope(
+                    contamination=coefficient)  # Используем contamination
             elif self.selected_outlier_method == 4:
-                outlier_extractor.remove_outliers_isolation_forest(contamination=0.1)
+                outlier_extractor.remove_outliers_isolation_forest(
+                    contamination=coefficient)  # Используем contamination
             elif self.selected_outlier_method == 5:
+                outlier_extractor.remove_outliers_mahalanobis(alpha=coefficient)  # Используем alpha
             # TODO: Добавить метод ручного выброса под номером 6 и переместить его на 2
-                outlier_extractor.remove_outliers_mahalanobis(alpha=0.01)
-            elif self.selected_outlier_method == 7:  # Новый метод для KL-дивергенции
-                outlier_extractor.remove_outliers_by_euclidean(percentile_threshold=90)
-            elif self.selected_outlier_method == 8:  # Новый метод для KL-дивергенции
-                outlier_extractor.remove_outliers_kl_divergence(bandwidth=0.5, percentile_threshold=90)
+            elif self.selected_outlier_method == 7:  # Метод для Евклидова расстояния
+                outlier_extractor.remove_outliers_by_euclidean(
+                    percentile_threshold=coefficient)  # Используем percentile_threshold
+            elif self.selected_outlier_method == 8:  # Метод для KL-дивергенции
+                outlier_extractor.remove_outliers_kl_divergence(bandwidth=coefficient,
+                                                                percentile_threshold=90)  # Используем bandwidth
 
             # Добавляем обновленный визуализатор в список обновленных экземпляров
             updated_instances.append(outlier_extractor.base_class)
