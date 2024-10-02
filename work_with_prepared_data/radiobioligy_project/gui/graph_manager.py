@@ -2,6 +2,7 @@
 
 visualizers = []
 current_legend_position = 'best'  # По умолчанию
+rat_labels = []
 
 
 def register_visualizer(visualizer):
@@ -19,3 +20,26 @@ def update_legend_position(position):
 
 def get_current_legend_position():
     return current_legend_position
+
+
+def register_rat_labels(labels):
+    """
+    Регистрирует метки крыс.
+    """
+    global rat_labels
+    rat_labels = labels
+
+
+def get_rat_labels():
+    """
+    Возвращает текущие метки крыс.
+    """
+    return rat_labels
+
+
+def clear_rat_labels():
+    """
+    Очищает метки крыс.
+    """
+    global rat_labels
+    rat_labels = []

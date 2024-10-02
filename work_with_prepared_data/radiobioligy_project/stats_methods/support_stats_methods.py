@@ -1,5 +1,5 @@
 # файл support_stats_methods.py
-from typing import List
+from typing import List, Tuple
 import numpy as np
 import pandas as pd
 from scipy.stats import zscore, t
@@ -288,9 +288,10 @@ class ExtractOutliers:
             data_attribute_name (str): Имя атрибута, который содержит данные для обработки.
         """
         # Получаем индексы крыс, которые необходимо исключить
+        print("Исключаемые метки крыс:", excluded_rats)
         exclude_indices = [i for i, label in enumerate(self.base_class.rat_labels) if label in excluded_rats]
 
-        # Исключаем крыс по индексам из данных и меток
+        # Исключаем крыс по индексам
         self.base_class.rat_labels = [label for i, label in enumerate(self.base_class.rat_labels) if
                                       i not in exclude_indices]
 
@@ -298,7 +299,6 @@ class ExtractOutliers:
         data_attribute = getattr(self.base_class, data_attribute_name)
         data_attribute = [data for i, data in enumerate(data_attribute) if i not in exclude_indices]
         setattr(self.base_class, data_attribute_name, data_attribute)
-
 
 class SupportingFunctions:
 

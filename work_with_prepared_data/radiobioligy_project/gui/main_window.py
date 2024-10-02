@@ -8,15 +8,19 @@ import sys
 # Импорт сгенерированного класса из gui.py
 from gui import Ui_MainWindow
 from work_with_prepared_data.radiobioligy_project.controls import ControlGroupVisualizer
+from work_with_prepared_data.radiobioligy_project.data_processing.rat_manager import register_rat_labels, \
+    get_rat_labels, clear_rat_labels, rat_labels_with_indices
 from work_with_prepared_data.radiobioligy_project.draw_abs_rel_graph_compare import TumorDataComparatorAdvanced
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs import TumorDataVisualizer
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs_compare import TumorDataComparator
 from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf import SkinReactionsVisualizer
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import ExtractOutliers
+from work_with_prepared_data.radiobioligy_project.gui.checkable_combobox import CheckableComboBox
 
 import matplotlib
 import matplotlib.pyplot as plt
+
 matplotlib.use('QT5Agg')  # Установка бэкенда до импорта pyplot.
 
 
@@ -106,6 +110,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Настраиваем модель для 2 столбцов
         self.model = QStandardItemModel(0, 3, self)
         self.change_table()
+        # Заменяем стандартный comboBox_4 на кастомный комбобокс с чекбоксами
+        self.replace_combobox_4()
         # Кнопки по умолчанию неактивны
         self.pushButton.setEnabled(False)
         self.pushButton_2.setEnabled(False)
@@ -188,6 +194,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.use_AUC = False
 
+    def replace_combobox_4(self):
+        index = self.horizontalLayout_7.indexOf(self.comboBox_4)
+        if self.comboBox_4 is not None:
+            self.horizontalLayout_7.removeWidget(self.comboBox_4)
+            self.comboBox_4.deleteLater()
+
+        self.comboBox_4 = CheckableComboBox(self)
+        self.horizontalLayout_7.insertWidget(index, self.comboBox_4)
+
+    def update_combobox_with_labels(self):
+        rat_labels = get_rat_labels()  # Получаем метки с информацией о наборе данных
+        if rat_labels:
+            self.comboBox_4.clear()  # Очищаем существующие элементы комбобокса
+            # Добавляем метки с форматом "метка крысы (имя файла)"
+            display_labels = [f"{label} ({file_name})" for label, file_name in rat_labels]
+            self.comboBox_4.add_checkable_items(display_labels)
+
+    def get_selected_rat_labels_with_index(self):
+        """
+        Возвращает список меток крыс с индексами наборов данных из выбранных элементов CheckableComboBox.
+        """
+        selected_items = self.comboBox_4.checked_items()
+
+        # Извлекаем метки крыс из выделенных элементов
+        selected_rat_labels = [item.split(" (")[0] for item in selected_items]  # Метки крыс
+
+        # Находим соответствующие индексы для выбранных меток
+        selected_indices = [data_index for label, data_index in rat_labels_with_indices if label in selected_rat_labels]
+
+        return list(
+            zip(selected_rat_labels, selected_indices))  # Возвращаем кортежи (метка крысы, индекс набора данных)
+
     def set_state_of_auc_and_tests_checkbox(self):
         if self.pushButton_3.isEnabled() and self.checkBox_6.isChecked():
             self.checkBox_2.setEnabled(True)
@@ -224,7 +262,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         elif selected_method == 4:  # Isolation Forest
             self.doubleSpinBox_2.setValue(0.1)  # Оптимальная доля выбросов для Isolation Forest
         elif selected_method == 5:  # Mahalanobis Distance
-        # TODO: Добавить метод ручного выброса под номером 6 и переместить его на 2
+            # TODO: Добавить метод ручного выброса под номером 6 и переместить его на 2
             self.doubleSpinBox_2.setValue(0.01)  # Оптимальное значение для alpha
         elif selected_method == 7:  # Euclidean Distance
             self.doubleSpinBox_2.setValue(90.0)  # Оптимальный процентиль для Euclidean Distance
@@ -255,9 +293,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             elif self.selected_outlier_method == 4:
                 outlier_extractor.remove_outliers_isolation_forest(
                     contamination=coefficient)  # Используем contamination
-            elif self.selected_outlier_method == 5:
-                outlier_extractor.remove_outliers_mahalanobis(alpha=coefficient)  # Используем alpha
-            # TODO: Добавить метод ручного выброса под номером 6 и переместить его на 2
+            elif self.selected_outlier_method == 6:  # Метод ручного исключения
+                selected_rats_with_indices = self.get_selected_rat_labels_with_index()
+                # Извлекаем только метки крыс
+                excluded_rats = [label for label, index in selected_rats_with_indices]
+                outlier_extractor.exclude_rats(excluded_rats, 'tumor_volumes')
+            elif self.selected_outlier_method == 6:  # Метод ручного исключения
+                outlier_extractor.exclude_rats(self.get_selected_rat_labels_with_index(), 'tumor_volumes')
             elif self.selected_outlier_method == 7:  # Метод для Евклидова расстояния
                 outlier_extractor.remove_outliers_by_euclidean(
                     percentile_threshold=coefficient)  # Используем percentile_threshold
@@ -700,6 +742,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     plotting_func(visualizer, self.current_control, experiment_visualizers)
                 else:
                     plotting_func(visualizer)
+
+            self.update_combobox_with_labels()
+            clear_rat_labels()
             # Сохраняем генерируемый график в буфер
             # После генерации графика нужно сохранить текущий рисунок в buf
             plt.savefig(buf, format='png')
@@ -812,7 +857,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def update_annotation_multiplier(self, value):
         self.annotation_multiplier = self.doubleSpinBox.value()
-        #print(f"Сдвиг равен {self.annotation_multiplier}")
+        # print(f"Сдвиг равен {self.annotation_multiplier}")
 
 
 def main():

@@ -3,6 +3,7 @@
 from typing import List, Tuple
 import numpy as np
 import pandas as pd
+from work_with_prepared_data.radiobioligy_project.data_processing.rat_manager import register_rat_labels
 
 
 def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str], List[List[float]]]:
@@ -23,7 +24,8 @@ def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str],
     data = pd.read_excel(file_path, header=None)
     experiment_params = data.iloc[0, :3].tolist()  # Извлекаем параметры эксперимента из первой строки
     skin_data = data.iloc[2:, :].copy()  # Копируем данные, начиная с третьей строки
-    time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in data.iloc[1, 1:]]  # Преобразуем метки времени
+    time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in
+                 data.iloc[1, 1:]]  # Преобразуем метки времени
     rat_labels = skin_data.iloc[:, 0].tolist()  # Извлекаем метки крыс из первого столбца
     skin_reactions = skin_data.iloc[:, 1:].to_numpy().tolist()  # Преобразуем оставшиеся данные в список списков
     return experiment_params, time_data, rat_labels, skin_reactions
@@ -69,5 +71,6 @@ def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str]
             rat_volumes.append(volume)
         tumor_volumes.append(rat_volumes)
 
+        # Сохраняем данные в датакласс
+    register_rat_labels(rat_labels)  # Регистрируем метки с указанием файла
     return experiment_params, time_data, rat_labels, tumor_volumes
-
