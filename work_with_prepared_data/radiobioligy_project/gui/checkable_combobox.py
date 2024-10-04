@@ -19,11 +19,12 @@ class CheckableComboBox(QComboBox):
 
     def add_checkable_items(self, items):
         """
-        Добавляет элементы с чекбоксами в комбобокс
+        Добавляет элементы с чекбоксами в комбобокс.
         """
+        self.model.clear()  # Очищаем существующую модель перед добавлением новых элементов
         for item_text in items:
             item = QStandardItem(item_text)
-            # Используем правильные флаги для PyQt6
+            # Устанавливаем правильные флаги для PyQt6
             item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
             item.setData(Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)  # По умолчанию чекбокс не отмечен
             self.model.appendRow(item)
@@ -46,3 +47,36 @@ class CheckableComboBox(QComboBox):
         item = self.model.item(index)
         state = item.checkState()
         print(f'Item "{item.text()}" is now {"checked" if state == Qt.CheckState.Checked else "unchecked"}')
+
+    def save_checked_indices(self):
+        """
+        Возвращает список индексов отмеченных элементов.
+        """
+        checked_indices = []
+        for index in range(self.model.rowCount()):
+            item = self.model.item(index)
+            if item.checkState() == Qt.CheckState.Checked:
+                checked_indices.append(index)  # Сохраняем индекс элемента
+        return checked_indices
+
+    def restore_checked_indices(self, checked_indices):
+        """
+        Восстанавливает состояние галочек на основе списка индексов.
+        """
+        for index in range(self.model.rowCount()):
+            item = self.model.item(index)
+            if index in checked_indices:
+                item.setCheckState(Qt.CheckState.Checked)
+                print(f"Item at index {index} ({item.text()}) checked")
+            else:
+                item.setCheckState(Qt.CheckState.Unchecked)
+
+    def clear_all_checkboxes(self):
+        """
+        Сбрасывает состояние всех галочек в CheckableComboBox.
+        """
+        print("Clearing all checkboxes...")  # Отладочная информация
+        for index in range(self.model.rowCount()):
+            item = self.model.item(index)
+            item.setCheckState(Qt.CheckState.Unchecked)  # Сбрасываем все галочки
+            print(f"Cleared: {item.text()}")  # Выводим текст очищаемого элемента

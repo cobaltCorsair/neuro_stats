@@ -100,6 +100,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_selected_paths = []
         self.current_control = None
         self.selected_outlier_method = None
+        self.saved_checked_items = []
         self.perform_stat_test = False
         self.use_ttest = False
         self.use_AUC = False
@@ -109,9 +110,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.action.triggered.connect(self.open_files)
         # Настраиваем модель для 2 столбцов
         self.model = QStandardItemModel(0, 3, self)
-        self.change_table()
         # Заменяем стандартный comboBox_4 на кастомный комбобокс с чекбоксами
         self.replace_combobox_4()
+        self.change_table()
         # Кнопки по умолчанию неактивны
         self.pushButton.setEnabled(False)
         self.pushButton_2.setEnabled(False)
@@ -204,6 +205,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.horizontalLayout_7.insertWidget(index, self.comboBox_4)
 
     def update_combobox_with_labels(self):
+        # Сохраняем индексы выбранных элементов перед обновлением
+        self.saved_checked_items = self.comboBox_4.save_checked_indices()
+
         rat_labels = get_rat_labels()  # Получаем метки с информацией о наборе данных
         if rat_labels:
             self.comboBox_4.clear()  # Очищаем существующие элементы комбобокса
@@ -219,6 +223,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         # Извлекаем метки крыс из выделенных элементов
         selected_rat_labels = [item.split(" (")[0] for item in selected_items]  # Метки крыс
+        print(selected_rat_labels)
 
         # Находим соответствующие индексы для выбранных меток
         selected_indices = [data_index for label, data_index in rat_labels_with_indices if label in selected_rat_labels]
@@ -293,13 +298,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             elif self.selected_outlier_method == 4:
                 outlier_extractor.remove_outliers_isolation_forest(
                     contamination=coefficient)  # Используем contamination
+            elif self.selected_outlier_method == 5:
+                # TODO: Добавить метод ручного выброса под номером 6 и переместить его на 2
+                outlier_extractor.remove_outliers_mahalanobis(alpha=0.01)
             elif self.selected_outlier_method == 6:  # Метод ручного исключения
                 selected_rats_with_indices = self.get_selected_rat_labels_with_index()
                 # Извлекаем только метки крыс
                 excluded_rats = [label for label, index in selected_rats_with_indices]
+                # Сохраняем выбранные метки для последующего восстановления
+                self.saved_checked_items = excluded_rats
                 outlier_extractor.exclude_rats(excluded_rats, 'tumor_volumes')
-            elif self.selected_outlier_method == 6:  # Метод ручного исключения
-                outlier_extractor.exclude_rats(self.get_selected_rat_labels_with_index(), 'tumor_volumes')
             elif self.selected_outlier_method == 7:  # Метод для Евклидова расстояния
                 outlier_extractor.remove_outliers_by_euclidean(
                     percentile_threshold=coefficient)  # Используем percentile_threshold
@@ -402,6 +410,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if item and item.isCheckable() and item.checkState() == Qt.CheckState.Checked:
                 path = self.model.item(row, 1).text()
                 selected_paths.append(path)
+
+        # Сброс всех чекбоксов для исключения крыс при изменении таблицы
+        self.comboBox_4.clear_all_checkboxes()
         return selected_paths
 
     def update_first_button_state(self):
@@ -745,6 +756,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             self.update_combobox_with_labels()
             clear_rat_labels()
+            # Восстанавливаем состояние выбранных элементов по индексам
+            self.comboBox_4.restore_checked_indices(self.saved_checked_items)
+            # TODO: Надо сбрасывать галочки при смене файлов экспериментов
             # Сохраняем генерируемый график в буфер
             # После генерации графика нужно сохранить текущий рисунок в buf
             plt.savefig(buf, format='png')
