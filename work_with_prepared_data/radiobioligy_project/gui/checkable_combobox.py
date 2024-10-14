@@ -14,9 +14,6 @@ class CheckableComboBox(QComboBox):
         self.model = QStandardItemModel(self)
         self.setModel(self.model)
 
-        # Добавляем примерные элементы с чекбоксами (или можно добавить позже)
-        # self.add_checkable_items(['Option 1', 'Option 2', 'Option 3'])
-
     def add_checkable_items(self, items):
         """
         Добавляет элементы с чекбоксами в комбобокс.
@@ -46,7 +43,6 @@ class CheckableComboBox(QComboBox):
         """
         item = self.model.item(index)
         state = item.checkState()
-        print(f'Item "{item.text()}" is now {"checked" if state == Qt.CheckState.Checked else "unchecked"}')
 
     def save_checked_indices(self):
         """
@@ -67,7 +63,6 @@ class CheckableComboBox(QComboBox):
             item = self.model.item(index)
             if index in checked_indices:
                 item.setCheckState(Qt.CheckState.Checked)
-                print(f"Item at index {index} ({item.text()}) checked")
             else:
                 item.setCheckState(Qt.CheckState.Unchecked)
 
@@ -75,8 +70,6 @@ class CheckableComboBox(QComboBox):
         """
         Сбрасывает состояние всех галочек в CheckableComboBox.
         """
-        print("Clearing all checkboxes...")  # Отладочная информация
         for index in range(self.model.rowCount()):
             item = self.model.item(index)
             item.setCheckState(Qt.CheckState.Unchecked)  # Сбрасываем все галочки
-            print(f"Cleared: {item.text()}")  # Выводим текст очищаемого элемента

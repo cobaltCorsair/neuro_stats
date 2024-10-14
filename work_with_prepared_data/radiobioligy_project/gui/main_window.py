@@ -156,6 +156,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.comboBox_3.currentIndexChanged.connect(self.on_legend_position_changed)
         self.comboBox.currentIndexChanged.connect(self.update_doubleSpinBox_value)
 
+        # Подключаем сигналы изменения модели таблицы к слоту
+        self.model.rowsInserted.connect(self.on_table_data_changed)
+        self.model.rowsRemoved.connect(self.on_table_data_changed)
+        self.model.itemChanged.connect(self.on_table_data_changed)
+
     def change_table(self):
         """
         Настраивает внешний вид и поведение таблицы для отображения списка файлов экспериментов.
@@ -220,10 +225,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Возвращает список меток крыс с индексами наборов данных из выбранных элементов CheckableComboBox.
         """
         selected_items = self.comboBox_4.checked_items()
-
         # Извлекаем метки крыс из выделенных элементов
         selected_rat_labels = [item.split(" (")[0] for item in selected_items]  # Метки крыс
-        print(selected_rat_labels)
 
         # Находим соответствующие индексы для выбранных меток
         selected_indices = [data_index for label, data_index in rat_labels_with_indices if label in selected_rat_labels]
@@ -354,7 +357,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # Создаем элемент со встроенным чекбоксом и именем файла
             check_and_name_item = QStandardItem(file_name)
             check_and_name_item.setCheckable(True)
-            check_and_name_item.setEditable(False)
+            check_and_name_item.setEditable(True)
             file_path_item = QStandardItem(file_path)
 
             # Создаем чекбокс "Пометить как контрольный"
@@ -371,6 +374,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # Устанавливаем высоту строк
             for row in range(self.model.rowCount()):
                 self.tableView.setRowHeight(row, 20)  # Задаем желаемую высоту строки
+
+    def on_table_data_changed(self, *args):
+        """
+        Этот слот вызывается при изменении данных в таблице.
+        Он отвечает за сброс состояния всех чекбоксов в comboBox_4 при изменении файлов.
+        """
+        self.comboBox_4.clear_all_checkboxes()
+        self.update_combobox_with_labels()
 
     def update_control_path(self, text):
         self.control_path = text
@@ -411,8 +422,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 path = self.model.item(row, 1).text()
                 selected_paths.append(path)
 
-        # Сброс всех чекбоксов для исключения крыс при изменении таблицы
-        self.comboBox_4.clear_all_checkboxes()
         return selected_paths
 
     def update_first_button_state(self):
