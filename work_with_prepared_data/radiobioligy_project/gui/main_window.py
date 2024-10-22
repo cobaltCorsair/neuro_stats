@@ -2,8 +2,10 @@ import io
 from PyQt6.QtCore import QFileInfo, Qt
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel, \
-    QTableWidget, QTableWidgetItem
+    QTableWidget, QTableWidgetItem, QMessageBox
+import subprocess
 import sys
+import os
 
 # Импорт сгенерированного класса из gui.py
 from gui import Ui_MainWindow
@@ -160,6 +162,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.model.rowsInserted.connect(self.on_table_data_changed)
         self.model.rowsRemoved.connect(self.on_table_data_changed)
         self.model.itemChanged.connect(self.on_table_data_changed)
+
+        self.action_3.triggered.connect(self.edit_experiment_files)
 
     def change_table(self):
         """
@@ -882,6 +886,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.annotation_multiplier = self.doubleSpinBox.value()
         # print(f"Сдвиг равен {self.annotation_multiplier}")
 
+    def edit_experiment_files(self):
+        """
+        Открывает диалоговое окно для выбора файлов экспериментов и открывает выбранные файлы в Excel.
+        """
+        # Разрешаем пользователю выбрать один или несколько файлов
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Выбрать файл для редактирования",
+            "",
+            "Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)"
+        )
+
+        if not files:
+            return  # Пользователь отменил диалог
+
+        for file_path in files:
+            try:
+                if sys.platform.startswith('darwin'):
+                    subprocess.call(['open', file_path])
+                elif os.name == 'nt':  # Для Windows
+                    os.startfile(file_path)
+                elif os.name == 'posix':  # Для Linux
+                    subprocess.call(['xdg-open', file_path])
+                else:
+                    raise OSError("Unsupported operating system.")
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось открыть файл {file_path}.\n{str(e)}")
 
 def main():
     app = QApplication(sys.argv)
