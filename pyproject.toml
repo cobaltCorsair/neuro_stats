@@ -16,6 +16,7 @@ pymupdf = "^1.22.5"
 numpy = "^1.26.4"
 pyqt6 = "^6.6.1"
 fastdtw = "^0.3.4"
+seaborn = "^0.13.2"
 
 
 [build-system]
