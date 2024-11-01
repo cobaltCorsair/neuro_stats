@@ -278,7 +278,7 @@ class TumorDataComparatorAdvanced:
 
             # Добавление данных на график
             drawgraph.add_plot(experiment_visualizer.time_data, tumor_growth_inhibition,
-                               experiment_visualizer.experiment_params, label, calculate_auc=False)
+                               experiment_visualizer.experiment_params, label, self._use_AUC)
 
             x_data_lists.append(experiment_visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
 

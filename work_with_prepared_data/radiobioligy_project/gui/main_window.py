@@ -2,7 +2,7 @@ import io
 from PyQt6.QtCore import QFileInfo, Qt
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel, \
-    QTableWidget, QTableWidgetItem, QMessageBox
+    QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup
 import subprocess
 import sys
 import os
@@ -102,6 +102,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_selected_paths = []
         self.current_control = None
         self.selected_outlier_method = None
+        self.current_plot_type = None
         self.saved_checked_items = []
         self.perform_stat_test = False
         self.use_ttest = False
@@ -123,9 +124,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_5.setEnabled(False)
         self.pushButton_6.setEnabled(False)
         self.pushButton_7.setEnabled(False)
+        self.pushButton_8.setEnabled(False)
         self.checkBox_2.setDisabled(True)
         self.checkBox_7.setDisabled(True)
         self.checkBox.setDisabled(True)
+        self.pushButton_4.setCheckable(False)
+        self.pushButton_8.setCheckable(False)
         # Биндинг кнопок
         self.pushButton.clicked.connect(self.handle_all_of_rats)
         self.pushButton_2.clicked.connect(self.handle_skin_reactions)
@@ -136,6 +140,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_5.clicked.connect(self.handle_compare_tumor_growth_inhibition)
         self.pushButton_6.clicked.connect(self.handle_tumor_growth_inhibition_table)
         self.pushButton_7.clicked.connect(self.handle_compare_with_control)
+        self.pushButton_8.clicked.connect(self.handle_compare_skin_reactions)
+        self.pushButton_4.clicked.connect(self.handle_pushButton_4)
+        self.pushButton_8.clicked.connect(self.handle_pushButton_8)
         # Подключение сигнала изменения выбора комбобокса к обработчику
         self.comboBox.currentIndexChanged.connect(self.on_combobox_changed)
         # Подключаем сигналы изменения состояния чекбоксов
@@ -243,6 +250,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.checkBox_2.setEnabled(True)
             self.checkBox_7.setEnabled(True)
             self.checkBox.setEnabled(True)
+        elif self.pushButton_4.isEnabled() and self.checkBox_6.isChecked():
+            self.checkBox_2.setEnabled(True)
         else:
             self.checkBox_2.setEnabled(False)
             self.checkBox_2.setChecked(False)
@@ -504,6 +513,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Проверяем, что во всех выбранных путях отсутствует "skin_reactions"
         allPathsValid = all("skin_reactions" in path for path in selected_paths)
         self.pushButton_4.setEnabled(oneExperimentSelected and anyCheckboxChecked and allPathsValid)
+        self.pushButton_8.setEnabled(oneExperimentSelected and anyCheckboxChecked and allPathsValid)
 
     def update_fifth_button_state(self):
         """
@@ -728,6 +738,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         table = self.dataframe_to_qtablewidget(df)
         layout.addWidget(table)
 
+    def handle_pushButton_4(self):
+        self.current_plot_type = 'multiple_experiments'
+        self.create_graphic()
+
+    def handle_pushButton_8(self):
+        self.current_plot_type = 'auc_comparison'
+        self.create_graphic()
+
     def draw_graphic(self, selected_paths, visualizer, plotting_func, current_control=None):
         self.current_selected_paths = selected_paths
         self.current_visualizer = visualizer
@@ -756,7 +774,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         with io.BytesIO() as buf:
             if isinstance(visualizer, SkinReactionsVisualizer) and len(self.current_selected_paths) > 1:
                 # Вызов статического метода для рисования графика
-                SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths)
+                if self.current_plot_type == 'multiple_experiments':
+                    SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC)
+                elif self.current_plot_type == 'auc_comparison':
+                    SkinReactionsVisualizer.plot_auc_comparison(self.current_selected_paths)
             else:
                 # Для других случаев, когда используется один файл или другие типы визуализаторов
                 if self.current_control is not None and plotting_func == TumorDataComparatorAdvanced.compare_control_and_experiment:
@@ -771,7 +792,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             clear_rat_labels()
             # Восстанавливаем состояние выбранных элементов по индексам
             self.comboBox_4.restore_checked_indices(self.saved_checked_items)
-            # TODO: Надо сбрасывать галочки при смене файлов экспериментов
             # Сохраняем генерируемый график в буфер
             # После генерации графика нужно сохранить текущий рисунок в buf
             plt.savefig(buf, format='png')

@@ -120,7 +120,7 @@ class SkinReactionsVisualizer:
         drawgraph.finalize_figure('', '', 1, 25)
 
     @staticmethod
-    def plot_multiple_experiments(file_paths: List[str]):
+    def plot_multiple_experiments(file_paths: List[str], use_AUC: bool = False):
         """
            Визуализация сравнения кожных реакций между несколькими экспериментами на одном графике.
 
@@ -167,11 +167,85 @@ class SkinReactionsVisualizer:
                             interpolated_std_dev]
             label = format_experiment_params(visualizer.experiment_params)
 
-            # Добавление данных на график с автоматическим выбором стиля линии и маркера
-            drawgraph.add_plot(common_timepoints, interpolated_values, {}, label, None, calculate_auc=False)
+            drawgraph.add_plot(common_timepoints, interpolated_values, {}, label, None, use_AUC)
 
         base_file_name = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths])
         drawgraph.finalize_figure(base_file_name, ncol=1, legend_fontsize='20')
+
+    @staticmethod
+    def plot_auc_comparison(file_paths: List[str], title="Сравнение AUC кожных реакций", x_label="",
+                            y_label="AUC (усл. ед.)"):
+        """
+        Построение столбчатого графика для сравнения AUC кожных реакций между экспериментами с легендой.
+
+        Args:
+            file_paths (List[str]): Список путей к файлам с данными экспериментов.
+            title (str): Заголовок графика.
+            x_label (str): Подпись оси X.
+            y_label (str): Подпись оси Y.
+
+        Returns:
+            Ничего не возвращает. Результатом является отображение и сохранение столбчатого графика.
+        """
+        import matplotlib.patches as mpatches
+        import matplotlib.pyplot as plt
+        import math
+
+        # Инициализация объекта GraphVisualizer
+        drawgraph = GraphVisualizer(
+            title=title,
+            x_label=x_label,
+            y_label=y_label,
+            figsize=(12, 8)  # Увеличенный размер для улучшенной читаемости
+        )
+
+        # Подготовка данных для AUC каждого эксперимента
+        auc_values = []
+        labels = []
+        colors = plt.cm.Set3(range(len(file_paths)))  # Применяем более эстетичную палитру Set3
+
+        for file_path, color in zip(file_paths, colors):
+            visualizer = SkinReactionsVisualizer(file_path)
+
+            try:
+                mean_reactions, time_data, _ = visualizer.data_processor.get_mean_skin_reactions()
+                auc = SupportingFunctions.calculate_auc(mean_reactions, time_data) / 1000  # Делим AUC на 1000
+                auc_values.append(auc)
+
+                # Получаем более подробную метку эксперимента
+                experiment_label = format_experiment_params(visualizer.experiment_params)
+                labels.append((experiment_label, color))
+            except ValueError as e:
+                print(f"Ошибка при обработке файла {file_path}: {e}")
+                continue
+
+        # Настройка фигуры
+        drawgraph.setup_figure()
+
+        # Построение столбиков
+        x_positions = range(len(auc_values))
+        plt.bar(x_positions, auc_values, color=[c for _, c in labels], edgecolor='black', width=0.6)
+
+        # Настройка осей
+        plt.xticks([])  # Убираем метки на оси X
+        plt.xlabel(x_label, fontsize=14)
+        plt.ylabel(y_label, fontsize=14)
+
+        # Отображение значений над столбиками
+        for i, v in enumerate(auc_values):
+            plt.text(i, v + 0.1, f"{v:.2f}", ha='center', va='bottom', fontsize=12)
+
+        # Расчет количества колонок для легенды
+        ncol = math.ceil(len(labels) / 2) if len(labels) > 4 else len(labels)
+
+        # Создание легенды с увеличенным шрифтом и эстетичными цветами
+        legend_patches = [mpatches.Patch(color=color, label=label) for label, color in labels]
+        plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=ncol, fontsize=12,
+                   frameon=False)
+
+        # Финализация графика
+        plt.title(title, fontsize=16)
+        drawgraph.finalize_figure("auc_comparison_plot.png")
 
 
 if __name__ == '__main__':
