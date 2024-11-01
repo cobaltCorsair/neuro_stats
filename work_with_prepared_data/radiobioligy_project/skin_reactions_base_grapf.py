@@ -204,12 +204,21 @@ class SkinReactionsVisualizer:
         labels = []
         colors = plt.cm.Set3(range(len(file_paths)))  # Применяем более эстетичную палитру Set3
 
+        # Определяем общие временные точки, такие же как в plot_multiple_experiments
+        common_timepoints = list(range(0, 25))
+
         for file_path, color in zip(file_paths, colors):
             visualizer = SkinReactionsVisualizer(file_path)
 
             try:
-                mean_reactions, time_data, _ = visualizer.data_processor.get_mean_skin_reactions()
-                auc = SupportingFunctions.calculate_auc(mean_reactions, time_data) / 1000  # Делим AUC на 1000
+                mean_reactions, std_dev, _ = visualizer.data_processor.get_mean_skin_reactions()
+
+                # Интерполируем данные на общие временные точки
+                interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(visualizer.time_data,
+                                                                                                mean_reactions,
+                                                                                                common_timepoints)
+                # Вычисляем AUC с использованием интерполированных значений
+                auc = SupportingFunctions.calculate_auc(interpolated_values, common_timepoints)
                 auc_values.append(auc)
 
                 # Получаем более подробную метку эксперимента
