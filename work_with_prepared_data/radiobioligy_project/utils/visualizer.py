@@ -74,8 +74,7 @@ class GraphVisualizer:
     @staticmethod
     def prepare_and_add_data_to_graph(visualizers, value_extractor_func, graph_visualizer, label_prefix,
                                       calculate_auc=False, perform_stat_test=False, experiments_to_compare=None,
-                                      annotation_offset_direction='up', annotation_multiplier=0.0,
-                                      use_ttest=False):  # Новый параметр для выбора t-теста
+                                      annotation_offset_direction='up', annotation_multiplier=0.0, use_ttest=False):
         """
         Подготавливает данные от нескольких экспериментов и добавляет их на график.
 
@@ -87,10 +86,9 @@ class GraphVisualizer:
             graph_visualizer (GraphVisualizer): Объект GraphVisualizer, на который нужно добавить данные.
             label_prefix (str): Префикс для легенды, добавляемый к метке каждой серии данных на графике.
             calculate_auc (bool, optional): Флаг, указывающий, нужно ли вычислять площадь под кривой (AUC).
-            По умолчанию False.
-            experiments_to_compare (List[VisualizerType]): Эксперименты для теста.
             perform_stat_test (bool, optional): Флаг, необходим ли тест.
-            annotation_offset_direction (str): Направление сдвига звёздочки.
+            experiments_to_compare (List[VisualizerType], optional): Эксперименты для теста.
+            annotation_offset_direction (str): Направление для сдвига аннотаций ('up' или 'down').
             annotation_multiplier (float): Множитель для сдвига аннотаций.
             use_ttest (bool, optional): Если True, выполняется t-тест, иначе используется тест Манна-Уитни.
 
@@ -99,17 +97,19 @@ class GraphVisualizer:
             `calculate_error_margin` соответственно.
         """
         x_data_lists = []
-        y_positions_for_annotations = []
         upper_bounds_dict = {}
 
         # Выбор статистического теста
         if perform_stat_test and experiments_to_compare:
             p_values, x_positions_for_annotations = GraphVisualizer.prepare_mann_whitney_test(
                 experiments_to_compare, perform_stat_test)
-        if use_ttest and experiments_to_compare:
+        elif use_ttest and experiments_to_compare:
             p_values, x_positions_for_annotations = GraphVisualizer.prepare_ttest(
                 experiments_to_compare, use_ttest)
+        else:
+            p_values, x_positions_for_annotations = None, None
 
+        # Добавляем графики и вычисляем верхние границы
         for index, visualizer in enumerate(visualizers):
             values = value_extractor_func(visualizer)
             std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
@@ -117,33 +117,25 @@ class GraphVisualizer:
             error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
                             for std in std_dev]
 
+            # Добавляем график
             graph_visualizer.add_plot(visualizer.time_data, values, visualizer.experiment_params, f"{label_prefix}",
                                       error_margin, calculate_auc)
             x_data_lists.append(visualizer.time_data)
 
-            # Если проводится статистический тест, то здесь нужно вычислить y_position для аннотации
-            if (perform_stat_test or use_ttest) and experiments_to_compare:
-                # Рассчитываем верхние или нижние границы в зависимости от направления аннотации
-                if annotation_offset_direction == 'up':
-                    upper_bounds = [val + err for val, err in zip(values, error_margin)]
-                elif annotation_offset_direction == 'down':  # Если направление вниз
-                    upper_bounds = [val - err for val, err in zip(values, error_margin)]
-
-                # Применяем множитель для сдвига аннотации
-                if annotation_multiplier != 0.0:
-                    upper_bounds = [ub * (1 + annotation_multiplier) for ub in upper_bounds]
-
-                # Сохраняем верхние границы в словарь
+            # Если визуализатор относится к экспериментам, которые сравниваются, сохраняем его границы
+            if experiments_to_compare and visualizer in experiments_to_compare:
+                upper_bounds = [val + err + annotation_multiplier for val, err in zip(values, error_margin)]
                 upper_bounds_dict[visualizer] = upper_bounds
-                y_positions_for_annotations = upper_bounds_dict
 
-        # Обновляем максимальное значение по оси X и настраиваем деления после добавления всех графиков
+        # Обновляем оси
         graph_visualizer.update_axes_limits(x_data_lists)
 
-        # Добавление аннотаций значимости на график, если требуется
+        # Добавление аннотаций значимости
         if (perform_stat_test or use_ttest) and experiments_to_compare:
-            GraphVisualizer.add_significance_annotation(visualizers, p_values, x_positions_for_annotations,
-                                                        y_positions_for_annotations)
+            GraphVisualizer.add_significance_annotation(
+                experiments_to_compare, p_values, x_positions_for_annotations, upper_bounds_dict,
+                annotation_visualizer=experiments_to_compare[0]  # Указываем визуализатор для аннотаций
+            )
 
     @staticmethod
     def prepare_mann_whitney_test(experiments_to_compare, perform_stat_test):
@@ -263,26 +255,37 @@ class GraphVisualizer:
         return p_value
 
     @staticmethod
-    def add_significance_annotation(visualizers, p_values, x_positions, y_positions,
-                                    offset=0.0):
+    def add_significance_annotation(experiments_to_compare, p_values, x_positions, upper_bounds_dict,
+                                    offset_ratio=0.00, annotation_visualizer=None):
         """
-        Добавляет аннотации значимости на график на основе значений p.
-
-        Аннотации ('*', '**', '***') добавляются в зависимости от уровня значимости (p-value),
-        указывая на статистическую значимость различий между группами.
+        Добавляет аннотации значимости на график, избегая наложения на доверительные интервалы.
 
         Args:
-            visualizers (List[VisualizerType]): Список визуализаторов, используемых для отображения графиков.
-            p_values (List[float]): Список значений p, полученных в результате статистических тестов.
-            x_positions (List[float]): Список координат по оси X для размещения аннотаций.
-            y_positions (Dict[VisualizerType, List[float]]): Словарь с верхними границами для аннотаций каждого визуализатора.
-            offset (float, optional): Величина смещения аннотаций от верхних границ. По умолчанию 1.5.
-
-        Примечание:
-            Аннотации добавляются непосредственно на график с использованием координат X и Y с учетом смещения.
+            experiments_to_compare (List[VisualizerType]): Список экспериментов для аннотации.
+            p_values (List[float]): Список значений p.
+            x_positions (List[float]): Список координат по оси X для аннотаций.
+            upper_bounds_dict (Dict[VisualizerType, List[float]]): Словарь с верхними границами Y для каждого эксперимента.
+            offset_ratio (float): Доля от диапазона Y для смещения аннотаций вверх.
+            annotation_visualizer (VisualizerType, optional): Визуализатор, над которым размещаются аннотации.
         """
-        # индекс тут — это то, для какого эксперимента мы делаем "звёздочки"
-        for p_value, x_position, y_position in zip(p_values, x_positions, y_positions[visualizers[0]]):
+        # Вычисляем общее смещение на основе диапазона оси Y
+        y_min, y_max = plt.ylim()
+        y_range = y_max - y_min
+        offset = y_range * offset_ratio
+
+        if annotation_visualizer is None:
+            annotation_visualizer = experiments_to_compare[0]
+
+        # Получаем time_data и upper_bounds для annotation_visualizer
+        time_data = np.array(annotation_visualizer.time_data)
+        upper_bounds = upper_bounds_dict.get(annotation_visualizer, None)
+        if upper_bounds is None:
+            return  # Нет данных для указанного визуализатора
+
+        # Проходим по p-value и добавляем аннотации
+        for p_value, x_position in zip(p_values, x_positions):
+            if p_value is None:
+                continue  # Пропускаем, если p-value не рассчитано
             if p_value < 0.001:
                 annotation = '***'  # Сильно значимо
             elif p_value < 0.01:
@@ -292,10 +295,21 @@ class GraphVisualizer:
             else:
                 annotation = ''  # Не значимо
 
-            if annotation:  # Если есть что добавлять
-                # Позиция аннотации немного выше верхней границы погрешности
-                plt.text(x_position, y_position + offset, annotation, ha='center', fontsize=20,
-                         color='red')
+            if annotation:
+                # Найдем индекс ближайшего значения x_position в time_data
+                index = np.argmin(np.abs(time_data - x_position))
+                # Проверим, что x_position достаточно близок к time_data[index]
+                if abs(time_data[index] - x_position) > 1e-6:
+                    continue  # x_position не найден в time_data
+
+                # Получаем upper_bound для данного индекса
+                upper_bound = upper_bounds[index]
+
+                # Размещаем аннотацию немного выше верхнего значения
+                y_position = upper_bound + offset
+
+                # Добавляем аннотацию
+                plt.text(x_position, y_position, annotation, ha='center', fontsize=20, color='red')
 
     def add_individual_plots(self, labels, volumes_data, time_data):
         """
