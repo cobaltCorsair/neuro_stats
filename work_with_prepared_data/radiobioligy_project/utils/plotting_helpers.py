@@ -1,4 +1,5 @@
 # файл plotting_helpers.py
+from typing import List
 
 import matplotlib.pyplot as plt
 
@@ -63,25 +64,28 @@ def subscriptify(text):
     return ''.join(subscript_map.get(char, char) for char in text)
 
 
-def format_experiment_params(params):
+def format_experiment_params(params: List[str]) -> str:
     """
-        Форматирует параметры эксперимента для отображения в легенде.
+    Форматирует параметры эксперимента для отображения в легенде.
 
-        Parameters:
-            params (list): Список параметров эксперимента.
+    Args:
+        params (List[str]): Список параметров эксперимента.
 
-        Returns:
-            str: Отформатированная строка параметров эксперимента.
-        """
+    Returns:
+        str: Отформатированная строка параметров эксперимента с датой.
+    """
     # Удаляем пустые строки и значения 'nan'
     cleaned_params = [str(param).replace('nan', '').strip() for param in params if str(param).strip()]
 
     # Разбиваем параметры на ключ и значение
     rad_values = {}
     sequence = []  # Сохраняем порядок ключей
+    date_str = ""
     for param in cleaned_params:
-        if '=' in param and not param.startswith('t'):
-            key, value = param.split('=')
+        if param.startswith("Date="):
+            date_str = param.split("=", 1)[1].strip()
+        elif '=' in param and not param.startswith('t'):
+            key, value = param.split('=', 1)
             key = key.strip()
             value = value.split()[0]  # Берём только первую часть, исключая "Гр."
             rad_values[key] = value.strip()
@@ -99,6 +103,10 @@ def format_experiment_params(params):
     for key in sequence:
         if key in rad_values:
             formatted_params.append(f"D{subscriptify(key.lower())} = {rad_values[key]} Гр")
+
+    # Добавление даты, если она присутствует
+    if date_str:
+        formatted_params.append(f"Дата: {date_str}")
 
     return ', '.join(formatted_params)
 

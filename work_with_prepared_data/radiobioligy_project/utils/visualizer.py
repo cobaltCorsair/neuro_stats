@@ -1,3 +1,5 @@
+from typing import List
+
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.stats import mannwhitneyu
@@ -349,7 +351,7 @@ class GraphVisualizer:
         Args:
             x_data (List[float]): Данные по оси X.
             y_data (List[float]): Данные по оси Y.
-            params (dict): Параметры эксперимента для включения в подпись графика.
+            params (list): Параметры эксперимента для включения в подпись графика.
             label (str): Подпись для графика.
             error_margin (List[float], optional): Доверительный интервал или ошибка для каждой точки данных.
             calculate_auc (bool, optional): Если True, будет рассчитана площадь под кривой (AUC).
@@ -363,6 +365,10 @@ class GraphVisualizer:
         self.linestyle_index += 1
 
         x_data = np.array(x_data, dtype=float)
+
+        # Форматирование подписи с параметрами и датой
+        formatted_label = f"{label} {format_experiment_params(params)}"
+
         # Создаем линейный график
         line, = plt.plot(
             x_data,
@@ -371,8 +377,9 @@ class GraphVisualizer:
             markersize=self.marker_size,
             linestyle=current_linestyle,
             zorder=2,
-            label=f"{label}{format_experiment_params(params)}"
+            label=formatted_label
         )
+
         # Расчет и добавление AUC, если необходимо
         if calculate_auc:
             auc_value = SupportingFunctions.calculate_auc(y_data, x_data)
@@ -388,10 +395,13 @@ class GraphVisualizer:
         # Добавление доверительных интервалов
         if error_margin is not None:
             line_color = line.get_color()
-            plt.fill_between(x_data,
-                             [y - e for y, e in zip(y_data, error_margin)],
-                             [y + e for y, e in zip(y_data, error_margin)],
-                             color=line_color, alpha=fill_alpha)
+            plt.fill_between(
+                x_data,
+                [y - e for y, e in zip(y_data, error_margin)],
+                [y + e for y, e in zip(y_data, error_margin)],
+                color=line_color,
+                alpha=fill_alpha
+            )
 
     def add_legend(self, labels, title="", loc="upper left", display_marker=True):
         """

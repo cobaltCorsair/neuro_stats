@@ -3,6 +3,9 @@
 from typing import List, Tuple
 import numpy as np
 import pandas as pd
+import os
+import re
+from datetime import datetime
 from work_with_prepared_data.radiobioligy_project.data_processing.rat_manager import register_rat_labels
 
 
@@ -29,6 +32,40 @@ def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str],
     rat_labels = skin_data.iloc[:, 0].tolist()  # Извлекаем метки крыс из первого столбца
     skin_reactions = skin_data.iloc[:, 1:].to_numpy().tolist()  # Преобразуем оставшиеся данные в список списков
     return experiment_params, time_data, rat_labels, skin_reactions
+
+
+def extract_date_from_filename(file_path: str) -> str:
+    """
+    Извлекает дату из имени файла и форматирует ее как 'месяц.день.год'.
+
+    Args:
+        file_path (str): Путь к файлу.
+
+    Returns:
+        str: Отформатированная дата, например, '5.12.2023'.
+             Возвращает пустую строку, если дата не найдена.
+    """
+    filename = os.path.basename(file_path)
+    # Регулярное выражение для поиска даты формата dd.mm.yyyy, mm.dd.yyyy, dd-mm-yyyy и т.д.
+    match = re.search(r'(\d{1,2})[.\-_](\d{1,2})[.\-_](\d{4})', filename)
+    if match:
+        part1, part2, year = match.groups()
+        # Определяем, что является месяцем, а что днем
+        if int(part1) > 12:
+            day, month = part1, part2
+        else:
+            month, day = part1, part2
+        try:
+            # Проверяем корректность даты
+            date_obj = datetime(int(year), int(month), int(day))
+            formatted_date = f"{date_obj.day}.{date_obj.month}.{date_obj.year}"
+            return formatted_date
+        except ValueError:
+            # Некорректная дата
+            return ""
+    else:
+        # Дата не найдена
+        return ""
 
 
 def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str], List[List[float]]]:
@@ -62,8 +99,15 @@ def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str]
         rat_volumes = []
         for item in row[1:]:
             if "-" in item:
-                a, b, c = map(float, item.split("-"))
-                volume = (np.pi * a * b * c) / 6
+                parts = item.split("-")
+                if len(parts) == 3:
+                    try:
+                        a, b, c = map(float, parts)
+                        volume = (np.pi * a * b * c) / 6
+                    except ValueError:
+                        volume = np.nan
+                else:
+                    volume = np.nan
             elif item.replace(".", "").isdigit():
                 volume = float(item)
             else:
@@ -71,6 +115,11 @@ def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str]
             rat_volumes.append(volume)
         tumor_volumes.append(rat_volumes)
 
-        # Сохраняем данные в датакласс
+    # Извлечение и форматирование даты из имени файла
+    formatted_date = extract_date_from_filename(file_path)
+    if formatted_date:
+        experiment_params.append(f"Date={formatted_date}")  # Добавляем дату как параметр
+
+    # Сохраняем данные в датакласс
     register_rat_labels(rat_labels)  # Регистрируем метки с указанием файла
     return experiment_params, time_data, rat_labels, tumor_volumes
