@@ -25,12 +25,26 @@ def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str],
             временном интервале.
     """
     data = pd.read_excel(file_path, header=None)
-    experiment_params = data.iloc[0, :3].tolist()  # Извлекаем параметры эксперимента из первой строки
+    experiment_params = data.iloc[0, :].dropna().astype(str).tolist()
+
+    # Проверка на наличие интервала времени облучения в последней ячейке первой строки
+    if experiment_params and 'ч' in experiment_params[-1]:
+        irradiation_time = experiment_params.pop().strip()
+        experiment_params.append(
+            f"Irradiation Time={irradiation_time}")  # Добавляем интервал времени облучения как параметр
+        print(irradiation_time)
+
     skin_data = data.iloc[2:, :].copy()  # Копируем данные, начиная с третьей строки
     time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in
                  data.iloc[1, 1:]]  # Преобразуем метки времени
     rat_labels = skin_data.iloc[:, 0].tolist()  # Извлекаем метки крыс из первого столбца
     skin_reactions = skin_data.iloc[:, 1:].to_numpy().tolist()  # Преобразуем оставшиеся данные в список списков
+
+    # Извлечение и форматирование даты из имени файла
+    formatted_date = extract_date_from_filename(file_path)
+    if formatted_date:
+        experiment_params.append(f"Date={formatted_date}")  # Добавляем дату как параметр
+
     return experiment_params, time_data, rat_labels, skin_reactions
 
 
@@ -85,6 +99,12 @@ def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str]
     data = pd.read_excel(file_path, header=None)
     # Извлечение всех непустых значений из первой строки как параметры эксперимента
     experiment_params = data.iloc[0, :].dropna().astype(str).tolist()
+
+    # Проверка на наличие интервала времени облучения в последней ячейке первой строки
+    if experiment_params and 'ч' in experiment_params[-1]:
+        irradiation_time = experiment_params.pop().strip()
+        experiment_params.append(f"Irradiation Time={irradiation_time}")  # Добавляем интервал времени облучения как параметр
+
     tumor_data = data.iloc[2:, :].copy()
     time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in data.iloc[1, 1:]]
 

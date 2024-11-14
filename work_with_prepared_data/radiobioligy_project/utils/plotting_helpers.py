@@ -72,7 +72,7 @@ def format_experiment_params(params: List[str]) -> str:
         params (List[str]): Список параметров эксперимента.
 
     Returns:
-        str: Отформатированная строка параметров эксперимента с датой.
+        str: Отформатированная строка параметров эксперимента с датой и временем облучения.
     """
     # Удаляем пустые строки и значения 'nan'
     cleaned_params = [str(param).replace('nan', '').strip() for param in params if str(param).strip()]
@@ -81,9 +81,12 @@ def format_experiment_params(params: List[str]) -> str:
     rad_values = {}
     sequence = []  # Сохраняем порядок ключей
     date_str = ""
+    irradiation_time_str = ""
     for param in cleaned_params:
         if param.startswith("Date="):
             date_str = param.split("=", 1)[1].strip()
+        elif param.startswith("Irradiation Time="):
+            irradiation_time_str = param.split("=", 1)[1].strip()
         elif '=' in param and not param.startswith('t'):
             key, value = param.split('=', 1)
             key = key.strip()
@@ -103,6 +106,10 @@ def format_experiment_params(params: List[str]) -> str:
     for key in sequence:
         if key in rad_values:
             formatted_params.append(f"D{subscriptify(key.lower())} = {rad_values[key]} Гр")
+
+    # Добавление времени облучения, если оно присутствует
+    if irradiation_time_str:
+        formatted_params.append(f"Интервал: {irradiation_time_str}")
 
     # Добавление даты, если она присутствует
     if date_str:

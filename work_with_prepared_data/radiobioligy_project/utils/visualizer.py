@@ -460,10 +460,23 @@ class GraphVisualizer:
         if self.max_x is not None:
             plt.xticks(ticks=range(0, int(self.max_x) + 1, 3), rotation=0)
 
-        # Создаем и добавляем основную легенду
+        # Создаем и добавляем основную легенду с переносом строки перед временем облучения и датой
         if self.lines:
-            first_legend = plt.legend(handles=self.lines, loc=self.legend_position, title=main_legend_title, ncol=ncol,
-                                      fontsize=legend_fontsize)
+            labels = []
+            for line in self.lines:
+                original_label = line.get_label()
+                # Проверяем, есть ли время облучения в метке
+                if "Интервал:" in original_label:
+                    main_part = original_label.split(", Интервал:")[0].strip()  # Основная часть
+                    time_part = original_label.split(", Интервал:")[1].strip()  # Время облучения и дата
+                    wrapped_label = f"{main_part}\nИнтервал: {time_part}"  # Перенос строки перед временем
+                    labels.append(wrapped_label)
+                else:
+                    labels.append(original_label)
+
+            # Создаём основную легенду с новыми метками
+            first_legend = plt.legend(handles=self.lines, labels=labels, loc=self.legend_position,
+                                      title=main_legend_title, ncol=ncol, fontsize=legend_fontsize)
             ax.add_artist(first_legend)  # Важно использовать add_artist для сохранения основной легенды
 
         # Создаем и добавляем легенду AUC, если есть значения AUC
@@ -474,6 +487,7 @@ class GraphVisualizer:
                                     loc='upper right', fontsize=legend_fontsize)
             ax.add_artist(auc_legend)  # Добавляем легенду AUC
 
+        # Обрабатываем дополнительные легенды
         for extra_legend_data in self.legend_info:
             labels, title, loc, display_marker = extra_legend_data
             if display_marker:
