@@ -2,6 +2,7 @@ from typing import List
 
 import numpy as np
 from matplotlib import pyplot as plt
+from scipy.interpolate import interp1d
 from scipy.stats import mannwhitneyu
 from scipy.stats import ttest_ind
 
@@ -103,10 +104,10 @@ class GraphVisualizer:
 
         # Выбор статистического теста
         if perform_stat_test and experiments_to_compare:
-            p_values, x_positions_for_annotations = GraphVisualizer.prepare_mann_whitney_test(
+            p_values, x_positions_for_annotations = GraphVisualizer.prepare_mann_whitney_test_interpolated(
                 experiments_to_compare, perform_stat_test)
         elif use_ttest and experiments_to_compare:
-            p_values, x_positions_for_annotations = GraphVisualizer.prepare_ttest(
+            p_values, x_positions_for_annotations = GraphVisualizer.prepare_ttest_interpolated(
                 experiments_to_compare, use_ttest)
         else:
             p_values, x_positions_for_annotations = None, None
@@ -140,12 +141,10 @@ class GraphVisualizer:
             )
 
     @staticmethod
-    def prepare_mann_whitney_test(experiments_to_compare, perform_stat_test):
+    def prepare_mann_whitney_test_interpolated(experiments_to_compare, perform_stat_test):
         """
-        Подготавливает и выполняет статистический тест Манна-Уитни для сравнения экспериментальных групп.
-
-        Для каждой временной точки данных сравнивает группы экспериментов, используя тест Манна-Уитни,
-        и собирает значения p для последующей аннотации значимости на графике.
+        Подготавливает и выполняет статистический тест Манна-Уитни для сравнения экспериментальных групп,
+        интерполируя данные для получения значений в общих временных точках, исключая нулевую временную точку.
 
         Args:
             experiments_to_compare (List[VisualizerType]): Список из двух экспериментов для сравнения.
@@ -154,48 +153,60 @@ class GraphVisualizer:
         Returns:
             Tuple[List[float], List[float]]: Возвращает два списка - значения p и позиции по оси X для аннотаций.
         """
-        if perform_stat_test and experiments_to_compare:
-            # Инициализация списков для результатов тестов и аннотаций
-            p_values = []
-            x_positions_for_annotations = []
+        if not (perform_stat_test and experiments_to_compare and len(experiments_to_compare) == 2):
+            print("Тест не был выполнен, проверьте входные данные.")
+            return [], []
 
-            # Получаем минимальное количество временных точек среди двух групп
-            min_time_length = min(len(experiments_to_compare[0].time_data), len(experiments_to_compare[1].time_data))
+        exp1, exp2 = experiments_to_compare
 
-            # Проходимся по временным точкам, но только до минимальной длины
-            for time_index in range(min_time_length):
-                # Проверяем, что данные для текущей временной точки есть в обеих группах
-                group1_volumes = [
-                    vol[time_index] for vol in experiments_to_compare[0].tumor_volumes
-                    if len(vol) > time_index  # Проверяем, что объемы существуют для данной точки времени
-                ]
-                group2_volumes = [
-                    vol[time_index] for vol in experiments_to_compare[1].tumor_volumes
-                    if len(vol) > time_index  # Проверяем, что объемы существуют для данной точки времени
-                ]
+        # Выбираем временные точки из первого эксперимента
+        time_points = exp1.time_data
 
-                # Если обе группы имеют данные для данной временной точки, выполняем тест Манна-Уитни
+        # Интерполируем данные второго эксперимента на временные точки первого
+        interpolated_volumes_exp2 = []
+        for vol in exp2.tumor_volumes:
+            interp_func = interp1d(exp2.time_data, vol, kind='linear', fill_value='extrapolate')
+            interpolated_vol = interp_func(time_points)
+            interpolated_volumes_exp2.append(interpolated_vol)
+        interpolated_volumes_exp2 = np.array(interpolated_volumes_exp2)
 
-                if group1_volumes and group2_volumes:
-                    p_value = GraphVisualizer.perform_mann_whitney_test(group1_volumes, group2_volumes)
-                    p_values.append(p_value)
-                    # Добавляем позиции для аннотаций
-                    # индекс тут — это то, для какого эксперимента мы делаем "звёздочки"
-                    x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
-                else:
-                    # Если данных нет для одной из групп, добавляем None, чтобы пропустить аннотацию
-                    p_values.append(None)
-                    x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
+        # Преобразуем данные первого эксперимента в массив
+        volumes_exp1 = np.array(exp1.tumor_volumes)
+
+        p_values = []
+        x_positions_for_annotations = []
+
+        # Проходим по временным точкам и выполняем тесты
+        for idx, time_point in enumerate(time_points):
+            # Пропускаем нулевую временную точку
+            if time_point == 0:
+                continue
+
+            # Получаем значения для данной временной точки
+            group1_volumes = volumes_exp1[:, idx]
+            group2_volumes = interpolated_volumes_exp2[:, idx]
+
+            # Удаляем NaN из данных каждой группы отдельно
+            group1_volumes = group1_volumes[~np.isnan(group1_volumes)]
+            group2_volumes = group2_volumes[~np.isnan(group2_volumes)]
+
+            if len(group1_volumes) > 0 and len(group2_volumes) > 0:
+                # Выполняем тест Манна-Уитни
+                p_value = GraphVisualizer.perform_mann_whitney_test(
+                    group1_volumes, group2_volumes)
+                p_values.append(p_value)
+                x_positions_for_annotations.append(time_point)
+            else:
+                p_values.append(None)
+                x_positions_for_annotations.append(time_point)
 
         return p_values, x_positions_for_annotations
 
     @staticmethod
-    def prepare_ttest(experiments_to_compare, use_ttest):
+    def prepare_ttest_interpolated(experiments_to_compare, use_ttest):
         """
-        Подготавливает и выполняет t-тест (критерий Стьюдента) для сравнения экспериментальных групп.
-
-        Для каждой временной точки данных сравнивает группы экспериментов, используя t-тест,
-        и собирает значения p для последующей аннотации значимости на графике.
+        Подготавливает и выполняет t-тест для сравнения экспериментальных групп,
+        интерполируя данные для получения значений в общих временных точках, исключая нулевую временную точку.
 
         Args:
             experiments_to_compare (List[VisualizerType]): Список из двух экспериментов для сравнения.
@@ -204,40 +215,48 @@ class GraphVisualizer:
         Returns:
             Tuple[List[float], List[float]]: Возвращает два списка - значения p и позиции по оси X для аннотаций.
         """
-        # Инициализируем списки для результатов тестов и аннотаций
+        if not (use_ttest and experiments_to_compare and len(experiments_to_compare) == 2):
+            print("Тест не был выполнен, проверьте входные данные.")
+            return [], []
+
+        exp1, exp2 = experiments_to_compare
+
+        # Выбираем временные точки из первого эксперимента
+        time_points = exp1.time_data
+
+        # Интерполируем данные второго эксперимента на временные точки первого
+        interpolated_volumes_exp2 = []
+        for vol in exp2.tumor_volumes:
+            interp_func = interp1d(exp2.time_data, vol, kind='linear', fill_value='extrapolate')
+            interpolated_vol = interp_func(time_points)
+            interpolated_volumes_exp2.append(interpolated_vol)
+        interpolated_volumes_exp2 = np.array(interpolated_volumes_exp2)
+
+        volumes_exp1 = np.array(exp1.tumor_volumes)
+
         p_values = []
         x_positions_for_annotations = []
 
-        # Проверка входных данных
-        if use_ttest and experiments_to_compare and len(experiments_to_compare) == 2:
-            # Получаем минимальное количество временных точек среди двух групп
-            min_time_length = min(len(experiments_to_compare[0].time_data), len(experiments_to_compare[1].time_data))
+        for idx, time_point in enumerate(time_points):
+            # Пропускаем нулевую временную точку
+            if time_point == 0:
+                continue
 
-            # Проходимся по временным точкам
-            for time_index in range(min_time_length):
-                # Проверяем, что данные для текущей временной точки есть в обеих группах
-                group1_volumes = [
-                    vol[time_index] for vol in experiments_to_compare[0].tumor_volumes
-                    if len(vol) > time_index  # Проверяем, что объемы существуют для данной точки времени
-                ]
-                group2_volumes = [
-                    vol[time_index] for vol in experiments_to_compare[1].tumor_volumes
-                    if len(vol) > time_index  # Проверяем, что объемы существуют для данной точки времени
-                ]
+            group1_volumes = volumes_exp1[:, idx]
+            group2_volumes = interpolated_volumes_exp2[:, idx]
 
-                # Если обе группы имеют данные для данной временной точки, выполняем t-тест
-                if group1_volumes and group2_volumes:
-                    t_stat, p_value = ttest_ind(group1_volumes, group2_volumes,
-                                                equal_var=False)  # t-тест с неравными дисперсиями
-                    p_values.append(p_value)
-                    x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
-                else:
-                    # Если данных нет для одной из групп, добавляем None
-                    p_values.append(None)
-                    x_positions_for_annotations.append(experiments_to_compare[0].time_data[time_index])
+            # Удаляем NaN из данных каждой группы отдельно
+            group1_volumes = group1_volumes[~np.isnan(group1_volumes)]
+            group2_volumes = group2_volumes[~np.isnan(group2_volumes)]
 
-        else:
-            print("Тест не был выполнен, проверьте входные данные.")
+            if len(group1_volumes) > 1 and len(group2_volumes) > 1:
+                t_stat, p_value = ttest_ind(
+                    group1_volumes, group2_volumes, equal_var=False)
+                p_values.append(p_value)
+                x_positions_for_annotations.append(time_point)
+            else:
+                p_values.append(None)
+                x_positions_for_annotations.append(time_point)
 
         return p_values, x_positions_for_annotations
 
@@ -284,28 +303,31 @@ class GraphVisualizer:
         if upper_bounds is None:
             return  # Нет данных для указанного визуализатора
 
+        # Создаем словарь для быстрого доступа к upper_bounds по time_point
+        upper_bounds_by_time = dict(zip(time_data, upper_bounds))
+
         # Проходим по p-value и добавляем аннотации
         for p_value, x_position in zip(p_values, x_positions):
             if p_value is None:
                 continue  # Пропускаем, если p-value не рассчитано
-            if p_value < 0.001:
-                annotation = '***'  # Сильно значимо
-            elif p_value < 0.01:
-                annotation = '**'  # Значимо
-            elif p_value < 0.05:
+            # if p_value < 0.001:
+            #     annotation = '***'  # Сильно значимо
+            # elif p_value < 0.01:
+            #     annotation = '**'  # Значимо
+            if p_value < 0.05:
                 annotation = '*'  # Умеренно значимо
             else:
                 annotation = ''  # Не значимо
 
             if annotation:
-                # Найдем индекс ближайшего значения x_position в time_data
-                index = np.argmin(np.abs(time_data - x_position))
-                # Проверим, что x_position достаточно близок к time_data[index]
-                if abs(time_data[index] - x_position) > 1e-6:
-                    continue  # x_position не найден в time_data
-
-                # Получаем upper_bound для данного индекса
-                upper_bound = upper_bounds[index]
+                # Получаем upper_bound для текущей временной точки
+                upper_bound = upper_bounds_by_time.get(x_position, None)
+                if upper_bound is None:
+                    # Если нет точного совпадения, ищем ближайшую временную точку
+                    closest_time = min(time_data, key=lambda t: abs(t - x_position))
+                    upper_bound = upper_bounds_by_time.get(closest_time, None)
+                    if upper_bound is None:
+                        continue  # Нет верхней границы для данной временной точки
 
                 # Размещаем аннотацию немного выше верхнего значения
                 y_position = upper_bound + offset
