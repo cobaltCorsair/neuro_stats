@@ -2,7 +2,8 @@
 from typing import List, Tuple
 import numpy as np
 import pandas as pd
-from scipy.stats import zscore, t
+from matplotlib import pyplot as plt
+from scipy.stats import zscore, t, mannwhitneyu
 from sklearn.covariance import EllipticEnvelope
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
@@ -464,3 +465,52 @@ class SupportingFunctions:
         # Выравниваем все временные ряды, вычитая минимальную начальную точку
         for visualizer in visualizers:
             visualizer.time_data = [int(time) - min_start_time for time in visualizer.time_data]
+
+    @staticmethod
+    def apply_mann_whitney_test(all_reactions, common_timepoints, y_range):
+        """
+        Выполнение статистического теста Манна-Уитни для сравнения реакций кожи между экспериментами.
+        Добавляет аннотации на графике для значимых различий.
+
+        Args:
+            all_reactions (list): Список данных для каждого эксперимента, включая реакции, средние значения и SEM.
+            common_timepoints (list): Общие временные точки, по которым сравниваются реакции.
+            y_range (float): Диапазон значений Y для корректного размещения аннотаций.
+
+        Returns:
+            None: Аннотации добавляются непосредственно на график.
+        """
+        num_experiments = len(all_reactions)
+        num_timepoints = len(common_timepoints)
+
+        for i in range(num_experiments):
+            for j in range(i + 1, num_experiments):
+                group1 = all_reactions[i]['reactions']
+                group2 = all_reactions[j]['reactions']
+
+                for t in range(num_timepoints):
+                    values1 = [reaction[t] for reaction in group1 if not np.isnan(reaction[t])]
+                    values2 = [reaction[t] for reaction in group2 if not np.isnan(reaction[t])]
+
+                    if len(values1) > 0 and len(values2) > 0:
+                        # Выполняем тест Манна-Уитни
+                        _, p_value = mannwhitneyu(values1, values2, alternative='two-sided')
+
+                        # Определяем уровень значимости
+                        annotation = '*' if p_value < 0.05 else ''
+
+                        if annotation:
+                            y_max1 = all_reactions[i]['mean_reaction'][t] + all_reactions[i]['sem_reaction'][t]
+                            y_max2 = all_reactions[j]['mean_reaction'][t] + all_reactions[j]['sem_reaction'][t]
+                            y_annotation = max(y_max1, y_max2) + 0.01 * y_range
+
+                            plt.text(
+                                common_timepoints[t],
+                                y_annotation,
+                                annotation,
+                                ha='center',
+                                va='bottom',
+                                fontsize=12,
+                                color='black'
+                            )
+

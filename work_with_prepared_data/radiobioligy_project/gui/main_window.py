@@ -252,6 +252,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.checkBox.setEnabled(True)
         elif self.pushButton_4.isEnabled() and self.checkBox_6.isChecked():
             self.checkBox_2.setEnabled(True)
+            self.checkBox_7.setEnabled(True)
+            self.checkBox.setEnabled(True)
         else:
             self.checkBox_2.setEnabled(False)
             self.checkBox_2.setChecked(False)
@@ -775,7 +777,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if isinstance(visualizer, SkinReactionsVisualizer) and len(self.current_selected_paths) > 1:
                 # Вызов статического метода для рисования графика
                 if self.current_plot_type == 'multiple_experiments':
-                    SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC)
+                    SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC, self.perform_stat_test)
                 elif self.current_plot_type == 'auc_comparison':
                     SkinReactionsVisualizer.plot_auc_comparison(self.current_selected_paths)
             else:

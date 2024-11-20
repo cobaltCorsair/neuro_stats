@@ -3,7 +3,11 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from typing import List
+import pandas as pd  # Добавим для обработки данных
+from scipy.interpolate import interp1d
+from scipy.stats import mannwhitneyu
 
 from utils.plotting_helpers import format_experiment_params, MatplotlibConfigurator, custom_fill_between
 from stats_methods.support_stats_methods import SupportingFunctions
@@ -120,30 +124,18 @@ class SkinReactionsVisualizer:
         drawgraph.finalize_figure('', '', 1, 25)
 
     @staticmethod
-    def plot_multiple_experiments(file_paths: List[str], use_AUC: bool = False):
+    def plot_multiple_experiments(file_paths: List[str], use_AUC: bool = False, apply_statistical_test=False):
         """
-           Визуализация сравнения кожных реакций между несколькими экспериментами на одном графике.
+        Построение графика для сравнения кожных реакций между экспериментами
+        с использованием интерполяции, отображением AUC и опционального применения статистических тестов Манна-Уитни.
 
-           Этот статический метод позволяет сравнить кожные реакции, измеренные в различных экспериментах, представляя
-           средние значения реакций для каждого временного интервала на общем графике. Данные интерполируются на общие
-           временные точки для обеспечения сопоставимости.
-
-           Помимо средних значений реакций, на графике также отображаются доверительные интервалы, а для каждого эксперимента
-           рассчитывается и отображается площадь под кривой (AUC), что дает представление о общем уровне реакции в течение
-           всего временного интервала.
-
-           Args:
-               file_paths (List[str]): Список строк, содержащих пути к файлам с данными экспериментов.
-
-           Returns:
-               Ничего не возвращает. Результатом выполнения является отображение графика с сравнением кожных реакций.
-
-           Пример использования:
-               SkinReactionsVisualizer.plot_multiple_experiments([
-                   "путь/к/файлу1.xlsx",
-                   "путь/к/файлу2.xlsx"
-               ])
-           """
+        Args:
+            file_paths (List[str]): Пути к файлам данных экспериментов.
+            use_AUC (bool): Если True, вычисляется и отображается площадь под кривой (AUC).
+            apply_statistical_test (bool): Флаг для выполнения теста Манна-Уитни.
+                                           Если True, тест выполняется и значимые различия отображаются на графике.
+        """
+        # Инициализация объекта GraphVisualizer с согласованным стилем
         drawgraph = GraphVisualizer(
             "Сравнение кожных реакций между экспериментами",
             "Время, сут.",
@@ -151,26 +143,75 @@ class SkinReactionsVisualizer:
             figsize=(12, 7)
         )
         drawgraph.setup_figure()
-        common_timepoints = list(range(0, 25))
+
+        # Подготовка данных для каждого эксперимента
+        all_reactions = []
+        common_timepoints = list(range(0, 25))  # Временные точки от 0 до 24 с шагом 1
 
         for file_path in file_paths:
             visualizer = SkinReactionsVisualizer(file_path)
-            mean_reactions, std_dev, _ = visualizer.data_processor.get_mean_skin_reactions()
 
-            interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(visualizer.time_data,
-                                                                                            mean_reactions,
-                                                                                            common_timepoints)
-            interpolated_std_dev = SupportingFunctions.interpolate_data_to_common_timepoints(visualizer.time_data,
-                                                                                             std_dev,
-                                                                                             common_timepoints)
-            error_margin = [SupportingFunctions.calculate_error_margin(std, len(file_paths)) for std in
-                            interpolated_std_dev]
-            label = format_experiment_params(visualizer.experiment_params)
+            try:
+                # Получаем индивидуальные данные реакций кожи
+                individual_skin_reactions = visualizer.skin_reactions
+                time_data = np.array(visualizer.time_data, dtype=float)
 
-            drawgraph.add_plot(common_timepoints, interpolated_values, {}, label, None, use_AUC)
+                # Интерполяция индивидуальных данных на общие временные точки
+                interpolated_skin_reactions = []
+                for reaction in individual_skin_reactions:
+                    interpolated_reaction = SupportingFunctions.interpolate_data_to_common_timepoints(
+                        time_data, reaction, common_timepoints
+                    )
+                    interpolated_skin_reactions.append(interpolated_reaction)
 
-        base_file_name = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths])
-        drawgraph.finalize_figure(base_file_name, ncol=1, legend_fontsize='20')
+                # Вычисляем среднюю реакцию и SEM
+                reactions = np.array(interpolated_skin_reactions)
+                mean_reaction = np.nanmean(reactions, axis=0)
+                std_reaction = np.nanstd(reactions, axis=0)
+                sem_reaction = std_reaction / np.sqrt(len(reactions))
+
+                # Рассчитываем error_margin
+                error_margin = [SupportingFunctions.calculate_error_margin(std, len(file_paths)) for std in
+                                std_reaction]
+
+                # Сохраняем данные для дальнейшего анализа
+                all_reactions.append({
+                    'reactions': reactions,  # Индивидуальные реакции
+                    'mean_reaction': mean_reaction,
+                    'sem_reaction': sem_reaction,
+                    'label': format_experiment_params(visualizer.experiment_params)
+                })
+
+                # Добавляем график с использованием GraphVisualizer
+                drawgraph.add_plot(
+                    common_timepoints,
+                    mean_reaction,
+                    params={},
+                    label=format_experiment_params(visualizer.experiment_params),
+                    error_margin=error_margin,
+                    calculate_auc=use_AUC
+                )
+
+            except ValueError as e:
+                print(f"Ошибка при обработке файла {file_path}: {e}")
+                continue
+
+        # Если тест Манна-Уитни включен
+        if apply_statistical_test:
+            # Рассчитываем y_range для корректного размещения аннотаций
+            y_range = np.nanmax([
+                data['mean_reaction'] + data['sem_reaction'] for data in all_reactions
+            ]) - np.nanmin([
+                data['mean_reaction'] - data['sem_reaction'] for data in all_reactions
+            ])
+
+            # Вызываем функцию для применения критерия Манна-Уитни
+            SupportingFunctions.apply_mann_whitney_test(all_reactions, common_timepoints, y_range)
+
+        # Финализация и сохранение графика
+        base_file_name = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths]) + "_comparison.png"
+        drawgraph.finalize_figure(base_file_name, ncol=1, legend_fontsize=20)
+
 
     @staticmethod
     def plot_auc_comparison(file_paths: List[str], title="Сравнение AUC кожных реакций", x_label="",
