@@ -148,6 +148,9 @@ class SkinReactionsVisualizer:
         all_reactions = []
         common_timepoints = list(range(0, 25))  # Временные точки от 0 до 24 с шагом 1
 
+        # Создаем словарь для хранения верхних границ доверительных интервалов
+        upper_bounds_by_time = {}
+
         for file_path in file_paths:
             visualizer = SkinReactionsVisualizer(file_path)
 
@@ -170,8 +173,17 @@ class SkinReactionsVisualizer:
                 std_reaction = np.nanstd(reactions, axis=0)
                 sem_reaction = std_reaction / np.sqrt(len(reactions))
 
+                # Сохраняем верхние границы доверительных интервалов для каждой временной точки
+                for t_idx, t in enumerate(common_timepoints):
+                    upper_bound = mean_reaction[t_idx] + sem_reaction[t_idx]
+                    if t in upper_bounds_by_time:
+                        # Обновляем максимальное значение, если текущая верхняя граница больше
+                        upper_bounds_by_time[t] = max(upper_bounds_by_time[t], upper_bound)
+                    else:
+                        upper_bounds_by_time[t] = upper_bound
+
                 # Рассчитываем error_margin
-                error_margin = [SupportingFunctions.calculate_error_margin(std, len(file_paths)) for std in
+                error_margin = [SupportingFunctions.calculate_error_margin(std, len(reactions)) for std in
                                 std_reaction]
 
                 # Сохраняем данные для дальнейшего анализа
@@ -198,15 +210,9 @@ class SkinReactionsVisualizer:
 
         # Если тест Манна-Уитни включен
         if apply_statistical_test:
-            # Рассчитываем y_range для корректного размещения аннотаций
-            y_range = np.nanmax([
-                data['mean_reaction'] + data['sem_reaction'] for data in all_reactions
-            ]) - np.nanmin([
-                data['mean_reaction'] - data['sem_reaction'] for data in all_reactions
-            ])
-
-            # Вызываем функцию для применения критерия Манна-Уитни
-            SupportingFunctions.apply_mann_whitney_test(all_reactions, common_timepoints, y_range)
+            # Передаем upper_bounds_by_time в функцию
+            SupportingFunctions.apply_mann_whitney_test(all_reactions, common_timepoints, upper_bounds_by_time,
+                                                        offset_ratio=0.00)
 
         # Финализация и сохранение графика
         base_file_name = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths]) + "_comparison.png"

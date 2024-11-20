@@ -467,30 +467,39 @@ class SupportingFunctions:
             visualizer.time_data = [int(time) - min_start_time for time in visualizer.time_data]
 
     @staticmethod
-    def apply_mann_whitney_test(all_reactions, common_timepoints, y_range):
+    def apply_mann_whitney_test(all_reactions, common_timepoints, upper_bounds_by_time, offset_ratio=0.00):
         """
         Выполнение статистического теста Манна-Уитни для сравнения реакций кожи между экспериментами.
-        Добавляет аннотации на графике для значимых различий.
+        Добавляет аннотации на графике для значимых различий с фиксированным отступом над доверительным интервалом.
 
         Args:
             all_reactions (list): Список данных для каждого эксперимента, включая реакции, средние значения и SEM.
             common_timepoints (list): Общие временные точки, по которым сравниваются реакции.
-            y_range (float): Диапазон значений Y для корректного размещения аннотаций.
+            upper_bounds_by_time (dict): Словарь верхних границ доверительных интервалов для каждой временной точки.
+            offset_ratio (float): Доля от диапазона Y для смещения аннотаций вверх.
 
         Returns:
             None: Аннотации добавляются непосредственно на график.
         """
         num_experiments = len(all_reactions)
-        num_timepoints = len(common_timepoints)
 
+        # Получаем текущие пределы оси Y
+        y_min, y_max = plt.ylim()
+        y_range = y_max - y_min
+
+        # Задаем фиксированный отступ для аннотаций (например, 2% от диапазона Y)
+        fixed_offset = y_range * offset_ratio
+
+        # Собираем все аннотации перед их нанесением
+        annotations = []
         for i in range(num_experiments):
             for j in range(i + 1, num_experiments):
                 group1 = all_reactions[i]['reactions']
                 group2 = all_reactions[j]['reactions']
 
-                for t in range(num_timepoints):
-                    values1 = [reaction[t] for reaction in group1 if not np.isnan(reaction[t])]
-                    values2 = [reaction[t] for reaction in group2 if not np.isnan(reaction[t])]
+                for t_idx, time_point in enumerate(common_timepoints):
+                    values1 = [reaction[t_idx] for reaction in group1 if not np.isnan(reaction[t_idx])]
+                    values2 = [reaction[t_idx] for reaction in group2 if not np.isnan(reaction[t_idx])]
 
                     if len(values1) > 0 and len(values2) > 0:
                         # Выполняем тест Манна-Уитни
@@ -500,17 +509,38 @@ class SupportingFunctions:
                         annotation = '*' if p_value < 0.05 else ''
 
                         if annotation:
-                            y_max1 = all_reactions[i]['mean_reaction'][t] + all_reactions[i]['sem_reaction'][t]
-                            y_max2 = all_reactions[j]['mean_reaction'][t] + all_reactions[j]['sem_reaction'][t]
-                            y_annotation = max(y_max1, y_max2) + 0.01 * y_range
+                            # Получаем верхнюю границу для текущей временной точки
+                            upper_bound = upper_bounds_by_time[time_point]
 
-                            plt.text(
-                                common_timepoints[t],
-                                y_annotation,
-                                annotation,
-                                ha='center',
-                                va='bottom',
-                                fontsize=12,
-                                color='black'
-                            )
+                            # Устанавливаем y-координату для аннотации с фиксированным отступом
+                            y_annotation = upper_bound + fixed_offset
 
+                            # Сохраняем аннотацию для последующего нанесения
+                            annotations.append((time_point, y_annotation, annotation))
+
+        # Если есть аннотации, обновляем пределы оси Y, чтобы вместить все аннотации
+        if annotations:
+            # Находим максимальную y-координату аннотации
+            max_y_annotation = max([ann[1] for ann in annotations])
+
+            # Если максимальная y-координата аннотации превышает текущий y_max, обновляем y_max
+            if max_y_annotation > y_max:
+                # Добавляем дополнительный отступ (например, 5% от диапазона Y)
+                additional_offset = 0.05 * y_range
+                new_y_max = max_y_annotation + additional_offset
+                plt.ylim(y_min, new_y_max)
+                y_range = new_y_max - y_min  # Обновляем диапазон Y после изменения y_max
+                fixed_offset = y_range * offset_ratio  # Пересчитываем фиксированный отступ при необходимости
+
+        # Наносим все аннотации на график
+        for ann in annotations:
+            time_point, y_annotation, annotation = ann
+            plt.text(
+                time_point,
+                y_annotation,
+                annotation,
+                ha='center',
+                va='bottom',
+                fontsize=12,
+                color='black'
+            )
