@@ -253,7 +253,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         elif self.pushButton_4.isEnabled() and self.checkBox_6.isChecked():
             self.checkBox_2.setEnabled(True)
             self.checkBox_7.setEnabled(True)
-            self.checkBox.setEnabled(True)
+            #self.checkBox.setEnabled(True)
         else:
             self.checkBox_2.setEnabled(False)
             self.checkBox_2.setChecked(False)
