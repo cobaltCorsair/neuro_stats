@@ -169,7 +169,7 @@ class TumorDataComparatorAdvanced:
         time_labels = [f"Интервал: {interval}" for interval in time_intervals]
         # drawgraph.add_legend(time_labels, "Интервалы между облучениями", "lower right")
 
-        drawgraph.finalize_figure('')
+        drawgraph.finalize_figure('', legend_fontsize=18)
 
     def compare_control_and_experiment(self, control_visualizers: List[TumorDataVisualizer]):
         """
@@ -283,7 +283,7 @@ class TumorDataComparatorAdvanced:
             x_data_lists.append(experiment_visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
 
         drawgraph.update_axes_limits(x_data_lists)
-        drawgraph.finalize_figure('')
+        drawgraph.finalize_figure('', legend_fontsize=18)
 
     def create_tumor_growth_inhibition_table(self, control_visualizer, experiment_visualizers):
         """

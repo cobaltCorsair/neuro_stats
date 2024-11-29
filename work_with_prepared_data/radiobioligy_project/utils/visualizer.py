@@ -333,7 +333,7 @@ class GraphVisualizer:
                 y_position = upper_bound + offset
 
                 # Добавляем аннотацию
-                plt.text(x_position, y_position, annotation, ha='center', fontsize=20, color='red')
+                plt.text(x_position, y_position, annotation, ha='center', fontsize=20, color='black')
 
     def add_individual_plots(self, labels, volumes_data, time_data):
         """

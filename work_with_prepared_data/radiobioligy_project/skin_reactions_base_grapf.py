@@ -212,7 +212,7 @@ class SkinReactionsVisualizer:
         if apply_statistical_test:
             # Передаем upper_bounds_by_time в функцию
             SupportingFunctions.apply_mann_whitney_test(all_reactions, common_timepoints, upper_bounds_by_time,
-                                                        offset_ratio=0.00)
+                                                        offset_ratio=0.00, annotation_fontsize=18)
 
         # Финализация и сохранение графика
         base_file_name = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths]) + "_comparison.png"

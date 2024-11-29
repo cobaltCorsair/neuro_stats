@@ -32,7 +32,7 @@ class MatplotlibConfigurator:
             'axes.labelsize': 24,  # Размер меток осей
             'xtick.labelsize': 20,  # Размер меток делений на оси X
             'ytick.labelsize': 20,  # Размер меток делений на оси Y
-            'legend.fontsize': 25  # Размер текста в легенде
+            'legend.fontsize': 16  # Размер текста в легенде
         })
 
     def restore_original_styles(self):

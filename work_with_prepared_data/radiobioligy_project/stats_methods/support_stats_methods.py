@@ -467,7 +467,8 @@ class SupportingFunctions:
             visualizer.time_data = [int(time) - min_start_time for time in visualizer.time_data]
 
     @staticmethod
-    def apply_mann_whitney_test(all_reactions, common_timepoints, upper_bounds_by_time, offset_ratio=0.00):
+    def apply_mann_whitney_test(all_reactions, common_timepoints, upper_bounds_by_time, offset_ratio=0.00,
+                                annotation_fontsize=18):
         """
         Выполнение статистического теста Манна-Уитни для сравнения реакций кожи между экспериментами.
         Добавляет аннотации на графике для значимых различий с фиксированным отступом над доверительным интервалом.
@@ -477,6 +478,7 @@ class SupportingFunctions:
             common_timepoints (list): Общие временные точки, по которым сравниваются реакции.
             upper_bounds_by_time (dict): Словарь верхних границ доверительных интервалов для каждой временной точки.
             offset_ratio (float): Доля от диапазона Y для смещения аннотаций вверх.
+            annotation_fontsize (int): Размер шрифта для аннотаций значимости (звёздочек).
 
         Returns:
             None: Аннотации добавляются непосредственно на график.
@@ -532,7 +534,7 @@ class SupportingFunctions:
                 y_range = new_y_max - y_min  # Обновляем диапазон Y после изменения y_max
                 fixed_offset = y_range * offset_ratio  # Пересчитываем фиксированный отступ при необходимости
 
-        # Наносим все аннотации на график
+        # Наносим все аннотации на график с использованием заданного размера шрифта
         for ann in annotations:
             time_point, y_annotation, annotation = ann
             plt.text(
@@ -541,6 +543,6 @@ class SupportingFunctions:
                 annotation,
                 ha='center',
                 va='bottom',
-                fontsize=12,
+                fontsize=annotation_fontsize,  # Используем новый параметр для размера шрифта
                 color='black'
             )

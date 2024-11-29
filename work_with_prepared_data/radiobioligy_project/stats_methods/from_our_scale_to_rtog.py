@@ -418,5 +418,7 @@ def main(file_path: str, save_plots: bool = False, save_dir: str = "plots"):
 
 if __name__ == "__main__":
     # Указание пути к файлу данных
-    file_path = r"V:\Kizilova\Крысы сканы\Нейтроны + протоны (2024 год)\skin_reactions_p_36_in_peak_19.06.2024.xlsx"
+    #file_path = r"V:\Kizilova\Крысы сканы\Нейтроны + протоны (2024 год)\skin_reactions_p_36_in_peak_19.06.2024.xlsx"
+    file_path = r"V:\Kizilova\Крысы сканы\Нейтроны + протоны (2024 год)\consolidate\skin_reactions_n_3.6_n_3.6_p.25.2_all_consolidate.xlsx"
+
     main(file_path, save_plots=False)
