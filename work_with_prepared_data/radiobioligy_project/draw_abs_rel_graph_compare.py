@@ -277,9 +277,19 @@ class TumorDataComparatorAdvanced:
                                                                                             experiment_mean_volumes)
             label = ''
 
+            print(f"Time data length: {len(experiment_visualizer.time_data)}")
+            print(f"Tumor growth inhibition length: {len(tumor_growth_inhibition)}")
+
             # Добавление данных на график
-            drawgraph.add_plot(experiment_visualizer.time_data, tumor_growth_inhibition,
-                               experiment_visualizer.experiment_params, label, self._use_AUC)
+            min_length = min(len(experiment_visualizer.time_data), len(tumor_growth_inhibition))
+
+            drawgraph.add_plot(
+                experiment_visualizer.time_data[:min_length],
+                tumor_growth_inhibition[:min_length],
+                experiment_visualizer.experiment_params,
+                label,
+                self._use_AUC
+            )
 
             x_data_lists.append(experiment_visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
 
