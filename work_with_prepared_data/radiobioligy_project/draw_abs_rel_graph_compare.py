@@ -217,6 +217,8 @@ class TumorDataComparatorAdvanced:
         )
 
         # Добавляем данные экспериментальных групп
+        visualizers_to_pass = [v for i, v in enumerate(self.visualizers) if i in (0, 1)]
+
         GraphVisualizer.prepare_and_add_data_to_graph(
             self.visualizers,
             value_extractor,
@@ -224,8 +226,7 @@ class TumorDataComparatorAdvanced:
             "Эксперимент: ",
             self._use_AUC,  # Указываем, что нужно рассчитать AUC
             self.perform_stat_test,
-            [self.visualizers[0], self.visualizers[1]],
-            # TODO: Необходимо предусмотреть, что группа может быть одна
+            visualizers_to_pass,  # <-- передаём уже проверенный список
             'up',
             self.annotation_multiplier,
             self.use_ttest

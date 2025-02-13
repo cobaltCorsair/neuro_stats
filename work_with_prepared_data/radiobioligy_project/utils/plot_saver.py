@@ -36,6 +36,6 @@ def save_plot(file_path, plot_title, comparison_type=None, file_suffix=None, set
         os.makedirs(save_dir)
 
     # Формирование полного пути к файлу и сохранение графика
-    full_file_path = os.path.join(save_dir, file_name)
-    plt.savefig(full_file_path, format="png", dpi=300)
-    print(f"График сохранён как {full_file_path}")
+    #full_file_path = os.path.join(save_dir, file_name)
+    #plt.savefig(full_file_path, format="png", dpi=300)
+    #print(f"График сохранён как {full_file_path}")
