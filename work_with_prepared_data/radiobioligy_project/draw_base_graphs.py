@@ -159,8 +159,13 @@ class TumorDataVisualizer:
                    zip(np.transpose(self.tumor_volumes), mean_volumes)]
         error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.tumor_volumes)) for std in std_dev]
 
-        # Добавление данных на график
-        drawgraph.add_plot(self.time_data, mean_volumes, self.experiment_params, "M/V абс.: ", error_margin)
+        # Форматируем параметры эксперимента для уникальной метки
+        formatted_params = format_experiment_params(self.experiment_params)
+        # Создаем уникальную метку для этого эксперимента
+        unique_label = f"M/V абс.: {formatted_params}"
+        
+        # Добавление данных на график с уникальной меткой
+        drawgraph.add_plot(self.time_data, mean_volumes, {}, unique_label, error_margin)
         drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_mean_volumes")
 
     def plot_average_relative_tumor_volume(self):
@@ -202,11 +207,15 @@ class TumorDataVisualizer:
         error_margin_rel = [SupportingFunctions.calculate_error_margin(std, len(relative_tumor_volumes)) for std in
                             std_dev_rel]
 
-        # Добавление данных на график
-        drawgraph.add_plot(self.time_data, mean_relative_volumes, self.experiment_params, "M/V отн.: ",
+        # Форматируем параметры эксперимента для уникальной метки
+        formatted_params = format_experiment_params(self.experiment_params)
+        # Создаем уникальную метку для этого эксперимента
+        unique_label = f"M/V отн.: {formatted_params}"
+
+        # Добавление данных на график с уникальной меткой
+        drawgraph.add_plot(self.time_data, mean_relative_volumes, {}, unique_label,
                            error_margin_rel)
 
-        formatted_params = format_experiment_params(self.experiment_params)
         drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_average_relative_volumes")
 
     def plot_mean_relative_mean_tumor_volume(self):
@@ -243,11 +252,15 @@ class TumorDataVisualizer:
         std_dev_rel_mean = SupportingFunctions.calculate_std_dev(relative_mean_volumes, mean_volumes)
         error_margin_rel_mean = SupportingFunctions.calculate_error_margin(std_dev_rel_mean, len(relative_mean_volumes))
 
-        # Добавление данных на график
-        drawgraph.add_plot(self.time_data, relative_mean_volumes, self.experiment_params, "M/V отн. ср.: ",
+        # Форматируем параметры эксперимента для уникальной метки
+        formatted_params = format_experiment_params(self.experiment_params)
+        # Создаем уникальную метку для этого эксперимента
+        unique_label = f"M/V отн. ср.: {formatted_params}"
+
+        # Добавление данных на график с уникальной меткой
+        drawgraph.add_plot(self.time_data, relative_mean_volumes, {}, unique_label,
                            error_margin_rel_mean)
 
-        formatted_params = format_experiment_params(self.experiment_params)
         drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_mean_relative_mean_volumes")
 
 

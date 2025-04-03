@@ -13,6 +13,9 @@ from work_with_prepared_data.radiobioligy_project.utils.plotting_helpers import 
 
 
 class GraphVisualizer:
+    # Статический словарь для хранения стилей для каждой метки крысы
+    label_styles = {}
+    
     def __init__(self, title, x_label, y_label, figsize=(12, 7)):
         """
         Инициализирует объект GraphVisualizer, предназначенный для упрощения процесса создания и настройки графиков.
@@ -38,6 +41,7 @@ class GraphVisualizer:
             max_x (Optional[int]): Максимальное значение по оси X (для настройки масштаба).
             max_y (Optional[int]): Максимальное значение по оси Y.
             legend_info (List[Tuple]): Список данных для создания дополнительных легенд.
+            label_styles (dict): Словарь для хранения стилей (маркер, цвет, стиль линии) для каждой метки крысы
         """
         self.figsize = figsize
         self.title = title
@@ -120,8 +124,15 @@ class GraphVisualizer:
             error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
                             for std in std_dev]
 
-            # Добавляем график
-            graph_visualizer.add_plot(visualizer.time_data, values, visualizer.experiment_params, f"{label_prefix}",
+            # Создаем уникальную метку для каждого эксперимента, используя параметры эксперимента
+            # Форматируем параметры эксперимента, чтобы получить короткую строку
+            formatted_params = format_experiment_params(visualizer.experiment_params)
+            
+            # Комбинируем префикс с параметрами эксперимента для создания уникальной метки
+            unique_label = f"{label_prefix} {formatted_params}"
+            
+            # Добавляем график с уникальной меткой
+            graph_visualizer.add_plot(visualizer.time_data, values, {}, unique_label,
                                       error_margin, calculate_auc)
             x_data_lists.append(visualizer.time_data)
 
@@ -363,7 +374,7 @@ class GraphVisualizer:
             std_dev = SupportingFunctions.calculate_std_dev(clean_volumes, mean_volume)
             error_margin = SupportingFunctions.calculate_error_margin(std_dev, len(clean_volumes))
 
-            # Добавление данных к графику
+            # Добавление данных к графику, передаем метку крысы для сохранения стиля
             self.add_plot(clean_time_data, clean_volumes, {}, label, error_margin)
 
     def add_plot(self, x_data, y_data, params, label, error_margin=None, calculate_auc=False, fill_alpha=0.2):
@@ -382,25 +393,47 @@ class GraphVisualizer:
         Пример использования:
             add_plot([1, 2, 3], [4, 5, 6], {}, "Тест", [0.1, 0.2, 0.1], True, 0.3)
         """
-        # Выбор стиля линии и инкремент индекса
-        current_linestyle = self.linestyles[self.linestyle_index % len(self.linestyles)]
-        self.linestyle_index += 1
-
         x_data = np.array(x_data, dtype=float)
 
         # Форматирование подписи с параметрами и датой
         formatted_label = f"{label} {format_experiment_params(params)}"
-
-        # Создаем линейный график
-        line, = plt.plot(
-            x_data,
-            y_data,
-            marker=self.markers[self.marker_index % len(self.markers)],
-            markersize=self.marker_size,
-            linestyle=current_linestyle,
-            zorder=2,
-            label=formatted_label
-        )
+        
+        # Проверяем, есть ли уже стиль для этой метки в статическом словаре
+        if label in GraphVisualizer.label_styles:
+            # Используем сохраненный стиль
+            marker, color, linestyle = GraphVisualizer.label_styles[label]
+            line, = plt.plot(
+                x_data,
+                y_data,
+                marker=marker,
+                markersize=self.marker_size,
+                linestyle=linestyle,
+                color=color,
+                zorder=2,
+                label=formatted_label
+            )
+        else:
+            # Выбор стиля линии и инкремент индекса
+            current_linestyle = self.linestyles[self.linestyle_index % len(self.linestyles)]
+            current_marker = self.markers[self.marker_index % len(self.markers)]
+            
+            # Создаем линейный график
+            line, = plt.plot(
+                x_data,
+                y_data,
+                marker=current_marker,
+                markersize=self.marker_size,
+                linestyle=current_linestyle,
+                zorder=2,
+                label=formatted_label
+            )
+            
+            # Сохраняем стиль для этой метки в статическом словаре
+            GraphVisualizer.label_styles[label] = (current_marker, line.get_color(), current_linestyle)
+            
+            # Увеличиваем индексы для следующей метки
+            self.linestyle_index += 1
+            self.marker_index += 1
 
         # Расчет и добавление AUC, если необходимо
         if calculate_auc:
@@ -408,7 +441,6 @@ class GraphVisualizer:
             self.aucs.append(auc_value)
 
         self.lines.append(line)
-        self.marker_index += 1
 
         # Проверяем, является ли error_margin итерируемым объектом, и если нет, преобразуем его
         if error_margin is not None and not hasattr(error_margin, '__iter__'):

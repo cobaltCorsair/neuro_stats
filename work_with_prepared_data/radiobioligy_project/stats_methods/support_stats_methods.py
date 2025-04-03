@@ -8,6 +8,9 @@ from sklearn.covariance import EllipticEnvelope
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 from sklearn.neighbors import KernelDensity
+from sklearn.ensemble import IsolationForest
+from scipy.stats import chi2
+from scipy.spatial.distance import mahalanobis
 
 
 class ExtractOutliers:
@@ -46,6 +49,10 @@ class ExtractOutliers:
                                       not outlier_rows[idx]]
         self.base_class.tumor_volumes = [reaction for idx, reaction in enumerate(self.base_class.tumor_volumes) if
                                          not outlier_rows[idx]]
+        
+        # Обновление данных в data_processor, если он существует
+        if hasattr(self.base_class, 'data_processor'):
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
     def remove_outliers_iqr(self, k=1.5):
         """
@@ -72,6 +79,10 @@ class ExtractOutliers:
         self.base_class.rat_labels = [label for idx, label in enumerate(self.base_class.rat_labels) if
                                       idx in clean_skin_reactions_df.index]
         self.base_class.tumor_volumes = clean_skin_reactions_df.values.tolist()
+        
+        # Обновление данных в data_processor, если он существует
+        if hasattr(self.base_class, 'data_processor'):
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
     def remove_outliers_grubbs(self, alpha=0.05):
         """
@@ -101,82 +112,117 @@ class ExtractOutliers:
         self.base_class.rat_labels = [label for idx, label in enumerate(self.base_class.rat_labels) if
                                       idx in clean_skin_reactions_df.index]
         self.base_class.tumor_volumes = clean_skin_reactions_df.values.tolist()
+        
+        # Обновление данных в data_processor, если он существует
+        if hasattr(self.base_class, 'data_processor'):
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
     def remove_local_outliers(self, window_size=3, threshold=2):
         """
-        Удаляет выбросы, используя локальные средние и стандартные отклонения.
+        Удаляет локальные выбросы из данных об объёмах опухолей.
 
         Args:
-            window_size (int): Размер окна для вычисления среднего и стандартного отклонения.
-            threshold (float): Порог для определения выбросов в единицах стандартного отклонения.
+            window_size (int): Размер окна для сглаживания.
+            threshold (float): Пороговое значение для определения выбросов.
         """
-        # Вычисление средних и стандартных отклонений для каждой точки, используя скользящее окно
-        means = pd.DataFrame(self.base_class.skin_reactions).rolling(window=window_size, center=True).mean().values
-        std_devs = pd.DataFrame(self.base_class.skin_reactions).rolling(window=window_size, center=True).std().values
+        # Преобразование данных в DataFrame для удобства
+        skin_reactions_df = pd.DataFrame(self.base_class.tumor_volumes, columns=self.base_class.time_data)
 
-        # Определение выбросов как точек, которые отклоняются от среднего на threshold*std_dev или более
-        outliers = np.abs(np.array(self.base_class.skin_reactions) - means) > threshold * std_devs
+        # Создание сглаженных данных
+        smoothed_df = skin_reactions_df.rolling(window=window_size, min_periods=1, axis=1).mean()
+
+        # Вычисление разницы между оригинальными и сглаженными данными
+        diff = np.abs(skin_reactions_df - smoothed_df)
+
+        # Вычисление среднего и стандартного отклонения разницы
+        mean_diff = diff.mean().mean()
+        std_diff = diff.std().std()
+
+        # Определение выбросов
+        outlier_condition = diff > (mean_diff + threshold * std_diff)
 
         # Удаление строк, содержащих хотя бы один выброс
-        non_outlier_indices = ~np.any(outliers, axis=1)
+        clean_skin_reactions_df = skin_reactions_df[~outlier_condition.any(axis=1)]
 
-        self.base_class.rat_labels = [label for i, label in enumerate(self.base_class.rat_labels) if
-                                      non_outlier_indices[i]]
-        self.base_class.skin_reactions = [reactions for i, reactions in enumerate(self.base_class.skin_reactions) if
-                                          non_outlier_indices[i]]
+        # Обновление меток и данных о кожных реакциях
+        self.base_class.rat_labels = [label for idx, label in enumerate(self.base_class.rat_labels) if
+                                      idx in clean_skin_reactions_df.index]
+        self.base_class.tumor_volumes = clean_skin_reactions_df.values.tolist()
+        
+        # Обновление данных в data_processor, если он существует
+        if hasattr(self.base_class, 'data_processor'):
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
     def remove_outliers_elliptic_envelope(self, contamination=0.1):
         """
-        Идентифицирует и удаляет выбросы с использованием многомерного метода Гаусса (Elliptic Envelope).
+        Удаляет выбросы из данных об объёмах опухолей, используя эллиптическую оболочку.
 
         Args:
-            contamination (float): Доля выбросов в данных, ожидаемая алгоритмом.
+            contamination (float): Предполагаемая доля выбросов в данных.
         """
-        # Преобразование данных в массив numpy для обработки
-        # Транспонирование нужно, чтобы строки соответствовали крысам (объектам), а столбцы - измерениям (признакам)
-        data = np.array(self.base_class.tumor_volumes)
+        # Преобразование данных в подходящий формат для EllipticEnvelope
+        skin_reactions_array = np.array(self.base_class.tumor_volumes)
+        n_samples, n_features = skin_reactions_array.shape
 
-        ee = EllipticEnvelope(contamination=contamination)
-        ee.fit(data)
+        # Проверка на возможность применения EllipticEnvelope
+        if n_samples <= n_features:
+            print("Предупреждение: Недостаточно образцов для применения EllipticEnvelope. Пропуск.")
+            return
 
-        # Предсказание, где 1 - не выброс, -1 - выброс
-        labels = ee.predict(data)
+        # Применение EllipticEnvelope
+        # Транспонирование для работы с временными рядами
+        clf = EllipticEnvelope(contamination=contamination)
+        try:
+            clf.fit(skin_reactions_array)
+            y_pred = clf.predict(skin_reactions_array)
+        except Exception as e:
+            print(f"Ошибка при применении EllipticEnvelope: {e}. Пропуск.")
+            return
 
-        # Индексы не выбросов (где labels == 1)
-        non_outlier_indices = np.where(labels == 1)[0]
+        # Идентификация не-выбросов (1) и выбросов (-1)
+        non_outlier_mask = y_pred == 1
 
-        # Ваши индексы идут от 0 до 8, что не соответствует длине labels или rat_labels
-        # Убедимся, что индексы не выходят за границы списка rat_labels
-        non_outlier_indices = [idx for idx in non_outlier_indices if idx < len(self.base_class.rat_labels)]
+        # Обновление меток и данных о кожных реакциях
+        self.base_class.rat_labels = [label for idx, label in enumerate(self.base_class.rat_labels) if
+                                      non_outlier_mask[idx]]
+        self.base_class.tumor_volumes = [reaction for idx, reaction in enumerate(self.base_class.tumor_volumes) if
+                                         non_outlier_mask[idx]]
+        
+        # Обновление данных в data_processor, если он существует
+        if hasattr(self.base_class, 'data_processor'):
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
-        self.base_class.rat_labels = [self.base_class.rat_labels[i] for i in non_outlier_indices]
-        self.base_class.tumor_volumes = [self.base_class.tumor_volumes[i] for i in non_outlier_indices]
-
-    def remove_outliers_isolation_forest(self, contamination=0.1):
+    def remove_outliers_isolation_forest(self, contamination='auto'):
         """
-        Идентифицирует и удаляет выбросы с использованием метода изоляции леса.
+        Удаляет выбросы из данных об объёмах опухолей, используя метод изоляционного леса.
 
         Args:
-            contamination (float или 'auto'): Доля выбросов в данных, ожидаемая алгоритмом.
+            contamination (float or 'auto'): Предполагаемая доля выбросов в данных.
         """
-        from sklearn.ensemble import IsolationForest
+        # Преобразование данных в подходящий формат для IsolationForest
+        skin_reactions_array = np.array(self.base_class.tumor_volumes)
 
-        # Преобразование данных в массив numpy
-        data = np.array(self.base_class.tumor_volumes)
+        # Применение IsolationForest
+        clf = IsolationForest(random_state=42, contamination=contamination)
+        try:
+            clf.fit(skin_reactions_array)
+            y_pred = clf.predict(skin_reactions_array)
+        except Exception as e:
+            print(f"Ошибка при применении IsolationForest: {e}. Пропуск.")
+            return
 
-        # Создание и обучение модели изоляции леса
-        isolation_forest = IsolationForest(contamination=contamination)
-        isolation_forest.fit(data)
+        # Идентификация не-выбросов (1) и выбросов (-1)
+        non_outlier_mask = y_pred == 1
 
-        # Предсказание выбросов
-        labels = isolation_forest.predict(data)
-
-        # Индексы не выбросов
-        non_outlier_indices = np.where(labels == 1)[0]
-
-        # Обновление меток крыс и данных о объемах опухолей
-        self.base_class.rat_labels = [self.base_class.rat_labels[i] for i in non_outlier_indices]
-        self.base_class.tumor_volumes = [self.base_class.tumor_volumes[i] for i in non_outlier_indices]
+        # Обновление меток и данных о кожных реакциях
+        self.base_class.rat_labels = [label for idx, label in enumerate(self.base_class.rat_labels) if
+                                      non_outlier_mask[idx]]
+        self.base_class.tumor_volumes = [reaction for idx, reaction in enumerate(self.base_class.tumor_volumes) if
+                                         non_outlier_mask[idx]]
+        
+        # Обновление данных в data_processor, если он существует
+        if hasattr(self.base_class, 'data_processor'):
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
     def remove_outliers_mahalanobis(self, alpha=0.01):
         """
@@ -185,10 +231,6 @@ class ExtractOutliers:
         Args:
             alpha (float): Уровень значимости для определения порогового значения расстояния.
         """
-        from scipy.stats import chi2
-        from scipy.spatial.distance import mahalanobis
-        import pandas as pd
-
         data = pd.DataFrame(self.base_class.tumor_volumes)  # Транспонируем для удобства
 
         # Вычисляем ковариационную матрицу и её обратную матрицу
@@ -208,6 +250,10 @@ class ExtractOutliers:
         # Обновление меток крыс и данных
         self.base_class.rat_labels = [self.base_class.rat_labels[i] for i in non_outlier_indices]
         self.base_class.tumor_volumes = [self.base_class.tumor_volumes[i] for i in non_outlier_indices]
+        
+        # Обновление данных в data_processor, если он существует
+        if hasattr(self.base_class, 'data_processor'):
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
     def remove_outliers_by_euclidean(self, percentile_threshold=90):
         """
@@ -239,6 +285,10 @@ class ExtractOutliers:
                                          i not in outlier_indices]
 
         print(f'Выбросы удалены. Количество выбросов: {len(outlier_indices)}')
+        
+        # Обновление данных в data_processor, если он существует
+        if hasattr(self.base_class, 'data_processor'):
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
     def remove_outliers_kl_divergence(self, bandwidth=0.5, percentile_threshold=90):
         """
@@ -279,6 +329,10 @@ class ExtractOutliers:
                                          i not in outlier_indices]
 
         print(f'Выбросы удалены. Количество выбросов: {len(outlier_indices)}')
+        
+        # Обновление данных в data_processor, если он существует
+        if hasattr(self.base_class, 'data_processor'):
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
     def exclude_rats(self, excluded_rats: List[str], data_attribute_name: str):
         """
@@ -300,6 +354,10 @@ class ExtractOutliers:
         data_attribute = getattr(self.base_class, data_attribute_name)
         data_attribute = [data for i, data in enumerate(data_attribute) if i not in exclude_indices]
         setattr(self.base_class, data_attribute_name, data_attribute)
+
+        # Обновление данных в data_processor, если он существует и мы работаем с объемами опухоли
+        if hasattr(self.base_class, 'data_processor') and data_attribute_name == 'tumor_volumes':
+            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
 
 class SupportingFunctions:
 
