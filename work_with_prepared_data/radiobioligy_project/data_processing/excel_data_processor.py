@@ -64,11 +64,8 @@ def extract_date_from_filename(file_path: str) -> str:
     match = re.search(r'(\d{1,2})[.\-_](\d{1,2})[.\-_](\d{4})', filename)
     if match:
         part1, part2, year = match.groups()
-        # Определяем, что является месяцем, а что днем
-        if int(part1) > 12:
-            day, month = part1, part2
-        else:
-            month, day = part1, part2
+        # Всегда предполагаем формат ДД.ММ.ГГГГ
+        day, month = part1, part2
         try:
             # Проверяем корректность даты
             date_obj = datetime(int(year), int(month), int(day))

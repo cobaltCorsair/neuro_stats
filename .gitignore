@@ -138,3 +138,4 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+!/work_with_prepared_data/saved_graphics/

@@ -124,16 +124,18 @@ class GraphVisualizer:
             error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
                             for std in std_dev]
 
-            # Создаем уникальную метку для каждого эксперимента, используя параметры эксперимента
-            # Форматируем параметры эксперимента, чтобы получить короткую строку
+            # Форматируем параметры эксперимента для текста легенды
             formatted_params = format_experiment_params(visualizer.experiment_params)
             
-            # Комбинируем префикс с параметрами эксперимента для создания уникальной метки
-            unique_label = f"{label_prefix} {formatted_params}"
+            # Создаем текст метки для легенды
+            legend_label_text = f"{label_prefix} {formatted_params}"
+
+            # Создаем уникальный ключ для стиля, добавляя индекс
+            style_key = f"{legend_label_text}_{index}"
             
-            # Добавляем график с уникальной меткой
-            graph_visualizer.add_plot(visualizer.time_data, values, {}, unique_label,
-                                      error_margin, calculate_auc)
+            # Добавляем график, передавая уникальный ключ стиля и текст для легенды
+            graph_visualizer.add_plot(visualizer.time_data, values, {}, legend_label_text,
+                                      error_margin, calculate_auc, style_key=style_key)
             x_data_lists.append(visualizer.time_data)
 
             # Если визуализатор относится к экспериментам, которые сравниваются, сохраняем его границы
@@ -374,10 +376,10 @@ class GraphVisualizer:
             std_dev = SupportingFunctions.calculate_std_dev(clean_volumes, mean_volume)
             error_margin = SupportingFunctions.calculate_error_margin(std_dev, len(clean_volumes))
 
-            # Добавление данных к графику, передаем метку крысы для сохранения стиля
-            self.add_plot(clean_time_data, clean_volumes, {}, label, error_margin)
+            # Добавление данных к графику, передаем метку крысы как ключ стиля
+            self.add_plot(clean_time_data, clean_volumes, {}, label, error_margin, style_key=label)
 
-    def add_plot(self, x_data, y_data, params, label, error_margin=None, calculate_auc=False, fill_alpha=0.2):
+    def add_plot(self, x_data, y_data, params, label, error_margin=None, calculate_auc=False, fill_alpha=0.2, style_key=None):
         """
         Добавляет на график линию с данными, опционально с доверительными интервалами и расчетом площади под кривой (AUC).
 
@@ -385,23 +387,30 @@ class GraphVisualizer:
             x_data (List[float]): Данные по оси X.
             y_data (List[float]): Данные по оси Y.
             params (list): Параметры эксперимента для включения в подпись графика.
-            label (str): Подпись для графика.
+            label (str): Подпись для графика (текст для легенды).
             error_margin (List[float], optional): Доверительный интервал или ошибка для каждой точки данных.
             calculate_auc (bool, optional): Если True, будет рассчитана площадь под кривой (AUC).
             fill_alpha (float, optional): Прозрачность заливки для доверительных интервалов.
+            style_key (str, optional): Уникальный ключ для идентификации и сохранения стиля линии. Если None,
+                                     используется значение `label`.
 
         Пример использования:
-            add_plot([1, 2, 3], [4, 5, 6], {}, "Тест", [0.1, 0.2, 0.1], True, 0.3)
+            add_plot([1, 2, 3], [4, 5, 6], {}, "Тест", [0.1, 0.2, 0.1], True, 0.3, style_key="Тест_1")
         """
         x_data = np.array(x_data, dtype=float)
 
-        # Форматирование подписи с параметрами и датой
-        formatted_label = f"{label} {format_experiment_params(params)}"
+        # Используем label как ключ стиля по умолчанию, если style_key не предоставлен
+        if style_key is None:
+            style_key = label
+
+        # Форматирование подписи с параметрами (params здесь могут быть пустыми, как в prepare_and_add_data_to_graph)
+        # Основной текст легенды берется из аргумента label
+        formatted_legend_label = f"{label} {format_experiment_params(params)}" if params else label
         
-        # Проверяем, есть ли уже стиль для этой метки в статическом словаре
-        if label in GraphVisualizer.label_styles:
+        # Проверяем, есть ли уже стиль для этого ключа в статическом словаре
+        if style_key in GraphVisualizer.label_styles:
             # Используем сохраненный стиль
-            marker, color, linestyle = GraphVisualizer.label_styles[label]
+            marker, color, linestyle = GraphVisualizer.label_styles[style_key]
             line, = plt.plot(
                 x_data,
                 y_data,
@@ -410,7 +419,7 @@ class GraphVisualizer:
                 linestyle=linestyle,
                 color=color,
                 zorder=2,
-                label=formatted_label
+                label=formatted_legend_label # Используем label для легенды
             )
         else:
             # Выбор стиля линии и инкремент индекса
@@ -425,11 +434,11 @@ class GraphVisualizer:
                 markersize=self.marker_size,
                 linestyle=current_linestyle,
                 zorder=2,
-                label=formatted_label
+                label=formatted_legend_label # Используем label для легенды
             )
             
-            # Сохраняем стиль для этой метки в статическом словаре
-            GraphVisualizer.label_styles[label] = (current_marker, line.get_color(), current_linestyle)
+            # Сохраняем стиль для этого ключа в статическом словаре
+            GraphVisualizer.label_styles[style_key] = (current_marker, line.get_color(), current_linestyle)
             
             # Увеличиваем индексы для следующей метки
             self.linestyle_index += 1

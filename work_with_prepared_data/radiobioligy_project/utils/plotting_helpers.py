@@ -112,8 +112,8 @@ def format_experiment_params(params: List[str]) -> str:
         formatted_params.append(f"Интервал: {irradiation_time_str}")
 
     # Добавление даты, если она присутствует
-    # if date_str:
-    #     formatted_params.append(f"Дата: {date_str}")
+    if date_str:
+         formatted_params.append(f"Дата: {date_str}")
 
     return ', '.join(formatted_params)
 
