@@ -376,10 +376,10 @@ class GraphVisualizer:
             std_dev = SupportingFunctions.calculate_std_dev(clean_volumes, mean_volume)
             error_margin = SupportingFunctions.calculate_error_margin(std_dev, len(clean_volumes))
 
-            # Добавление данных к графику, передаем метку крысы как ключ стиля
-            self.add_plot(clean_time_data, clean_volumes, {}, label, error_margin, style_key=label)
+            # Добавление данных к графику, передаем метку крысы как ключ стиля и флаг
+            self.add_plot(clean_time_data, clean_volumes, {}, label, error_margin, style_key=label, is_individual_rat=True)
 
-    def add_plot(self, x_data, y_data, params, label, error_margin=None, calculate_auc=False, fill_alpha=0.2, style_key=None):
+    def add_plot(self, x_data, y_data, params, label, error_margin=None, calculate_auc=False, fill_alpha=0.2, style_key=None, is_individual_rat=False):
         """
         Добавляет на график линию с данными, опционально с доверительными интервалами и расчетом площади под кривой (AUC).
 
@@ -393,6 +393,8 @@ class GraphVisualizer:
             fill_alpha (float, optional): Прозрачность заливки для доверительных интервалов.
             style_key (str, optional): Уникальный ключ для идентификации и сохранения стиля линии. Если None,
                                      используется значение `label`.
+            is_individual_rat (bool, optional): Флаг, указывающий, что строится график для отдельной крысы.
+                                             Влияет на использование/сохранение стиля в статическом словаре.
 
         Пример использования:
             add_plot([1, 2, 3], [4, 5, 6], {}, "Тест", [0.1, 0.2, 0.1], True, 0.3, style_key="Тест_1")
@@ -407,9 +409,11 @@ class GraphVisualizer:
         # Основной текст легенды берется из аргумента label
         formatted_legend_label = f"{label} {format_experiment_params(params)}" if params else label
         
-        # Проверяем, есть ли уже стиль для этого ключа в статическом словаре
-        if style_key in GraphVisualizer.label_styles:
-            # Используем сохраненный стиль
+        # Проверяем, нужно ли использовать сохраненный стиль (только для индивидуальных крыс)
+        should_reuse_style = is_individual_rat and style_key in GraphVisualizer.label_styles
+
+        if should_reuse_style:
+            # Используем сохраненный стиль для крысы
             marker, color, linestyle = GraphVisualizer.label_styles[style_key]
             line, = plt.plot(
                 x_data,
@@ -422,11 +426,11 @@ class GraphVisualizer:
                 label=formatted_legend_label # Используем label для легенды
             )
         else:
-            # Выбор стиля линии и инкремент индекса
+            # Генерируем новый стиль для этого графика (эксперимент или новая крыса)
             current_linestyle = self.linestyles[self.linestyle_index % len(self.linestyles)]
             current_marker = self.markers[self.marker_index % len(self.markers)]
             
-            # Создаем линейный график
+            # Создаем линейный график с новым стилем
             line, = plt.plot(
                 x_data,
                 y_data,
@@ -436,11 +440,13 @@ class GraphVisualizer:
                 zorder=2,
                 label=formatted_legend_label # Используем label для легенды
             )
+            new_style = (current_marker, line.get_color(), current_linestyle)
+
+            # Сохраняем стиль в статический словарь ТОЛЬКО если это индивидуальная крыса
+            if is_individual_rat:
+                GraphVisualizer.label_styles[style_key] = new_style
             
-            # Сохраняем стиль для этого ключа в статическом словаре
-            GraphVisualizer.label_styles[style_key] = (current_marker, line.get_color(), current_linestyle)
-            
-            # Увеличиваем индексы для следующей метки
+            # Увеличиваем индексы для следующей метки только при генерации нового стиля
             self.linestyle_index += 1
             self.marker_index += 1
 
