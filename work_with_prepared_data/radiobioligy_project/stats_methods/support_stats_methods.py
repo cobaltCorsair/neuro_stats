@@ -344,20 +344,49 @@ class ExtractOutliers:
         """
         # Получаем индексы крыс, которые необходимо исключить
         print("Исключаемые метки крыс:", excluded_rats)
-        exclude_indices = [i for i, label in enumerate(self.base_class.rat_labels) if label in excluded_rats]
+        print("Текущие метки крыс в базовом классе:", self.base_class.rat_labels)
+        
+        # Проверка на исключение всех крыс
+        if len(excluded_rats) >= len(self.base_class.rat_labels):
+            print("ОШИБКА: Нельзя исключить всех крыс из эксперимента!")
+            return
+        
+        # Используем точное соответствие меток для исключения
+        exclude_indices = []
+        for i, label in enumerate(self.base_class.rat_labels):
+            if label in excluded_rats:
+                exclude_indices.append(i)
+                print(f"Найдена метка для исключения: {label} с индексом {i}")
+        
+        if not exclude_indices:
+            print("ВНИМАНИЕ: Не найдено ни одной метки для исключения!")
+            return
+            
+        # Дополнительная проверка: если после исключения не останется крыс, отменяем операцию
+        if len(exclude_indices) >= len(self.base_class.rat_labels):
+            print("ОШИБКА: Нельзя исключить всех крыс из эксперимента!")
+            return
+            
+        print(f"Индексы для исключения: {exclude_indices}")
 
         # Исключаем крыс по индексам
-        self.base_class.rat_labels = [label for i, label in enumerate(self.base_class.rat_labels) if
-                                      i not in exclude_indices]
-
+        new_rat_labels = [label for i, label in enumerate(self.base_class.rat_labels) if i not in exclude_indices]
+        
         # Используем getattr и setattr для работы с динамическими атрибутами
         data_attribute = getattr(self.base_class, data_attribute_name)
-        data_attribute = [data for i, data in enumerate(data_attribute) if i not in exclude_indices]
-        setattr(self.base_class, data_attribute_name, data_attribute)
+        new_data_attribute = [data for i, data in enumerate(data_attribute) if i not in exclude_indices]
+        
+        # Проверка, что действительно удалили данные
+        print(f"Было крыс: {len(self.base_class.rat_labels)}, стало: {len(new_rat_labels)}")
+        print(f"Было данных: {len(data_attribute)}, стало: {len(new_data_attribute)}")
+        
+        # Обновляем данные в базовом классе
+        self.base_class.rat_labels = new_rat_labels
+        setattr(self.base_class, data_attribute_name, new_data_attribute)
 
         # Обновление данных в data_processor, если он существует и мы работаем с объемами опухоли
         if hasattr(self.base_class, 'data_processor') and data_attribute_name == 'tumor_volumes':
-            self.base_class.data_processor.tumor_volumes = self.base_class.tumor_volumes
+            self.base_class.data_processor.tumor_volumes = getattr(self.base_class, data_attribute_name)
 
 class SupportingFunctions:
 

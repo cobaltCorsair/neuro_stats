@@ -236,14 +236,41 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Возвращает список меток крыс с индексами наборов данных из выбранных элементов CheckableComboBox.
         """
         selected_items = self.comboBox_4.checked_items()
-        # Извлекаем метки крыс из выделенных элементов
-        selected_rat_labels = [item.split(" (")[0] for item in selected_items]  # Метки крыс
-
+        if not selected_items:
+            print("ВНИМАНИЕ: Нет выбранных элементов в списке для исключения!")
+            return []
+            
+        print(f"Выбранные элементы в comboBox_4: {selected_items}")
+        
+        # Извлекаем метки крыс из выделенных элементов (текст до скобки)
+        selected_rat_labels = []
+        for item in selected_items:
+            try:
+                # Разделяем строку на метку крысы и имя файла
+                parts = item.split(" (")
+                if len(parts) > 1:
+                    label = parts[0].strip()
+                    selected_rat_labels.append(label)
+                else:
+                    # Если формат неправильный, используем всю строку
+                    selected_rat_labels.append(item.strip())
+            except Exception as e:
+                print(f"Ошибка при извлечении метки из {item}: {e}")
+        
+        print(f"Извлеченные метки крыс: {selected_rat_labels}")
+        
         # Находим соответствующие индексы для выбранных меток
-        selected_indices = [data_index for label, data_index in rat_labels_with_indices if label in selected_rat_labels]
-
-        return list(
-            zip(selected_rat_labels, selected_indices))  # Возвращаем кортежи (метка крысы, индекс набора данных)
+        selected_indices = []
+        for label, data_index in rat_labels_with_indices:
+            if label in selected_rat_labels:
+                selected_indices.append(data_index)
+                print(f"Найден индекс {data_index} для метки {label}")
+        
+        print(f"Все зарегистрированные метки: {rat_labels_with_indices}")
+        result = list(zip(selected_rat_labels, selected_indices))
+        print(f"Результат (метки с индексами): {result}")
+        
+        return result  # Возвращаем кортежи (метка крысы, индекс набора данных)
 
     def set_state_of_auc_and_tests_checkbox(self):
         if self.pushButton_3.isEnabled() and self.checkBox_6.isChecked():
@@ -321,11 +348,37 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 outlier_extractor.remove_outliers_mahalanobis(alpha=0.01)
             elif self.selected_outlier_method == 6:  # Метод ручного исключения
                 selected_rats_with_indices = self.get_selected_rat_labels_with_index()
-                # Извлекаем только метки крыс
-                excluded_rats = [label for label, index in selected_rats_with_indices]
-                # Сохраняем выбранные метки для последующего восстановления
-                self.saved_checked_items = excluded_rats
-                outlier_extractor.exclude_rats(excluded_rats, 'tumor_volumes')
+                
+                # Извлекаем только метки крыс, если список не пуст
+                excluded_rats = [label for label, index in selected_rats_with_indices] if selected_rats_with_indices else []
+
+                # Если список исключаемых крыс ПУСТ, то ничего не делаем (эквивалентно "Без исключения")
+                if not excluded_rats:
+                    print("Ручное исключение выбрано, но ни одна крыса не отмечена. Исключение не применяется.")
+                    # Пропускаем вызов outlier_extractor.exclude_rats, 
+                    # визуализатор будет добавлен без изменений в updated_instances ниже
+                else:
+                    # Если список НЕ пуст, продолжаем логику ручного исключения
+                    # Проверяем, не пытается ли пользователь исключить всех крыс
+                    if len(excluded_rats) >= len(visualizer_instance.rat_labels):
+                        QMessageBox.warning(
+                            self,
+                            "Предупреждение",
+                            "Нельзя исключить всех крыс из эксперимента!"
+                        )
+                        # Пропускаем применение exclude_rats для этого визуализатора,
+                        # но он все равно будет добавлен без изменений
+                    else:
+                        # Проверяем, соответствуют ли индексы текущему визуализатору (для отладки)
+                        current_file = os.path.basename(visualizer_instance.file_path) if hasattr(visualizer_instance, 'file_path') else "unknown"
+                        print(f"Применяю исключение крыс к файлу: {current_file}")
+                        
+                        # Сохраняем выбранные метки для последующего восстановления
+                        # self.saved_checked_items = excluded_rats # Это лучше делать при обновлении комбобокса, а не здесь
+                        
+                        # Вызываем метод исключения крыс
+                        print(f"Исключаю крыс {excluded_rats} из визуализатора {visualizer_instance}")
+                        outlier_extractor.exclude_rats(excluded_rats, 'tumor_volumes')
             elif self.selected_outlier_method == 7:  # Метод для Евклидова расстояния
                 outlier_extractor.remove_outliers_by_euclidean(
                     percentile_threshold=coefficient)  # Используем percentile_threshold
