@@ -17,6 +17,7 @@ numpy = "^1.26.4"
 pyqt6 = "^6.6.1"
 fastdtw = "^0.3.4"
 seaborn = "^0.13.2"
+scipy = "^1.15.3"
 
 
 [build-system]

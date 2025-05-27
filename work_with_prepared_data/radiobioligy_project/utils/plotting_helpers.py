@@ -75,47 +75,44 @@ def format_experiment_params(params: List[str]) -> str:
         str: Отформатированная строка параметров эксперимента с датой и временем облучения.
     """
     # Удаляем пустые строки и значения 'nan'
-    cleaned_params = [str(param).replace('nan', '').strip() for param in params if str(param).strip()]
+    # 1. зачистка
+    cleaned_params = [
+        str(p).replace('nan', '').strip() for p in params if str(p).strip()
+    ]
 
-    # Разбиваем параметры на ключ и значение
-    rad_values = {}
-    sequence = []  # Сохраняем порядок ключей
+    rad_sequence: list[tuple[str, str]] = []  # порядок важен!
     date_str = ""
     irradiation_time_str = ""
-    for param in cleaned_params:
-        if param.startswith("Date="):
-            date_str = param.split("=", 1)[1].strip()
-        elif param.startswith("Irradiation Time="):
-            irradiation_time_str = param.split("=", 1)[1].strip()
-        elif '=' in param and not param.startswith('t'):
-            key, value = param.split('=', 1)
+
+    # 2. разбираем строку
+    for p in cleaned_params:
+        if p.startswith("Date="):
+            date_str = p.split("=", 1)[1].strip()
+        elif p.startswith("Irradiation Time="):
+            irradiation_time_str = p.split("=", 1)[1].strip()
+        elif '=' in p and not p.startswith('t'):
+            key, value = p.split('=', 1)
             key = key.strip()
-            value = value.split()[0]  # Берём только первую часть, исключая "Гр."
-            rad_values[key] = value.strip()
+            value = value.split()[0].strip()  # без «Гр.»
+            rad_sequence.append((key, value))  # <-- сохраняем всё!
 
-            sequence.append(key)
+    # 3. собираем подпись
+    parts: list[str] = []
 
-    # Формирование строки для легенды
-    formatted_params = []
+    # стрелочки
+    if len(rad_sequence) > 1:
+        parts.append(' → '.join(k for k, _ in rad_sequence))
 
-    # Добавление стрелок, если есть более одного типа излучения
-    if len(sequence) > 1:
-        arrows = ' → '.join(sequence)
-        formatted_params.append(arrows)
+    # сами дозы
+    for key, val in rad_sequence:
+        parts.append(f"D{subscriptify(key.lower())} = {val} Гр")
 
-    for key in sequence:
-        if key in rad_values:
-            formatted_params.append(f"D{subscriptify(key.lower())} = {rad_values[key]} Гр")
-
-    # Добавление времени облучения, если оно присутствует
     if irradiation_time_str:
-        formatted_params.append(f"Интервал: {irradiation_time_str}")
-
-    # Добавление даты, если она присутствует
+        parts.append(f"Интервал: {irradiation_time_str}")
     if date_str:
-         formatted_params.append(f"Дата: {date_str}")
+        parts.append(f"Дата: {date_str}")
 
-    return ', '.join(formatted_params)
+    return ', '.join(parts)
 
 
 def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
