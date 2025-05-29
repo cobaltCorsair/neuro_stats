@@ -184,6 +184,38 @@ class Fitter:
         return alphas[vdMax[0][0]], abratios_list[vdMax[1][0]]
         pass
 
+    # ---------- k-grid для N ≥ 2 режимов ----------
+    def fit_abratio_grid(
+        self,
+        k_min: float = 1.0,
+        k_max: float = 30.0,
+        steps: int = 60,
+    ) -> Tuple[float, float, float]:
+        """
+        Перебирает k = α/β по равномерной сетке.
+        Для каждого k   →   β*(k·D + D²) ≈ –ln(SF)   (LS-оценка β ≥ 0)
+        Возвращает (α, β, k), где SSE минимально.
+        """
+        D   = np.array([e.dose_sum   for e in self.experiments])
+        D2  = np.array([e.dose2_sum  for e in self.experiments])
+        ylog = -np.log([e.sf for e in self.experiments])
+
+        best_sse = np.inf
+        best_a = best_b = best_k = np.nan
+
+        for k in np.linspace(k_min, k_max, steps):
+            rhs   = k * D + D2
+            beta  = max(0.0, np.dot(rhs, ylog) / np.dot(rhs, rhs))
+            alpha = k * beta
+            sse   = np.sum((ylog - (alpha * D + beta * D2)) ** 2)
+            if sse < best_sse:
+                best_sse, best_a, best_b, best_k = sse, alpha, beta, k
+
+        if self.verbose:
+            print(f"GRID-SEARCH  best k={best_k:.3f}  "
+                  f"SSE={best_sse:.3e}  α={best_a:.5f}  β={best_b:.6f}")
+        return best_a, best_b, best_k
+
     def fit(self) -> Tuple[float, float]:
         """
         Подбирает параметры α и β:
@@ -203,25 +235,26 @@ class Fitter:
         for i, e in enumerate(self.experiments):
             print("BED for regimen %d: " % (i, ), self._BED_fit_function(e.fractions, 10.0))
 
+        if len(self.experiments) > 2:
+            # --- N ≥ 2: перебор k-grid ---
+            alpha, beta, _ = self.fit_abratio_grid(
+                k_min=1.0,
+                k_max=30.0,
+                steps=60,  # плотность сетки можно поменять
+            )
+
         if self.alpha_fixed is not None:
             y_log = -np.log(y)
             y_shift = y_log - self.alpha_fixed * D
             D2 = np.array([e.dose2_sum for e in self.experiments])
             beta = np.dot(D2, y_shift) / np.dot(D2, D2)
             alpha = self.alpha_fixed
-        else:
-            def lq_model(dose, alpha, beta):
-                return np.exp(-alpha * dose - beta * dose ** 2)
-            p0 = [0.1, 0.01]
-            bounds = (0, np.inf)
-            popt, _ = curve_fit(lq_model, D, y, p0=p0, bounds=bounds)
-            alpha, beta = popt
 
         return alpha, beta
 
     def _BED_fit_function(self, doses: np.array[float], abratio: float = 3.0):
         d0 = np.sum(doses)
-        d1_1 = np.pow(doses, 2)
+        d1_1 = np.power(doses, 2)
         d1 = np.sum(d1_1)
         ret = d0 + d1 / abratio
         return ret
