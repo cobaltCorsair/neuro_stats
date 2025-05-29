@@ -149,6 +149,41 @@ class Fitter:
             uniq.setdefault((e.dose_sum, e.dose2_sum), e)
         self.experiments = list(uniq.values())
 
+    def fit_abratio4pair(self, min_abratio: float, max_abratio: float, steps: int):
+        regimens_list = []
+        for i, e in enumerate(self.experiments):
+            regimens_list.append(e.fractions)
+        def fit(regimen_index, abratio):
+            return self._BED_fit_function(regimens_list[regimen_index], abratio)
+        cvi = []
+        abratios_list = []
+        for abratio in np.linspace(min_abratio, max_abratio, steps):
+            cval = []
+            abratios_list.append(abratio)
+            for i, e in enumerate(regimens_list):
+                d = fit(i, abratio)
+                cval.append(np.array(d))
+            cvi.append(cval)
+        cvi = np.array(cvi)
+        def eval(BED, alpha):
+            return np.exp(-1.*alpha*BED)
+        d = []
+        alphas = []
+        for alpha in np.linspace(1.0e-5, 1.0e0, 100):
+            alphas.append(alpha)
+            d.append(np.array(
+                (eval(cvi[:, 0], alpha), eval(cvi[:, 1], alpha))
+            ))
+        d = np.array(d)
+        #dt_ranges_subtract = d[:, 0, :] - d[:, 1, :]
+        dt_ranges_divide = d[:, 0, :] - d[:, 1, :]
+        vdMax = np.where(dt_ranges_divide == np.max(dt_ranges_divide))
+        print ("FOUND maximization on %d %d with alpha = %1.6e alpha/beta ratio = %1.6e" % (
+            vdMax[0][0], vdMax[1][0], alphas[vdMax[0][0]], abratios_list[vdMax[1][0]]
+        ))
+        return alphas[vdMax[0][0]], abratios_list[vdMax[1][0]]
+        pass
+
     def fit(self) -> Tuple[float, float]:
         """
         Подбирает параметры α и β:
@@ -157,6 +192,16 @@ class Fitter:
         """
         D = np.array([e.dose_sum for e in self.experiments])
         y = np.array([e.sf for e in self.experiments])
+
+        if len(self.experiments) == 2:
+            a, abratio = self.fit_abratio4pair(1.0, 30.0, 20)
+            return a, 1. / (abratio / a)
+
+        print(D)
+        print(y, y[0]/y[1])
+
+        for i, e in enumerate(self.experiments):
+            print("BED for regimen %d: " % (i, ), self._BED_fit_function(e.fractions, 10.0))
 
         if self.alpha_fixed is not None:
             y_log = -np.log(y)
@@ -174,14 +219,21 @@ class Fitter:
 
         return alpha, beta
 
+    def _BED_fit_function(self, doses: np.array[float], abratio: float = 3.0):
+        d0 = np.sum(doses)
+        d1_1 = np.pow(doses, 2)
+        d1 = np.sum(d1_1)
+        ret = d0 + d1 / abratio
+        return ret
+
     def report(self, alpha: float, beta: float):
         """Выводит список экспериментов и результат подбора."""
         print("\n# Отобранные эксперименты:")
         for e in self.experiments:
             print(e.report())
         print("\n===== FIT RESULT =====")
-        print(f"alpha (Gy^-1): {alpha:.4f}")
-        print(f"beta  (Gy^-2): {beta:.5f}")
+        print(f"alpha (Gy^-1): {alpha:.5f}")
+        print(f"beta  (Gy^-2): {beta:.6f}")
         if beta > 0:
             print(f"alpha/beta   : {alpha/beta:.2f} Gy")
         print("=======================")
