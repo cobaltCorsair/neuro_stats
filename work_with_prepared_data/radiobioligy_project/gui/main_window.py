@@ -140,7 +140,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_5.clicked.connect(self.handle_compare_tumor_growth_inhibition)
         self.pushButton_6.clicked.connect(self.handle_tumor_growth_inhibition_table)
         self.pushButton_7.clicked.connect(self.handle_compare_with_control)
-        self.pushButton_8.clicked.connect(self.handle_compare_skin_reactions)
         self.pushButton_4.clicked.connect(self.handle_pushButton_4)
         self.pushButton_8.clicked.connect(self.handle_pushButton_8)
         # Подключение сигнала изменения выбора комбобокса к обработчику
@@ -565,10 +564,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         selected_paths = self.get_selected_experiments()
         oneExperimentSelected = len(selected_paths) >= 2
         anyCheckboxChecked = self.checkBox_3.isChecked() and self.checkBox_6.isChecked()
-        # Проверяем, что во всех выбранных путях отсутствует "skin_reactions"
-        allPathsValid = all("skin_reactions" in path for path in selected_paths)
-        self.pushButton_4.setEnabled(oneExperimentSelected and anyCheckboxChecked and allPathsValid)
-        self.pushButton_8.setEnabled(oneExperimentSelected and anyCheckboxChecked and allPathsValid)
+        all_skin = all("skin_reactions" in path for path in selected_paths)
+        all_tumor = all("skin_reactions" not in path for path in selected_paths)
+        self.pushButton_4.setEnabled(oneExperimentSelected and anyCheckboxChecked and all_skin)
+        self.pushButton_8.setEnabled(oneExperimentSelected and anyCheckboxChecked and (all_skin or all_tumor))
 
     def update_fifth_button_state(self):
         """
@@ -798,7 +797,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.create_graphic()
 
     def handle_pushButton_8(self):
-        self.current_plot_type = 'auc_comparison'
+        selected_paths = self.get_selected_experiments()
+        if len(selected_paths) < 2:
+            print("Необходимо выбрать два или более экспериментов")
+            return
+
+        all_skin = all("skin_reactions" in p for p in selected_paths)
+        all_tumor = all("skin_reactions" not in p for p in selected_paths)
+
+        if all_skin:
+            self.current_visualizer = SkinReactionsVisualizer
+            self.current_plot_type = 'auc_comparison'
+        elif all_tumor:
+            self.current_visualizer = TumorDataVisualizer
+            self.current_plot_type = 'tumor_auc_comparison'
+        else:
+            print("Выберите данные одного типа: skin_reactions или опухоли")
+            return
+
+        self.current_selected_paths = selected_paths
+        self.current_plotting_func = None
+        self.current_control = None
         self.create_graphic()
 
     def draw_graphic(self, selected_paths, visualizer, plotting_func, current_control=None):
