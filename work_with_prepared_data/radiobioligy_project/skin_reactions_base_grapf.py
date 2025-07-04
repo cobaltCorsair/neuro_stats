@@ -2,13 +2,12 @@
 
 import os
 import numpy as np
+from typing import List
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from typing import List
-import pandas as pd  # Добавим для обработки данных
-from scipy.interpolate import interp1d
-from scipy.stats import mannwhitneyu
-
+import seaborn as sns
+import math
+import pandas as pd
 from utils.plotting_helpers import format_experiment_params, MatplotlibConfigurator, custom_fill_between
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
@@ -234,24 +233,13 @@ class SkinReactionsVisualizer:
         Returns:
             Ничего не возвращает. Результатом является отображение и сохранение столбчатого графика.
         """
-        import matplotlib.patches as mpatches
-        import matplotlib.pyplot as plt
-        import math
 
-        # Инициализация объекта GraphVisualizer
-        drawgraph = GraphVisualizer(
-            title=title,
-            x_label=x_label,
-            y_label=y_label,
-            figsize=(12, 8)  # Увеличенный размер для улучшенной читаемости
-        )
+        sns.set_theme(style="whitegrid")
 
         # Подготовка данных для AUC каждого эксперимента
         auc_values = []
         labels = []
-        colors = plt.cm.Set3(range(len(file_paths)))  # Применяем более эстетичную палитру Set3
-
-        # Определяем общие временные точки, такие же как в plot_multiple_experiments
+        colors = sns.color_palette("Set3", n_colors=len(file_paths))
         common_timepoints = list(range(0, 25))
 
         for file_path, color in zip(file_paths, colors):
@@ -259,49 +247,62 @@ class SkinReactionsVisualizer:
 
             try:
                 mean_reactions, std_dev, _ = visualizer.data_processor.get_mean_skin_reactions()
-
-                # Интерполируем данные на общие временные точки
-                interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(visualizer.time_data,
-                                                                                                mean_reactions,
-                                                                                                common_timepoints)
-                # Вычисляем AUC с использованием интерполированных значений
+                interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(
+                    visualizer.time_data,
+                    mean_reactions,
+                    common_timepoints
+                )
                 auc = SupportingFunctions.calculate_auc(interpolated_values, common_timepoints)
                 auc_values.append(auc)
 
                 # Получаем более подробную метку эксперимента
                 experiment_label = format_experiment_params(visualizer.experiment_params)
-                labels.append((experiment_label, color))
+                labels.append(experiment_label)
             except ValueError as e:
                 print(f"Ошибка при обработке файла {file_path}: {e}")
                 continue
 
-        # Настройка фигуры
-        drawgraph.setup_figure()
+        df = pd.DataFrame({
+            "AUC": auc_values,
+            "Эксперимент": labels,
+            "Цвет": colors
+        })
 
-        # Построение столбиков
-        x_positions = range(len(auc_values))
-        plt.bar(x_positions, auc_values, color=[c for _, c in labels], edgecolor='black', width=0.6)
+        plt.figure(figsize=(12, 8))
+        bar = sns.barplot(
+            data=df,
+            x="Эксперимент",
+            y="AUC",
+            palette=colors,
+            edgecolor="black"
+        )
+        bar.set_title(title, fontsize=16)
+        bar.set_xlabel(x_label, fontsize=14)
+        bar.set_ylabel(y_label, fontsize=14)
+        bar.set_xticklabels([])
 
-        # Настройка осей
-        plt.xticks([])  # Убираем метки на оси X
-        plt.xlabel(x_label, fontsize=14)
-        plt.ylabel(y_label, fontsize=14)
-
-        # Отображение значений над столбиками
+        ylim = bar.get_ylim()
+        y_max = max(ylim[1], max(auc_values) * 1.15)
+        bar.set_ylim(ylim[0], y_max)
         for i, v in enumerate(auc_values):
-            plt.text(i, v + 0.1, f"{v:.2f}", ha='center', va='bottom', fontsize=12)
+            offset = 0.03 * (y_max - ylim[0])
+            y_text = v + offset
+            if y_text > y_max:
+                y_text = v - offset
+                va = 'top'
+                color = 'white'
+            else:
+                va = 'bottom'
+                color = 'black'
+            bar.text(i, y_text, f"{v:.2f}", ha='center', va=va, fontsize=12, fontweight='bold', color=color)
 
-        # Расчет количества колонок для легенды
+        legend_patches = [mpatches.Patch(color=col, label=lab) for lab, col in zip(labels, colors)]
         ncol = math.ceil(len(labels) / 2) if len(labels) > 4 else len(labels)
+        bar.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+                   ncol=ncol, fontsize=12, frameon=False)
 
-        # Создание легенды с увеличенным шрифтом и эстетичными цветами
-        legend_patches = [mpatches.Patch(color=color, label=label) for label, color in labels]
-        plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=ncol, fontsize=12,
-                   frameon=False)
-
-        # Финализация графика
-        plt.title(title, fontsize=16)
-        drawgraph.finalize_figure("auc_comparison_plot.png")
+        plt.tight_layout()
+        # plt.savefig("auc_comparison_plot.png")
 
 
 if __name__ == '__main__':
