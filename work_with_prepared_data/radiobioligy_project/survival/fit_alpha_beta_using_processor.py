@@ -120,34 +120,95 @@ class Fitter:
         self.alpha_fixed = alpha_fixed
         self.verbose = verbose
         self.experiments: List[TumorExperiment] = []
+        self.controls: List[np.ndarray] = []  # кривые control-группы
+        self.control_curve: Optional[np.ndarray] = None  # средняя по всем control
 
     def load_file(self, path: Path):
-        """Загружает файл, извлекает фракции и SF, фильтрует."""
+        """
+        Загружает один Excel-файл, нормирует кривую опухоли на контроль
+        и рассчитывает SF.  Control-файлы сюда НЕ попадают — их уже
+        обработал collect(), но на всякий случай проверяем.
+        """
+        # 1) читаем Excel
         params, _, _, volumes = process_tumor_data_excel(str(path))
+        mean_abs = TumorDataProcessor(
+            np.array(volumes, dtype=float)
+        ).get_mean_tumor_volumes()
+
+        # 2) если это контроль – просто игнорируем (дубликат защиты)
+        if "control" in path.stem.lower():
+            if self.verbose:
+                print(f"◎ {path.name}: пропущен (контроль уже учтён)")
+            return
+
+        # 3) нормировка на контрольную кривую
+        if self.control_curve is None:
+            raise RuntimeError("CONTROL-кривая ещё не подготовлена. "
+                               "Сначала вызовите collect().")
+
+        n = min(len(mean_abs), len(self.control_curve))  # выравниваем длины
+        mean_norm = mean_abs[:n] / self.control_curve[:n]  # V_norm(t)
+
+        # 4) парсим дозы
         fracs = parse_fractions(params)
         if not fracs:
             if self.verbose:
-                print(f"⚠️  {path.name}: дозы не распознаны")
+                print(f"⚠️  {path.name}: дозы не распознаны — файл пропущен")
             return
-        tdp = TumorDataProcessor(np.array(volumes, dtype=float))
-        mean_abs = tdp.get_mean_tumor_volumes()
-        sf = compute_sf(mean_abs, self.sf_mode)
+
+        # 5) считаем SF и фильтруем
+        sf = compute_sf(mean_norm, self.sf_mode)
         if sf >= self.min_sf:
             if self.verbose:
                 print(f"ℹ️  {path.name}: SF={sf:.2f} ≥ {self.min_sf} → skip")
             return
+
+        # 6) добавляем эксперимент
         self.experiments.append(TumorExperiment(path, fracs, sf))
         if self.verbose:
             print(f"✓ {path.name}: fractions={fracs}, SF={sf:.4f}")
 
     def collect(self, files: List[Path]):
-        """Собирает эксперименты из файлов и удаляет дубликаты."""
+        """
+        Двух-проходная загрузка:
+        ① собираем все control-файлы → строим среднюю кривую self.control_curve
+        ② загружаем остальные Excel-файлы с уже готовой нормировкой
+        """
+        # --- разделяем файлы на control / остальные -----------------
+        controls, others = [], []
         for p in files:
+            (controls if "control" in p.stem.lower() else others).append(p)
+
+        # ---------- PASS 1 — контроли --------------------------------
+        for p in controls:
+            _, _, _, volumes = process_tumor_data_excel(str(p))
+            mean_abs = TumorDataProcessor(np.array(volumes, dtype=float)).get_mean_tumor_volumes()
+            self.controls.append(mean_abs)
+            if self.verbose:
+                print(f"◎ {p.name}: зарегистрирован как CONTROL")
+
+        if not self.controls:
+            raise RuntimeError("Не найдено ни одного control-файла; "
+                               "нормировка на контроль невозможна.")
+
+        # усредняем контрольные кривые (выравниваем NaN-паддингом)
+        max_len = max(len(c) for c in self.controls)
+        pads = [np.pad(c, (0, max_len - len(c)), constant_values=np.nan)
+                for c in self.controls]
+        self.control_curve = np.nanmean(pads, axis=0)
+        if self.verbose:
+            print("◎ CONTROL curve prepared:", self.control_curve[:5], "...")
+
+        # ---------- PASS 2 — экспериментальные файлы -----------------
+        for p in others:
             self.load_file(p)
+
+        # дубликаты по (ΣD, ΣD²)
         uniq: Dict[Tuple[float, float], TumorExperiment] = {}
         for e in self.experiments:
             uniq.setdefault((e.dose_sum, e.dose2_sum), e)
         self.experiments = list(uniq.values())
+
 
     def fit_abratio4pair(self, min_abratio: float, max_abratio: float, steps: int):
         regimens_list = []
