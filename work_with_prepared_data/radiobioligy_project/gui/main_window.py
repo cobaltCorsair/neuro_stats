@@ -833,6 +833,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC, self.perform_stat_test)
                 elif self.current_plot_type == 'auc_comparison':
                     SkinReactionsVisualizer.plot_auc_comparison(self.current_selected_paths)
+            elif isinstance(visualizer, TumorDataVisualizer) and len(self.current_selected_paths) > 1 and self.current_plot_type == 'tumor_auc_comparison':
+                TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths)
             else:
                 # Для других случаев, когда используется один файл или другие типы визуализаторов
                 if self.current_control is not None and plotting_func == TumorDataComparatorAdvanced.compare_control_and_experiment:

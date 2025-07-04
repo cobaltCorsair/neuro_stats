@@ -2,6 +2,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import List
 
 from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions, ExtractOutliers
@@ -262,6 +263,79 @@ class TumorDataVisualizer:
                            error_margin_rel_mean)
 
         drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_mean_relative_mean_volumes")
+
+    @staticmethod
+    def plot_auc_comparison(file_paths: List[str],
+                             title="Сравнение AUC объёмов опухоли",
+                             x_label="",
+                             y_label="AUC (абс. ед.)"):
+        """Построение столбчатого графика для сравнения площади под кривой
+        объёмов опухоли между экспериментами.
+
+        Args:
+            file_paths: Пути к файлам с данными экспериментов.
+            title: Заголовок графика.
+            x_label: Подпись оси X.
+            y_label: Подпись оси Y.
+        """
+        import matplotlib.patches as mpatches
+        import matplotlib.pyplot as plt
+        import math
+
+        drawgraph = GraphVisualizer(
+            title=title,
+            x_label=x_label,
+            y_label=y_label,
+            figsize=(12, 8)
+        )
+
+        auc_values = []
+        labels = []
+        colors = plt.cm.Set3(range(len(file_paths)))
+
+        common_timepoints = list(range(0, 25))
+
+        for file_path, color in zip(file_paths, colors):
+            visualizer = TumorDataVisualizer(file_path)
+
+            try:
+                mean_volumes = visualizer.data_processor.get_mean_tumor_volumes()
+
+                interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(
+                    visualizer.time_data,
+                    mean_volumes,
+                    common_timepoints
+                )
+
+                auc = SupportingFunctions.calculate_auc(interpolated_values, common_timepoints)
+                auc_values.append(auc)
+
+                experiment_label = format_experiment_params(visualizer.experiment_params)
+                labels.append((experiment_label, color))
+            except ValueError as e:
+                print(f"Ошибка при обработке файла {file_path}: {e}")
+                continue
+
+        drawgraph.setup_figure()
+
+        x_positions = range(len(auc_values))
+        plt.bar(x_positions, auc_values, color=[c for _, c in labels], edgecolor='black', width=0.6)
+
+        plt.xticks([])
+        plt.xlabel(x_label, fontsize=14)
+        plt.ylabel(y_label, fontsize=14)
+
+        for i, v in enumerate(auc_values):
+            plt.text(i, v + 0.1, f"{v:.2f}", ha='center', va='bottom', fontsize=12)
+
+        ncol = math.ceil(len(labels) / 2) if len(labels) > 4 else len(labels)
+
+        legend_patches = [mpatches.Patch(color=color, label=label) for label, color in labels]
+        plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+                   ncol=ncol, fontsize=12, frameon=False)
+
+        plt.title(title, fontsize=16)
+        drawgraph.finalize_figure("tumor_auc_comparison_plot.png")
 
 
 
