@@ -325,7 +325,7 @@ class Ui_MainWindow(object):
         self.pushButton_2.setText(_translate("MainWindow", "Кожные реакции в группе"))
         self.pushButton_3.setText(_translate("MainWindow", "Сравнение объёмов по нескольким группам"))
         self.pushButton_4.setText(_translate("MainWindow", "Сравнение кожных реакций по нескольким группам"))
-        self.pushButton_8.setText(_translate("MainWindow", "Сравнение площадей под кривой для кожных реакций"))
+        self.pushButton_8.setText(_translate("MainWindow", "Сравнение площадей под кривой"))
         self.pushButton_5.setText(_translate("MainWindow", "Торможение роста опухоли"))
         self.pushButton_6.setText(_translate("MainWindow", "Таблица торможения объёмов опухоли"))
         self.pushButton_7.setText(_translate("MainWindow", "Сравнение с контрольной группой"))
