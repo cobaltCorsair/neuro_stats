@@ -891,7 +891,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             plotting_func (function): Функция визуализатора для генерации графика.
 
         """
-        if not self.current_visualizer or not self.current_plotting_func:
+        # Для сравнения AUC (кожные реакции или объёмы опухоли) график строится
+        # через статический метод, поэтому self.current_plotting_func может быть
+        # None. В остальных случаях эта функция должна быть задана.
+        if not self.current_visualizer or (
+            self.current_plotting_func is None
+            and self.current_plot_type not in [
+                'auc_comparison',
+                'tumor_auc_comparison',
+            ]
+        ):
             return  # Ничего не делаем, если параметры не заданы
 
         # Очищаем layout, если он уже существует
