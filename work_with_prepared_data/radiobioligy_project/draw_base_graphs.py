@@ -284,81 +284,80 @@ class TumorDataVisualizer:
             y_label: Подпись оси Y.
         """
 
-        # Применяем современный стиль seaborn
-        sns.set_theme(style="whitegrid")
+        # Применяем современный стиль seaborn только локально
+        with sns.axes_style("whitegrid"):
+            auc_values = []
+            labels = []
+            colors = sns.color_palette("Set3", n_colors=len(file_paths))
+            common_timepoints = list(range(0, 25))
 
-        auc_values = []
-        labels = []
-        colors = sns.color_palette("Set3", n_colors=len(file_paths))
-        common_timepoints = list(range(0, 25))
+            for file_path, color in zip(file_paths, colors):
+                visualizer = TumorDataVisualizer(file_path)
 
-        for file_path, color in zip(file_paths, colors):
-            visualizer = TumorDataVisualizer(file_path)
+                try:
+                    mean_volumes = visualizer.data_processor.get_mean_tumor_volumes()
 
-            try:
-                mean_volumes = visualizer.data_processor.get_mean_tumor_volumes()
+                    interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(
+                        visualizer.time_data,
+                        mean_volumes,
+                        common_timepoints
+                    )
 
-                interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(
-                    visualizer.time_data,
-                    mean_volumes,
-                    common_timepoints
-                )
+                    auc = SupportingFunctions.calculate_auc(interpolated_values, common_timepoints)
+                    auc_values.append(auc)
 
-                auc = SupportingFunctions.calculate_auc(interpolated_values, common_timepoints)
-                auc_values.append(auc)
+                    experiment_label = format_experiment_params(visualizer.experiment_params)
+                    labels.append(experiment_label)
+                except ValueError as e:
+                    print(f"Ошибка при обработке файла {file_path}: {e}")
+                    continue
 
-                experiment_label = format_experiment_params(visualizer.experiment_params)
-                labels.append(experiment_label)
-            except ValueError as e:
-                print(f"Ошибка при обработке файла {file_path}: {e}")
-                continue
+            # Создаём DataFrame для seaborn
+            df = pd.DataFrame({
+                "AUC": auc_values,
+                "Эксперимент": labels,
+                "Цвет": colors
+            })
 
-        # Создаём DataFrame для seaborn
-        df = pd.DataFrame({
-            "AUC": auc_values,
-            "Эксперимент": labels,
-            "Цвет": colors
-        })
+            plt.figure(figsize=(12, 8))
+            bar = sns.barplot(
+                data=df,
+                x="Эксперимент",
+                y="AUC",
+                palette=colors,
+                edgecolor="black"
+            )
+            bar.set_title(title, fontsize=16)
+            bar.set_xlabel(x_label, fontsize=14)
+            bar.set_ylabel(y_label, fontsize=14)
+            # Убираем подписи по оси X, чтобы не дублировать легенду
+            bar.set_xticklabels([])
 
-        plt.figure(figsize=(12, 8))
-        bar = sns.barplot(
-            data=df,
-            x="Эксперимент",
-            y="AUC",
-            palette=colors,
-            edgecolor="black"
-        )
-        bar.set_title(title, fontsize=16)
-        bar.set_xlabel(x_label, fontsize=14)
-        bar.set_ylabel(y_label, fontsize=14)
-        # Убираем подписи по оси X, чтобы не дублировать легенду
-        bar.set_xticklabels([])
+            # Добавляем подписи над столбиками, чтобы не выходили за пределы
+            ylim = bar.get_ylim()
+            y_max = max(ylim[1], max(auc_values) * 1.15)
+            bar.set_ylim(ylim[0], y_max)
+            for i, v in enumerate(auc_values):
+                offset = 0.03 * (y_max - ylim[0])
+                y_text = v + offset
+                # Если подпись выходит за пределы, размещаем внутри столбика
+                if y_text > y_max:
+                    y_text = v - offset
+                    va = 'top'
+                    color = 'white'
+                else:
+                    va = 'bottom'
+                    color = 'black'
+                bar.text(i, y_text, f"{v:.2f}", ha='center', va=va, fontsize=12, fontweight='bold', color=color)
 
-        # Добавляем подписи над столбиками, чтобы не выходили за пределы
-        ylim = bar.get_ylim()
-        y_max = max(ylim[1], max(auc_values) * 1.15)
-        bar.set_ylim(ylim[0], y_max)
-        for i, v in enumerate(auc_values):
-            offset = 0.03 * (y_max - ylim[0])
-            y_text = v + offset
-            # Если подпись выходит за пределы, размещаем внутри столбика
-            if y_text > y_max:
-                y_text = v - offset
-                va = 'top'
-                color = 'white'
-            else:
-                va = 'bottom'
-                color = 'black'
-            bar.text(i, y_text, f"{v:.2f}", ha='center', va=va, fontsize=12, fontweight='bold', color=color)
+            # Легенда
+            legend_patches = [mpatches.Patch(color=col, label=lab) for lab, col in zip(labels, colors)]
+            ncol = math.ceil(len(labels) / 2) if len(labels) > 4 else len(labels)
+            bar.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+                       ncol=ncol, fontsize=12, frameon=False)
 
-        # Легенда
-        legend_patches = [mpatches.Patch(color=col, label=lab) for lab, col in zip(labels, colors)]
-        ncol = math.ceil(len(labels) / 2) if len(labels) > 4 else len(labels)
-        bar.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
-                   ncol=ncol, fontsize=12, frameon=False)
-
-        plt.tight_layout()
-        # plt.savefig("tumor_auc_comparison_plot.png")
+            plt.tight_layout()
+            # plt.savefig("tumor_auc_comparison_plot.png")
 
 
 
