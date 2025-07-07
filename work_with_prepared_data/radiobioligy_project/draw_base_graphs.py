@@ -7,6 +7,7 @@ import matplotlib.patches as mpatches
 import seaborn as sns
 import math
 import pandas as pd
+import re
 
 from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions, ExtractOutliers
@@ -283,79 +284,60 @@ class TumorDataVisualizer:
             x_label: Подпись оси X.
             y_label: Подпись оси Y.
         """
-
-        # Применяем современный стиль seaborn только локально
         with sns.axes_style("whitegrid"):
+            def extract_total_dose(experiment_params):
+                total = 0.0
+                for p in experiment_params:
+                    if '=' in p and ('Гр' in p or 'Gy' in p or 'гр' in p or 'gy' in p):
+                        try:
+                            value = re.findall(r'[-+]?\d*\.\d+|\d+', p)
+                            if value:
+                                total += float(value[0].replace(',', '.'))
+                        except Exception:
+                            continue
+                return total if total > 0 else None
+            doses = []
+            aucs_for_fit = []
+            labels_for_legend = []
             auc_values = []
-            labels = []
             colors = sns.color_palette("Set3", n_colors=len(file_paths))
-            common_timepoints = list(range(0, 25))
-
             for file_path, color in zip(file_paths, colors):
                 visualizer = TumorDataVisualizer(file_path)
-
                 try:
                     mean_volumes = visualizer.data_processor.get_mean_tumor_volumes()
-
                     interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(
                         visualizer.time_data,
                         mean_volumes,
-                        common_timepoints
+                        list(range(0, 25))
                     )
-
-                    auc = SupportingFunctions.calculate_auc(interpolated_values, common_timepoints)
+                    auc = SupportingFunctions.calculate_auc(interpolated_values, list(range(0, 25)))
                     auc_values.append(auc)
-
                     experiment_label = format_experiment_params(visualizer.experiment_params)
-                    labels.append(experiment_label)
+                    labels_for_legend.append(experiment_label)
+                    dose = extract_total_dose(visualizer.experiment_params)
+                    if dose is not None:
+                        doses.append(dose)
+                        aucs_for_fit.append(auc)
                 except ValueError as e:
                     print(f"Ошибка при обработке файла {file_path}: {e}")
                     continue
-
-            # Создаём DataFrame для seaborn
-            df = pd.DataFrame({
-                "AUC": auc_values,
-                "Эксперимент": labels,
-                "Цвет": colors
-            })
-
+            # --- Barplot по числовой оси X (doses) ---
             plt.figure(figsize=(12, 8))
-            bar = sns.barplot(
-                data=df,
-                x="Эксперимент",
-                y="AUC",
-                palette=colors,
-                edgecolor="black"
-            )
-            bar.set_title(title, fontsize=16)
-            bar.set_xlabel(x_label, fontsize=14)
-            bar.set_ylabel(y_label, fontsize=14)
-            # Убираем подписи по оси X, чтобы не дублировать легенду
-            bar.set_xticklabels([])
-
-            # Добавляем подписи над столбиками, чтобы не выходили за пределы
-            ylim = bar.get_ylim()
-            y_max = max(ylim[1], max(auc_values) * 1.15)
-            bar.set_ylim(ylim[0], y_max)
-            for i, v in enumerate(auc_values):
-                offset = 0.03 * (y_max - ylim[0])
-                y_text = v + offset
-                # Если подпись выходит за пределы, размещаем внутри столбика
-                if y_text > y_max:
-                    y_text = v - offset
-                    va = 'top'
-                    color = 'white'
-                else:
-                    va = 'bottom'
-                    color = 'black'
-                bar.text(i, y_text, f"{v:.2f}", ha='center', va=va, fontsize=12, fontweight='bold', color=color)
-
-            # Легенда
-            legend_patches = [mpatches.Patch(color=col, label=lab) for lab, col in zip(labels, colors)]
-            ncol = math.ceil(len(labels) / 2) if len(labels) > 4 else len(labels)
-            bar.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+            bar_width = 2.5 if len(doses) < 10 else 0.8
+            bars = plt.bar(doses, aucs_for_fit, width=bar_width, color=colors[:len(doses)], edgecolor="black", zorder=2)
+            plt.xlabel("Суммарная доза, Гр", fontsize=14)
+            plt.ylabel(y_label, fontsize=14)
+            plt.title(title, fontsize=16)
+            # Подписи над столбиками
+            for i, (bar, auc) in enumerate(zip(bars, aucs_for_fit)):
+                plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, f"{auc:.2f}", ha='center', va='bottom', fontsize=12, fontweight='bold', color='black')
+            # Подписи с дозами на тиках оси X
+            plt.xticks(doses, [str(d) for d in doses], fontsize=12)
+            # Легенда как раньше
+            legend_patches = [mpatches.Patch(color=col, label=lab) for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
+            ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
+            plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
                        ncol=ncol, fontsize=12, frameon=False)
-
             plt.tight_layout()
             # plt.savefig("tumor_auc_comparison_plot.png")
 
