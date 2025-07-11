@@ -13,10 +13,10 @@ from work_with_prepared_data.radiobioligy_project.controls import ControlGroupVi
 from work_with_prepared_data.radiobioligy_project.data_processing.rat_manager import register_rat_labels, \
     get_rat_labels, clear_rat_labels, rat_labels_with_indices
 from work_with_prepared_data.radiobioligy_project.draw_abs_rel_graph_compare import TumorDataComparatorAdvanced
-from work_with_prepared_data.radiobioligy_project.draw_base_graphs import TumorDataVisualizer, plot_auc_comparison_absolute_tumor, plot_auc_comparison_relative_tumor
+from work_with_prepared_data.radiobioligy_project.draw_base_graphs import TumorDataVisualizer
 from work_with_prepared_data.radiobioligy_project.draw_base_graphs_compare import TumorDataComparator
 from work_with_prepared_data.radiobioligy_project.gui import graph_manager
-from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf import SkinReactionsVisualizer, plot_auc_comparison_absolute_skin, plot_auc_comparison_relative_skin
+from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf import SkinReactionsVisualizer
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import ExtractOutliers
 from work_with_prepared_data.radiobioligy_project.gui.checkable_combobox import CheckableComboBox
 
@@ -40,10 +40,6 @@ class DataProcessor:
             plotting_func = TumorDataVisualizer.plot_mean_tumor_volume
         elif checkboxes_state == (False, True, False, True):
             plotting_func = TumorDataVisualizer.plot_average_relative_tumor_volume
-        elif checkboxes_state == (True, True, False, False):
-            plotting_func = plot_auc_comparison_absolute_tumor
-        elif checkboxes_state == (False, True, False, True):
-            plotting_func = plot_auc_comparison_relative_tumor
         else:
             raise ValueError("Invalid checkbox state")
         return plotting_func, selected_path
@@ -55,10 +51,6 @@ class DataProcessor:
             plotting_func = SkinReactionsVisualizer.plot_mean_skin_reactions
         elif checkboxes_state == (True, False, False, True) and all("skin_reactions" in path for path in selected_path):
             plotting_func = SkinReactionsVisualizer.plot_multiple_experiments
-        elif checkboxes_state == (True, True, False, False) and "skin_reactions" in selected_path:
-            plotting_func = plot_auc_comparison_absolute_skin
-        elif checkboxes_state == (False, True, False, True) and "skin_reactions" in selected_path:
-            plotting_func = plot_auc_comparison_relative_skin
         else:
             raise ValueError("Invalid checkbox state or name")
         return plotting_func, selected_path
@@ -571,10 +563,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def update_fourth_button_state(self):
         selected_paths = self.get_selected_experiments()
         oneExperimentSelected = len(selected_paths) >= 2
-        # Кнопка активна если выбраны либо (абсолютные/средние), либо (относительные/средние)
-        abs_and_mean = self.checkBox_3.isChecked() and self.checkBox_6.isChecked()
-        rel_and_mean = self.checkBox_4.isChecked() and self.checkBox_6.isChecked()
-        anyCheckboxChecked = abs_and_mean or rel_and_mean
+        anyCheckboxChecked = self.checkBox_3.isChecked() and self.checkBox_6.isChecked()
         all_skin = all("skin_reactions" in path for path in selected_paths)
         all_tumor = all("skin_reactions" not in path for path in selected_paths)
         self.pushButton_4.setEnabled(oneExperimentSelected and anyCheckboxChecked and all_skin)
