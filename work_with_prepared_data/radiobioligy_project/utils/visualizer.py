@@ -608,22 +608,28 @@ def plot_group_auc_barplot(
         try:
             data_matrix = get_data_matrix_func(visualizer)
             time_data = get_time_data_func(visualizer)
+
             aucs_individual = []
             for curve in data_matrix:
+                curve_processed = np.array(curve, dtype=float)
                 if relative:
-                    curve = np.array(curve) / curve[0] if curve[0] != 0 else np.array(curve)
-                interpolated = SupportingFunctions.interpolate_data_to_common_timepoints(
-                    time_data, curve, list(range(0, 25))
-                )
-                aucs_individual.append(SupportingFunctions.calculate_auc(interpolated, list(range(0, 25))))
+                    curve_processed = curve_processed / curve_processed[0] if curve_processed[0] != 0 else curve_processed
+                aucs_individual.append(SupportingFunctions.calculate_auc(curve_processed, time_data))
+
             aucs_individual = np.array(aucs_individual)
-            auc_mean = np.mean(aucs_individual)
+
+            mean_curve = np.nanmean(data_matrix, axis=0)
+            if relative:
+                mean_curve = mean_curve / mean_curve[0] if mean_curve[0] != 0 else mean_curve
+
+            auc_value = SupportingFunctions.calculate_auc(mean_curve, time_data)
             auc_sem = np.std(aucs_individual, ddof=1) / np.sqrt(len(aucs_individual))
+
             labels_for_legend.append(extract_label_func(visualizer))
             dose = extract_dose_func(visualizer)
             if dose is not None:
                 doses.append(dose)
-                aucs_for_fit.append(auc_mean)
+                aucs_for_fit.append(auc_value)
                 errors_for_fit.append(auc_sem)
         except Exception as e:
             print(f"Ошибка при обработке файла {file_path}: {e}")
