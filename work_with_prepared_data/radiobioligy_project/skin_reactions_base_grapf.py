@@ -12,7 +12,7 @@ from utils.plotting_helpers import format_experiment_params, MatplotlibConfigura
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
 from data_processing.data_processing import SkinReactionsDataProcessor
-from utils.visualizer import GraphVisualizer
+from utils.visualizer import GraphVisualizer, plot_group_auc_barplot
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -304,6 +304,62 @@ class SkinReactionsVisualizer:
                 y_text = bar.get_height() - err - 0.03 * max(aucs_for_fit)
                 y_text = max(0, y_text)
                 plt.text(bar.get_x() + bar.get_width()/2, y_text, f"{auc:.2f}", ha='center', va='top', fontsize=12, fontweight='bold', color='black')
+
+
+def plot_auc_comparison_absolute_skin(file_paths, title="Сравнение AUC кожных реакций (абс.)", x_label="Суммарная доза, Гр", y_label="AUC (усл. ед.)"):
+    from utils.plotting_helpers import format_experiment_params
+    import re
+    def extract_total_dose(experiment_params):
+        total = 0.0
+        for p in experiment_params:
+            if '=' in p and ('Гр' in p or 'Gy' in p or 'гр' in p or 'gy' in p):
+                try:
+                    value = re.findall(r'[-+]?\d*\.\d+|\d+', p)
+                    if value:
+                        total += float(value[0].replace(',', '.'))
+                except Exception:
+                    continue
+        return total if total > 0 else None
+    plot_group_auc_barplot(
+        file_paths,
+        SkinReactionsVisualizer,
+        lambda vis: vis.skin_reactions,
+        lambda vis: vis.time_data,
+        lambda vis: format_experiment_params(vis.experiment_params),
+        lambda vis: extract_total_dose(vis.experiment_params),
+        title=title,
+        y_label=y_label,
+        x_label=x_label,
+        relative=False
+    )
+
+
+def plot_auc_comparison_relative_skin(file_paths, title="Сравнение AUC кожных реакций (отн.)", x_label="Суммарная доза, Гр", y_label="AUC (отн. ед.)"):
+    from utils.plotting_helpers import format_experiment_params
+    import re
+    def extract_total_dose(experiment_params):
+        total = 0.0
+        for p in experiment_params:
+            if '=' in p and ('Гр' in p or 'Gy' in p or 'гр' in p or 'gy' in p):
+                try:
+                    value = re.findall(r'[-+]?\d*\.\d+|\d+', p)
+                    if value:
+                        total += float(value[0].replace(',', '.'))
+                except Exception:
+                    continue
+        return total if total > 0 else None
+    plot_group_auc_barplot(
+        file_paths,
+        SkinReactionsVisualizer,
+        lambda vis: vis.skin_reactions, # если потребуется нормировка, добавить здесь
+        lambda vis: vis.time_data,
+        lambda vis: format_experiment_params(vis.experiment_params),
+        lambda vis: extract_total_dose(vis.experiment_params),
+        title=title,
+        y_label=y_label,
+        x_label=x_label,
+        relative=True
+    )
 
 
 if __name__ == '__main__':

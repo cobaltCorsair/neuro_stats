@@ -13,7 +13,7 @@ from utils.plotting_helpers import custom_fill_between, format_experiment_params
 from stats_methods.support_stats_methods import SupportingFunctions, ExtractOutliers
 from data_processing.excel_data_processor import process_tumor_data_excel
 from data_processing.data_processing import TumorDataProcessor
-from utils.visualizer import GraphVisualizer
+from utils.visualizer import GraphVisualizer, plot_group_auc_barplot
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -354,6 +354,60 @@ class TumorDataVisualizer:
             plt.tight_layout()
             # plt.savefig("tumor_auc_comparison_plot.png")
 
+
+def plot_auc_comparison_absolute_tumor(file_paths, title="Сравнение AUC объёмов опухоли (абс.)", x_label="Суммарная доза, Гр", y_label="AUC (абс. ед.)"):
+    from utils.plotting_helpers import format_experiment_params
+    import re
+    def extract_total_dose(experiment_params):
+        total = 0.0
+        for p in experiment_params:
+            if '=' in p and ('Гр' in p or 'Gy' in p or 'гр' in p or 'gy' in p):
+                try:
+                    value = re.findall(r'[-+]?\d*\.\d+|\d+', p)
+                    if value:
+                        total += float(value[0].replace(',', '.'))
+                except Exception:
+                    continue
+        return total if total > 0 else None
+    plot_group_auc_barplot(
+        file_paths,
+        TumorDataVisualizer,
+        lambda vis: vis.tumor_volumes,
+        lambda vis: vis.time_data,
+        lambda vis: format_experiment_params(vis.experiment_params),
+        lambda vis: extract_total_dose(vis.experiment_params),
+        title=title,
+        y_label=y_label,
+        x_label=x_label,
+        relative=False
+    )
+
+def plot_auc_comparison_relative_tumor(file_paths, title="Сравнение AUC объёмов опухоли (отн.)", x_label="Суммарная доза, Гр", y_label="AUC (отн. ед.)"):
+    from utils.plotting_helpers import format_experiment_params
+    import re
+    def extract_total_dose(experiment_params):
+        total = 0.0
+        for p in experiment_params:
+            if '=' in p and ('Гр' in p or 'Gy' in p or 'гр' in p or 'gy' in p):
+                try:
+                    value = re.findall(r'[-+]?\d*\.\d+|\d+', p)
+                    if value:
+                        total += float(value[0].replace(',', '.'))
+                except Exception:
+                    continue
+        return total if total > 0 else None
+    plot_group_auc_barplot(
+        file_paths,
+        TumorDataVisualizer,
+        lambda vis: vis.data_processor.get_relative_tumor_volumes(),
+        lambda vis: vis.time_data,
+        lambda vis: format_experiment_params(vis.experiment_params),
+        lambda vis: extract_total_dose(vis.experiment_params),
+        title=title,
+        y_label=y_label,
+        x_label=x_label,
+        relative=False # относительность уже учтена в данных
+    )
 
 
 if __name__ == '__main__':

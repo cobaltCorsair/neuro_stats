@@ -572,3 +572,77 @@ class GraphVisualizer:
         plt.tight_layout()
         save_plot(file_path, self.title)
         #plt.show()
+
+
+def plot_group_auc_barplot(
+    file_paths,
+    visualizer_class,
+    get_data_matrix_func,
+    get_time_data_func,
+    extract_label_func,
+    extract_dose_func,
+    title="Сравнение AUC",
+    y_label="AUC",
+    color_palette="Set3",
+    relative=False,
+    x_label="Суммарная доза, Гр"
+):
+    """
+    Универсальная функция для построения barplot сравнения AUC (с погрешностями) по группе экспериментов.
+    Поддерживает любые типы данных (опухоли/кожа, абсолютные/относительные).
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    import seaborn as sns
+    import numpy as np
+    import math
+
+    colors = sns.color_palette(color_palette, n_colors=len(file_paths))
+    doses = []
+    aucs_for_fit = []
+    errors_for_fit = []
+    labels_for_legend = []
+
+    for idx, (file_path, color) in enumerate(zip(file_paths, colors)):
+        visualizer = visualizer_class(file_path)
+        try:
+            data_matrix = get_data_matrix_func(visualizer)
+            time_data = get_time_data_func(visualizer)
+            aucs_individual = []
+            for curve in data_matrix:
+                if relative:
+                    curve = np.array(curve) / curve[0] if curve[0] != 0 else np.array(curve)
+                interpolated = SupportingFunctions.interpolate_data_to_common_timepoints(
+                    time_data, curve, list(range(0, 25))
+                )
+                aucs_individual.append(SupportingFunctions.calculate_auc(interpolated, list(range(0, 25))))
+            aucs_individual = np.array(aucs_individual)
+            auc_mean = np.mean(aucs_individual)
+            auc_sem = np.std(aucs_individual, ddof=1) / np.sqrt(len(aucs_individual))
+            labels_for_legend.append(extract_label_func(visualizer))
+            dose = extract_dose_func(visualizer)
+            if dose is not None:
+                doses.append(dose)
+                aucs_for_fit.append(auc_mean)
+                errors_for_fit.append(auc_sem)
+        except Exception as e:
+            print(f"Ошибка при обработке файла {file_path}: {e}")
+            continue
+    plt.figure(figsize=(12, 8))
+    bar_width = 2.5 if len(doses) < 10 else 0.8
+    bars = plt.bar(doses, aucs_for_fit, yerr=errors_for_fit, width=bar_width, color=colors[:len(doses)], edgecolor="black", zorder=2, capsize=8)
+    plt.xlabel(x_label, fontsize=14)
+    plt.ylabel(y_label, fontsize=14)
+    plt.title(title, fontsize=16)
+    plt.xticks(doses, [str(d) for d in doses], fontsize=12)
+    # Подписи под error bar
+    for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
+        y_text = bar.get_height() - err - 0.03 * max(aucs_for_fit)
+        y_text = max(0, y_text)
+        plt.text(bar.get_x() + bar.get_width()/2, y_text, f"{auc:.2f}", ha='center', va='top', fontsize=12, fontweight='bold', color='black')
+    legend_patches = [mpatches.Patch(color=col, label=lab) for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
+    ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
+    plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+               ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
+    plt.tight_layout()
+    # plt.savefig("group_auc_comparison_plot.png")
