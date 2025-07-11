@@ -249,48 +249,61 @@ class SkinReactionsVisualizer:
                 return total if total > 0 else None
             doses = []
             aucs_for_fit = []
+            errors_for_fit = []
             labels_for_legend = []
             auc_values = []
             colors = sns.color_palette("Set3", n_colors=len(file_paths))
             for file_path, color in zip(file_paths, colors):
                 visualizer = SkinReactionsVisualizer(file_path)
                 try:
-                    mean_reactions, std_dev, _ = visualizer.data_processor.get_mean_skin_reactions()
-                    interpolated_values = SupportingFunctions.interpolate_data_to_common_timepoints(
-                        visualizer.time_data,
-                        mean_reactions,
-                        list(range(0, 25))
-                    )
-                    auc = SupportingFunctions.calculate_auc(interpolated_values, list(range(0, 25)))
-                    auc_values.append(auc)
-                    experiment_label = format_experiment_params(visualizer.experiment_params)
-                    labels_for_legend.append(experiment_label)
+                    # Индивидуальные skin reactions по животным
+                    individual_skin_reactions = visualizer.skin_reactions
+                    time_data = np.array(visualizer.time_data, dtype=float)
+                    aucs_individual = []
+                    for reaction in individual_skin_reactions:
+                        interpolated = SupportingFunctions.interpolate_data_to_common_timepoints(
+                            time_data, reaction, list(range(0, 25))
+                        )
+                        aucs_individual.append(SupportingFunctions.calculate_auc(interpolated, list(range(0, 25))))
+                    aucs_individual = np.array(aucs_individual)
+                    auc_mean = np.mean(aucs_individual)
+                    auc_sem = np.std(aucs_individual, ddof=1) / np.sqrt(len(aucs_individual))
+                    auc_values.append(auc_mean)
+                    labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
                     dose = extract_total_dose(visualizer.experiment_params)
                     if dose is not None:
                         doses.append(dose)
-                        aucs_for_fit.append(auc)
+                        aucs_for_fit.append(auc_mean)
+                        errors_for_fit.append(auc_sem)
                 except ValueError as e:
                     print(f"Ошибка при обработке файла {file_path}: {e}")
                     continue
             # --- Barplot по числовой оси X (doses) ---
             plt.figure(figsize=(12, 8))
             bar_width = 2.5 if len(doses) < 10 else 0.8
-            bars = plt.bar(doses, aucs_for_fit, width=bar_width, color=colors[:len(doses)], edgecolor="black", zorder=2)
+            bars = plt.bar(doses, aucs_for_fit, yerr=errors_for_fit, width=bar_width, color=colors[:len(doses)], edgecolor="black", zorder=2, capsize=8)
             plt.xlabel("Суммарная доза, Гр", fontsize=14)
             plt.ylabel(y_label, fontsize=14)
             plt.title(title, fontsize=16)
             # Подписи над столбиками
-            for i, (bar, auc) in enumerate(zip(bars, aucs_for_fit)):
-                plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, f"{auc:.2f}", ha='center', va='bottom', fontsize=12, fontweight='bold', color='black')
+            # Удаляю старую подпись над столбиком (оставляю только под error bar)
+            # for i, (bar, auc) in enumerate(zip(bars, aucs_for_fit)):
+            #     plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, f"{auc:.2f}", ha='center', va='bottom', fontsize=12, fontweight='bold', color='black')
             # Подписи с дозами на тиках оси X
             plt.xticks(doses, [str(d) for d in doses], fontsize=12)
             # Легенда как раньше
             legend_patches = [mpatches.Patch(color=col, label=lab) for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
             ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
             plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
-                       ncol=ncol, fontsize=12, frameon=False)
+                       ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
             plt.tight_layout()
             # plt.savefig("auc_comparison_plot.png")
+
+            # Подписи под error bar
+            for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
+                y_text = bar.get_height() - err - 0.03 * max(aucs_for_fit)
+                y_text = max(0, y_text)
+                plt.text(bar.get_x() + bar.get_width()/2, y_text, f"{auc:.2f}", ha='center', va='top', fontsize=12, fontweight='bold', color='black')
 
 
 if __name__ == '__main__':
