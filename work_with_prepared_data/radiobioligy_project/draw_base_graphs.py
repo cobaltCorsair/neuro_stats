@@ -305,18 +305,26 @@ class TumorDataVisualizer:
             for file_path, color in zip(file_paths, colors):
                 visualizer = TumorDataVisualizer(file_path)
                 try:
-                    # Индивидуальные кривые по животным
                     individual_volumes = visualizer.tumor_volumes
-                    time_data = visualizer.time_data
-                    aucs_individual = []
+                    time_data = list(map(int, visualizer.time_data))
+                    # Собираем пересечение временных точек для всех животных
+                    all_time_points = [set([int(t) for t in time_data]) for _ in individual_volumes]
+                    common_time_points = sorted(set.intersection(*all_time_points))
+                    # Для каждого животного: получить значения только в этих точках
+                    aligned_curves = []
                     for rat_curve in individual_volumes:
-                        interpolated = SupportingFunctions.interpolate_data_to_common_timepoints(
-                            time_data, rat_curve, list(range(0, 25))
-                        )
-                        aucs_individual.append(SupportingFunctions.calculate_auc(interpolated, list(range(0, 25))))
-                    aucs_individual = np.array(aucs_individual)
-                    auc_mean = np.mean(aucs_individual)
-                    auc_sem = np.std(aucs_individual, ddof=1) / np.sqrt(len(aucs_individual))
+                        aligned_curve = []
+                        for t in common_time_points:
+                            if t in time_data:
+                                idx = time_data.index(t)
+                                aligned_curve.append(rat_curve[idx])
+                            else:
+                                aligned_curve.append(np.nan)
+                        aligned_curves.append(aligned_curve)
+                    aligned_curves = np.array(aligned_curves)
+                    mean_curve = np.nanmean(aligned_curves, axis=0)
+                    auc_mean = SupportingFunctions.calculate_auc(mean_curve, common_time_points)
+                    auc_sem = np.std([SupportingFunctions.calculate_auc(curve, common_time_points) for curve in aligned_curves], ddof=1) / np.sqrt(len(aligned_curves))
                     auc_values.append(auc_mean)
                     labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
                     dose = extract_total_dose(visualizer.experiment_params)
