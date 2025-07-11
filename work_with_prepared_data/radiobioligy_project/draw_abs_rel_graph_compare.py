@@ -150,7 +150,7 @@ class TumorDataComparatorAdvanced:
         drawgraph.setup_figure()
 
         # Собираем информацию об интервалах
-        time_intervals = [visualizer.experiment_params[-1] for visualizer in self.visualizers]
+        time_intervals = [visualizer.experiment_params[-1] if visualizer.experiment_params else "—" for visualizer in self.visualizers]
 
         # Используем лямбда-функцию для извлечения значений
         GraphVisualizer.prepare_and_add_data_to_graph(

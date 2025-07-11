@@ -534,11 +534,11 @@ class GraphVisualizer:
             labels = []
             for line in self.lines:
                 original_label = line.get_label()
-                # Проверяем, есть ли время облучения в метке
-                if "Интервал:" in original_label:
-                    main_part = original_label.split(", Интервал:")[0].strip()  # Основная часть
-                    time_part = original_label.split(", Интервал:")[1].strip()  # Время облучения и дата
-                    wrapped_label = f"{main_part}\nИнтервал: {time_part}"  # Перенос строки перед временем
+                if original_label.startswith("Контроль: без облучения"):
+                    labels.append("Контроль: без облучения")
+                elif ", Интервал:" in original_label:
+                    main_part, time_part = original_label.split(", Интервал:", 1)
+                    wrapped_label = f"{main_part.strip()}\nИнтервал: {time_part.strip()}"
                     labels.append(wrapped_label)
                 else:
                     labels.append(original_label)
