@@ -217,25 +217,11 @@ class SkinReactionsVisualizer:
         base_file_name = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths]) + "_comparison.png"
         drawgraph.finalize_figure(base_file_name, ncol=1, legend_fontsize=20)
 
-
     @staticmethod
     def plot_auc_comparison(file_paths: List[str], title="Сравнение AUC кожных реакций", x_label="",
                             y_label="AUC (усл. ед.)"):
-        """
-        Построение столбчатого графика для сравнения AUC кожных реакций между экспериментами с легендой.
-
-        Args:
-            file_paths (List[str]): Список путей к файлам с данными экспериментов.
-            title (str): Заголовок графика.
-            x_label (str): Подпись оси X.
-            y_label (str): Подпись оси Y.
-
-        Returns:
-            Ничего не возвращает. Результатом является отображение и сохранение столбчатого графика.
-        """
-
+        import re
         with sns.axes_style("whitegrid"):
-            import re
             def extract_total_dose(experiment_params):
                 total = 0.0
                 for p in experiment_params:
@@ -247,71 +233,71 @@ class SkinReactionsVisualizer:
                         except Exception:
                             continue
                 return total if total > 0 else None
-            doses = []
-            aucs_for_fit = []
-            errors_for_fit = []
-            labels_for_legend = []
-            auc_values = []
+
+            common_timepoints = list(range(0, 25))  # как в plot_multiple_experiments
+            doses, aucs_for_fit, errors_for_fit, labels_for_legend = [], [], [], []
             colors = sns.color_palette("Set3", n_colors=len(file_paths))
+
             for file_path, color in zip(file_paths, colors):
                 visualizer = SkinReactionsVisualizer(file_path)
                 try:
                     individual_skin_reactions = visualizer.skin_reactions
-                    time_data = list(map(int, visualizer.time_data))
-                    # Собираем пересечение временных точек для всех животных
-                    all_time_points = [set([int(t) for t in time_data]) for _ in individual_skin_reactions]
-                    common_time_points = sorted(set.intersection(*all_time_points))
-                    # Для каждого животного: получить значения только в этих точках
-                    aligned_curves = []
+                    time_data = np.array(visualizer.time_data, dtype=float)
+
+                    # Интерполяция
+                    interpolated_curves = []
                     for reaction in individual_skin_reactions:
-                        aligned_curve = []
-                        for t in common_time_points:
-                            if t in time_data:
-                                idx = time_data.index(t)
-                                aligned_curve.append(reaction[idx])
-                            else:
-                                aligned_curve.append(np.nan)
-                        aligned_curves.append(aligned_curve)
-                    aligned_curves = np.array(aligned_curves)
-                    mean_curve = np.nanmean(aligned_curves, axis=0)
-                    auc_mean = SupportingFunctions.calculate_auc(mean_curve, common_time_points)
-                    auc_sem = np.std([SupportingFunctions.calculate_auc(curve, common_time_points) for curve in aligned_curves], ddof=1) / np.sqrt(len(aligned_curves))
-                    auc_values.append(auc_mean)
-                    labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
+                        interpolated = SupportingFunctions.interpolate_data_to_common_timepoints(
+                            time_data, reaction, common_timepoints
+                        )
+                        interpolated_curves.append(interpolated)
+
+                    interpolated_curves = np.array(interpolated_curves)
+                    mean_curve = np.nanmean(interpolated_curves, axis=0)
+
+                    # AUC и ошибка
+                    auc_mean = SupportingFunctions.calculate_auc(mean_curve, common_timepoints)
+                    auc_individual = [SupportingFunctions.calculate_auc(curve, common_timepoints)
+                                      for curve in interpolated_curves]
+                    auc_sem = np.std(auc_individual, ddof=1) / np.sqrt(len(auc_individual))
+
                     dose = extract_total_dose(visualizer.experiment_params)
                     if dose is not None:
                         doses.append(dose)
                         aucs_for_fit.append(auc_mean)
                         errors_for_fit.append(auc_sem)
-                except ValueError as e:
-                    print(f"Ошибка при обработке файла {file_path}: {e}")
+                        labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
+
+                except Exception as e:
+                    print(f"Ошибка при обработке {file_path}: {e}")
                     continue
-            # --- Barplot по числовой оси X (doses) ---
+
+            # Построение графика
             plt.figure(figsize=(12, 8))
             bar_width = 2.5 if len(doses) < 10 else 0.8
-            bars = plt.bar(doses, aucs_for_fit, yerr=errors_for_fit, width=bar_width, color=colors[:len(doses)], edgecolor="black", zorder=2, capsize=8)
+            bars = plt.bar(doses, aucs_for_fit, yerr=errors_for_fit, width=bar_width,
+                           color=colors[:len(doses)], edgecolor="black", zorder=2, capsize=8)
             plt.xlabel("Суммарная доза, Гр", fontsize=14)
             plt.ylabel(y_label, fontsize=14)
             plt.title(title, fontsize=16)
-            # Подписи над столбиками
-            # Удаляю старую подпись над столбиком (оставляю только под error bar)
-            # for i, (bar, auc) in enumerate(zip(bars, aucs_for_fit)):
-            #     plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, f"{auc:.2f}", ha='center', va='bottom', fontsize=12, fontweight='bold', color='black')
-            # Подписи с дозами на тиках оси X
             plt.xticks(doses, [str(d) for d in doses], fontsize=12)
-            # Легенда как раньше
-            legend_patches = [mpatches.Patch(color=col, label=lab) for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
-            ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
-            plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
-                       ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
-            plt.tight_layout()
-            # plt.savefig("auc_comparison_plot.png")
 
-            # Подписи под error bar
+            # Подписи над столбиками
             for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
                 y_text = bar.get_height() - err - 0.03 * max(aucs_for_fit)
                 y_text = max(0, y_text)
-                plt.text(bar.get_x() + bar.get_width()/2, y_text, f"{auc:.2f}", ha='center', va='top', fontsize=12, fontweight='bold', color='black')
+                plt.text(bar.get_x() + bar.get_width() / 2, y_text, f"{auc:.2f}",
+                         ha='center', va='top', fontsize=12, fontweight='bold', color='black')
+
+            # Легенда
+            legend_patches = [mpatches.Patch(color=col, label=lab)
+                              for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
+            ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
+            plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+                       ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
+
+            plt.tight_layout()
+            # plt.savefig("auc_comparison_plot.png")
 
 
 if __name__ == '__main__':
