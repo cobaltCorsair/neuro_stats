@@ -56,7 +56,7 @@ python .\fit_alpha_beta_using_processor.py --alpha 0.3
 
 Скриншот GUI:
 
-![GUI](work_with_prepared_data/radiobioligy_project/gui/screenshot_main_window.png)
+![GUI](work_with_prepared_data/radiobioligy_project/gui/screenshot_main_window.PNG)
 
 Подробнее: [`work_with_prepared_data/radiobioligy_project/README.md`](work_with_prepared_data/radiobioligy_project/README.md) (формат Excel‑данных, методы, советы по данным).
 

@@ -83,7 +83,7 @@ GUI позволяет:
 
 Ниже пример основного окна приложения с загруженными экспериментами и сравнением кривых.
 
-![Главное окно GUI](gui/screenshot_main_window.png)
+![Главное окно GUI](gui/screenshot_main_window.PNG)
 
 > Если изображение не отображается, убедитесь, что файл сохранён по пути `work_with_prepared_data/radiobioligy_project/gui/screenshot_main_window.png`.
 
