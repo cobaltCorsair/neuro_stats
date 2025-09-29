@@ -1019,6 +1019,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Ошибка", f"Не удалось открыть файл {file_path}.\n{str(e)}")
 
+def excepthook(type, value, traceback):
+    app = QApplication.instance()
+    error_msg = f"{type.__name__}: {value}"
+    QMessageBox.critical(None, "Необработанная ошибка", error_msg)
+    # Не завершаем приложение, чтобы оно продолжало работать
+
+sys.excepthook = excepthook
+
 def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
