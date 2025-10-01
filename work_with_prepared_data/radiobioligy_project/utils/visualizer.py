@@ -530,7 +530,8 @@ class GraphVisualizer:
             plt.xticks(ticks=range(0, int(self.max_x) + 1, 3), rotation=0)
 
         # Создаем и добавляем основную легенду с переносом строки перед временем облучения и датой
-        if self.lines:
+        # Только если legend_position не равно None
+        if self.lines and self.legend_position is not None:
             labels = []
             for line in self.lines:
                 original_label = line.get_label()
@@ -548,27 +549,127 @@ class GraphVisualizer:
                                       title=main_legend_title, ncol=ncol, fontsize=legend_fontsize)
             ax.add_artist(first_legend)  # Важно использовать add_artist для сохранения основной легенды
 
-        # Создаем и добавляем легенду AUC, если есть значения AUC
-        if self.aucs:
+        # Создаем и добавляем легенду AUC, если есть значения AUC и легенда не скрыта
+        if self.aucs and self.legend_position is not None:
             auc_labels = [f"AUC: {auc:.2f}" for auc in self.aucs]
             # Создаем объекты легенды AUC. Важно передать 'handles=self.lines', если стили линий важны
             auc_legend = plt.legend(handles=self.lines, labels=auc_labels, title="Площадь под кривой",
                                     loc='upper right', fontsize=legend_fontsize)
             ax.add_artist(auc_legend)  # Добавляем легенду AUC
 
-        # Обрабатываем дополнительные легенды
-        for extra_legend_data in self.legend_info:
-            labels, title, loc, display_marker = extra_legend_data
-            if display_marker:
-                extra_handles = [plt.Line2D([], [], color=line.get_color(), marker=line.get_marker()) for line in
-                                 self.lines[:len(labels)]]
-            else:
-                # Если маркер не нужен, создаем элементы легенды без маркера
-                extra_handles = [plt.Line2D([], [], color="none", marker=None, linestyle="None", label=label) for label
-                                 in labels]
-            extra_legend = plt.legend(handles=extra_handles, title=title, loc=loc, fontsize=legend_fontsize)
-            ax.add_artist(extra_legend)
+        # Обрабатываем дополнительные легенды, только если легенда не скрыта
+        if self.legend_position is not None:
+            for extra_legend_data in self.legend_info:
+                labels, title, loc, display_marker = extra_legend_data
+                if display_marker:
+                    extra_handles = [plt.Line2D([], [], color=line.get_color(), marker=line.get_marker()) for line in
+                                     self.lines[:len(labels)]]
+                else:
+                    # Если маркер не нужен, создаем элементы легенды без маркера
+                    extra_handles = [plt.Line2D([], [], color="none", marker=None, linestyle="None", label=label) for label
+                                     in labels]
+                extra_legend = plt.legend(handles=extra_handles, title=title, loc=loc, fontsize=legend_fontsize)
+                ax.add_artist(extra_legend)
 
         plt.tight_layout()
         save_plot(file_path, self.title)
+        # Сохраняем путь к файлу для возможного сохранения легенды
+        self.last_save_path = file_path
         #plt.show()
+
+    def save_legend_separately(self, legend_file_path=None):
+        """
+        Сохраняет легенду в отдельный файл
+        
+        Args:
+            legend_file_path (str, optional): Путь для сохранения легенды. 
+                                            Если не указан, используется путь графика с суффиксом '_legend.txt'
+        
+        Returns:
+            str: Путь к сохраненному файлу легенды
+        """
+        import os
+        
+        # Формируем путь для файла легенды
+        if legend_file_path is None:
+            base_path = getattr(self, 'last_save_path', 'legend')
+            if base_path.endswith('.png') or base_path.endswith('.jpg') or base_path.endswith('.pdf'):
+                legend_file_path = os.path.splitext(base_path)[0] + '_legend.txt'
+            else:
+                legend_file_path = base_path + '_legend.txt'
+        
+        # Собираем информацию о легенде
+        legend_text = f"Легенда графика: {self.title}\n"
+        legend_text += "=" * 60 + "\n\n"
+        
+        # Основная легенда
+        if self.lines:
+            legend_text += "Основные элементы графика:\n"
+            legend_text += "-" * 30 + "\n"
+            for i, line in enumerate(self.lines, 1):
+                original_label = line.get_label()
+                if original_label.startswith("Контроль: без облучения"):
+                    formatted_label = "Контроль: без облучения"
+                elif ", Интервал:" in original_label:
+                    main_part, time_part = original_label.split(", Интервал:", 1)
+                    formatted_label = f"{main_part.strip()}\nИнтервал: {time_part.strip()}"
+                else:
+                    formatted_label = original_label
+                
+                legend_text += f"{i}. {formatted_label}\n"
+                legend_text += f"   Цвет: {line.get_color()}\n"
+                legend_text += f"   Маркер: {line.get_marker()}\n"
+                legend_text += f"   Стиль линии: {line.get_linestyle()}\n"
+                legend_text += f"   Толщина линии: {line.get_linewidth()}\n\n"
+        
+        # AUC легенда
+        if self.aucs:
+            legend_text += "Площади под кривой (AUC):\n"
+            legend_text += "-" * 30 + "\n"
+            for i, auc in enumerate(self.aucs, 1):
+                legend_text += f"{i}. AUC: {auc:.2f}\n"
+            legend_text += "\n"
+        
+        # Дополнительные легенды
+        if self.legend_info:
+            legend_text += "Дополнительная информация:\n"
+            legend_text += "-" * 30 + "\n"
+            for i, extra_legend_data in enumerate(self.legend_info, 1):
+                labels, title, loc, display_marker = extra_legend_data
+                legend_text += f"{i}. {title}:\n"
+                for j, label in enumerate(labels):
+                    legend_text += f"   {j+1}. {label}\n"
+                legend_text += "\n"
+        
+        # Сохраняем в файл
+        try:
+            with open(legend_file_path, 'w', encoding='utf-8') as f:
+                f.write(legend_text)
+            
+            # Сохраняем путь для будущего использования
+            self.last_save_path = legend_file_path
+            
+            return legend_file_path
+            
+        except Exception as e:
+            raise Exception(f"Ошибка при сохранении легенды: {str(e)}")
+
+    def save_legend_automatically(self, base_file_path):
+        """
+        Автоматически сохраняет легенду рядом с основным графиком
+        
+        Args:
+            base_file_path (str): Путь к основному файлу графика
+        
+        Returns:
+            str: Путь к сохраненному файлу легенды
+        """
+        import os
+        
+        # Формируем путь для файла легенды
+        if base_file_path.endswith('.png') or base_file_path.endswith('.jpg') or base_file_path.endswith('.pdf'):
+            legend_file_path = os.path.splitext(base_file_path)[0] + '_legend.txt'
+        else:
+            legend_file_path = base_file_path + '_legend.txt'
+        
+        return self.save_legend_separately(legend_file_path)

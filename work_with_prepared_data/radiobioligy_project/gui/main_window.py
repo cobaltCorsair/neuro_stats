@@ -19,6 +19,7 @@ from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf import SkinReactionsVisualizer
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import ExtractOutliers
 from work_with_prepared_data.radiobioligy_project.gui.checkable_combobox import CheckableComboBox
+from work_with_prepared_data.radiobioligy_project.gui.legend_window import LegendManager
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -109,6 +110,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.use_AUC = False
         self.annotation_multiplier = 0
         self.data_processor = DataProcessor()
+        self.legend_manager = LegendManager()
         self.setupUi(self)
         self.action.triggered.connect(self.open_files)
         # Настраиваем модель для 2 столбцов
@@ -163,6 +165,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.doubleSpinBox.valueChanged.connect(self.update_annotation_multiplier)
         self.comboBox_3.currentIndexChanged.connect(self.on_legend_position_changed)
         self.comboBox.currentIndexChanged.connect(self.update_doubleSpinBox_value)
+        # Подключение новых кнопок для управления легендой
+        self.pushButton_legend_window.clicked.connect(self.show_legend_window)
+        self.pushButton_save_legend.clicked.connect(self.save_legend_to_file)
 
         # Подключаем сигналы изменения модели таблицы к слоту
         self.model.rowsInserted.connect(self.on_table_data_changed)
@@ -292,6 +297,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def on_legend_position_changed(self):
         selected_position = self.comboBox_3.currentText()
+        # Если выбрано "None", передаем None вместо строки
+        if selected_position == "None":
+            selected_position = None
         graph_manager.update_legend_position(selected_position)
 
     def update_doubleSpinBox_value(self):
@@ -868,10 +876,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             clear_rat_labels()
             # Восстанавливаем состояние выбранных элементов по индексам
             self.comboBox_4.restore_checked_indices(self.saved_checked_items)
+            
+            # Очищаем предыдущую фигуру, если она есть
+            if self.figure is not None:
+                plt.close(self.figure)
+            
+            # Сохраняем текущую фигуру для возможного извлечения легенды
+            current_figure = plt.gcf()
+            self.figure = current_figure
+            
             # Сохраняем генерируемый график в буфер
             # После генерации графика нужно сохранить текущий рисунок в buf
             plt.savefig(buf, format='png')
-            plt.close()  # Закрываем текущее окно plt, чтобы оно не отображалось
+            
+            # НЕ закрываем фигуру, чтобы можно было извлечь данные легенды
+            # plt.close()  # Закомментировано для работы с легендой
             buf.seek(0)
             pixmap = QPixmap()
             pixmap.loadFromData(buf.getvalue())
@@ -1018,6 +1037,96 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     raise OSError("Unsupported operating system.")
             except Exception as e:
                 QMessageBox.critical(self, "Ошибка", f"Не удалось открыть файл {file_path}.\n{str(e)}")
+
+    def show_legend_window(self):
+        """
+        Показывает легенду в отдельном окне
+        """
+        try:
+            # Используем фигуру из canvas, если она есть
+            current_figure = self.figure
+            
+            if current_figure is None:
+                # Если нет фигуры в canvas, пытаемся получить текущую фигуру matplotlib
+                current_figure = plt.gcf() if plt.get_fignums() else None
+            
+            if current_figure:
+                # Показываем окно легенды с данными из текущей фигуры
+                self.legend_manager.show_legend_window(current_figure, self)
+            else:
+                self.show_message("Нет активного графика для отображения легенды", "Информация")
+        except Exception as e:
+            self.show_message(f"Ошибка при отображении легенды: {str(e)}", "Ошибка")
+
+    def save_legend_to_file(self):
+        """
+        Сохраняет легенду в отдельный файл
+        """
+        try:
+            from PyQt6.QtWidgets import QFileDialog
+            from PyQt6.QtCore import QStandardPaths
+            import os
+            
+            # Используем фигуру из canvas, если она есть
+            current_figure = self.figure
+            
+            if current_figure is None:
+                # Если нет фигуры в canvas, пытаемся получить текущую фигуру matplotlib
+                current_figure = plt.gcf() if plt.get_fignums() else None
+            
+            if not current_figure:
+                self.show_message("Нет активного графика для сохранения легенды", "Информация")
+                return
+            
+            # Извлекаем данные легенды
+            legend_data = self.legend_manager.extract_legend_from_figure(current_figure)
+            
+            if not legend_data:
+                self.show_message("Нет данных легенды для сохранения", "Информация")
+                return
+            
+            # Предлагаем сохранить в папку Downloads
+            default_path = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Сохранить легенду",
+                f"{default_path}/legend.txt",
+                "Текстовые файлы (*.txt);;Все файлы (*)"
+            )
+            
+            if file_path:
+                # Формируем текст легенды
+                legend_text = "Легенда графика\n"
+                legend_text += "=" * 50 + "\n\n"
+                
+                for i, item in enumerate(legend_data, 1):
+                    if isinstance(item, dict):
+                        label = item.get('label', f'Элемент {i}')
+                        color = item.get('color', 'black')
+                        marker = item.get('marker', 'o')
+                        linestyle = item.get('linestyle', '-')
+                        legend_text += f"{i}. {label}\n"
+                        legend_text += f"   Цвет: {color}, Маркер: {marker}, Стиль линии: {linestyle}\n\n"
+                    elif isinstance(item, str):
+                        legend_text += f"{i}. {item}\n"
+                    else:
+                        legend_text += f"{i}. {str(item)}\n"
+                
+                # Сохраняем в файл
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(legend_text)
+                
+                self.show_message("Легенда успешно сохранена!", "Успех")
+                
+        except Exception as e:
+            self.show_message(f"Ошибка при сохранении легенды: {str(e)}", "Ошибка")
+
+    def show_message(self, message, title="Информация"):
+        """
+        Показывает сообщение пользователю
+        """
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.information(self, title, message)
 
 def excepthook(type, value, traceback):
     app = QApplication.instance()
