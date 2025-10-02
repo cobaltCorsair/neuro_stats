@@ -123,11 +123,11 @@ class SkinReactionsVisualizer:
         drawgraph.finalize_figure('', '', 1, 25)
 
     @staticmethod
-    def plot_multiple_experiments(file_paths: List[str], use_AUC: bool = False, apply_statistical_test=False):
+    def plot_multiple_experiments(file_paths: List[str], use_AUC: bool = False, apply_statistical_test: bool = False):
         """
-        Построение графика для сравнения кожных реакций между экспериментами
-        с использованием интерполяции, отображением AUC и опционального применения статистических тестов Манна-Уитни.
-
+        Сравнение кожных реакций между экспериментами без общей сетки времени.
+        Каждая кривая рисуется на СВОИХ временных точках. При apply_statistical_test=True
+        для теста данные временно выравниваются на сетку 1-го эксперимента.
         Args:
             file_paths (List[str]): Пути к файлам данных экспериментов.
             use_AUC (bool): Если True, вычисляется и отображается площадь под кривой (AUC).
@@ -143,79 +143,109 @@ class SkinReactionsVisualizer:
         )
         drawgraph.setup_figure()
 
-        # Подготовка данных для каждого эксперимента
-        all_reactions = []
-        common_timepoints = list(range(0, 25))  # Временные точки от 0 до 24 с шагом 1
+        def _to_float_list(seq):
+            out = []
+            for x in seq:
+                s = str(x).strip()
+                if s == "" or s.lower() in ("nan", "none"):
+                    out.append(float('nan'))
+                else:
+                    try:
+                        out.append(float(s.replace(',', '.')))
+                    except Exception:
+                        out.append(float('nan'))
+            return out
 
-        # Создаем словарь для хранения верхних границ доверительных интервалов
-        upper_bounds_by_time = {}
+        all_experiments = []
+        x_data_lists = []
 
         for file_path in file_paths:
-            visualizer = SkinReactionsVisualizer(file_path)
+            vis = SkinReactionsVisualizer(file_path)
 
-            try:
-                # Получаем индивидуальные данные реакций кожи
-                individual_skin_reactions = visualizer.skin_reactions
-                time_data = np.array(visualizer.time_data, dtype=float)
+            # дни эксперимента (как есть из Excel) и индивидуальные реакции
+            time_data = _to_float_list(vis.time_data)
+            individual = [_to_float_list(row) for row in vis.skin_reactions]
 
-                # Интерполяция индивидуальных данных на общие временные точки
-                interpolated_skin_reactions = []
-                for reaction in individual_skin_reactions:
-                    interpolated_reaction = SupportingFunctions.interpolate_data_to_common_timepoints(
-                        time_data, reaction, common_timepoints
+            # среднее/стд/SEM ПОВЕРХ родной сетки времени
+            reactions_arr = np.array(individual, dtype=float)
+            mean_reaction = np.nanmean(reactions_arr, axis=0)
+            std_reaction = np.nanstd(reactions_arr, axis=0)
+            sem_reaction = std_reaction / np.sqrt(len(reactions_arr))
+
+            # error bars через твою функцию погрешности
+            error_margin = [SupportingFunctions.calculate_error_margin(s, len(reactions_arr)) for s in std_reaction]
+
+            label_text = format_experiment_params(vis.experiment_params)
+
+            # рисуем на СВОИХ днях
+            drawgraph.add_plot(
+                time_data,
+                mean_reaction.tolist(),
+                params={},
+                label=label_text,
+                error_margin=error_margin,
+                calculate_auc=use_AUC
+            )
+
+            all_experiments.append({
+                "time_data": time_data,
+                "reactions": reactions_arr,  # индивидуальные кривые (на своей сетке)
+                "mean_reaction": mean_reaction,  # средняя (на своей сетке)
+                "sem_reaction": sem_reaction,
+                "label": label_text
+            })
+            x_data_lists.append(time_data)
+
+        # авто-границы осей с учётом всех X
+        drawgraph.update_axes_limits(x_data_lists)
+
+        # ----- опциональная статистика Манна–Уитни -----
+        if apply_statistical_test and len(all_experiments) >= 2:
+            # опорная сетка — дни 1-го эксперимента
+            ref_time = all_experiments[0]["time_data"]
+
+            # верхние границы для размещения аннотаций p-value
+            upper_bounds_by_time = {}
+            aligned_for_test = []
+
+            for exp in all_experiments:
+                # интерполируем каждую индивидуальную кривую на ref_time
+                aligned_individual = [
+                    SupportingFunctions.interpolate_data_to_common_timepoints(
+                        exp["time_data"], row.tolist(), ref_time
                     )
-                    interpolated_skin_reactions.append(interpolated_reaction)
+                    for row in exp["reactions"]
+                ]
+                aligned_individual = np.array(aligned_individual, dtype=float)
 
-                # Вычисляем среднюю реакцию и SEM
-                reactions = np.array(interpolated_skin_reactions)
-                mean_reaction = np.nanmean(reactions, axis=0)
-                std_reaction = np.nanstd(reactions, axis=0)
-                sem_reaction = std_reaction / np.sqrt(len(reactions))
+                mean_aligned = np.nanmean(aligned_individual, axis=0)
+                std_aligned = np.nanstd(aligned_individual, axis=0)
+                sem_aligned = std_aligned / np.sqrt(len(aligned_individual))
 
-                # Сохраняем верхние границы доверительных интервалов для каждой временной точки
-                for t_idx, t in enumerate(common_timepoints):
-                    upper_bound = mean_reaction[t_idx] + sem_reaction[t_idx]
-                    if t in upper_bounds_by_time:
-                        # Обновляем максимальное значение, если текущая верхняя граница больше
-                        upper_bounds_by_time[t] = max(upper_bounds_by_time[t], upper_bound)
-                    else:
-                        upper_bounds_by_time[t] = upper_bound
+                # копим верхние границы, чтобы p-аннотации не налезали
+                for i, t in enumerate(ref_time):
+                    ub = mean_aligned[i] + sem_aligned[i]
+                    upper_bounds_by_time[t] = max(upper_bounds_by_time.get(t, -np.inf), ub)
 
-                # Рассчитываем error_margin
-                error_margin = [SupportingFunctions.calculate_error_margin(std, len(reactions)) for std in
-                                std_reaction]
-
-                # Сохраняем данные для дальнейшего анализа
-                all_reactions.append({
-                    'reactions': reactions,  # Индивидуальные реакции
-                    'mean_reaction': mean_reaction,
-                    'sem_reaction': sem_reaction,
-                    'label': format_experiment_params(visualizer.experiment_params)
+                aligned_for_test.append({
+                    "reactions": aligned_individual,  # уже на ref_time
+                    "mean_reaction": mean_aligned,
+                    "sem_reaction": sem_aligned,
+                    "label": exp["label"]
                 })
 
-                # Добавляем график с использованием GraphVisualizer
-                drawgraph.add_plot(
-                    common_timepoints,
-                    mean_reaction,
-                    params={},
-                    label=format_experiment_params(visualizer.experiment_params),
-                    error_margin=error_margin,
-                    calculate_auc=use_AUC
-                )
+            # функция аннотирования теста по общей сетке
+            SupportingFunctions.apply_mann_whitney_test(
+                aligned_for_test,
+                ref_time,
+                upper_bounds_by_time,
+                offset_ratio=0.00,
+                annotation_fontsize=18
+            )
 
-            except ValueError as e:
-                print(f"Ошибка при обработке файла {file_path}: {e}")
-                continue
-
-        # Если тест Манна-Уитни включен
-        if apply_statistical_test:
-            # Передаем upper_bounds_by_time в функцию
-            SupportingFunctions.apply_mann_whitney_test(all_reactions, common_timepoints, upper_bounds_by_time,
-                                                        offset_ratio=0.00, annotation_fontsize=18)
-
-        # Финализация и сохранение графика
-        base_file_name = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths]) + "_comparison.png"
-        drawgraph.finalize_figure(base_file_name, ncol=1, legend_fontsize=20)
+        # финализация
+        base = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths]) + "_comparison.png"
+        drawgraph.finalize_figure(base, ncol=1, legend_fontsize=20)
 
     @staticmethod
     def plot_auc_comparison(file_paths: List[str], title="Сравнение AUC кожных реакций", x_label="",

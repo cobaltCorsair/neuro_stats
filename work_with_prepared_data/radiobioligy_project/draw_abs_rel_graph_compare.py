@@ -262,36 +262,34 @@ class TumorDataComparatorAdvanced:
             - Этот метод позволяет исследователям визуально сравнивать эффективность различных экспериментальных
               условий или терапий на основе их способности тормозить рост опухолей.
         """
-        SupportingFunctions.normalize_time_data_min([control_visualizer] + experiment_visualizers)
-        # Обрезка данных до общей минимальной длины
-        SupportingFunctions.trim_data_to_common_length([control_visualizer] + experiment_visualizers)
         drawgraph = GraphVisualizer("Сравнение торможения роста опухоли", "Время, сут.", "Торможение роста опухоли, %")
         drawgraph.setup_figure()
 
-        # Подготовка данных
-        control_mean_volumes = control_visualizer.data_processor.get_mean_tumor_volumes()
+        control_times = SupportingFunctions.to_float_list(control_visualizer.time_data)
+        control_mean = SupportingFunctions.to_float_list(control_visualizer.data_processor.get_mean_tumor_volumes())
+
         x_data_lists = []
         for experiment_visualizer in experiment_visualizers:
-            experiment_mean_volumes = experiment_visualizer.data_processor.get_mean_tumor_volumes()
-            tumor_growth_inhibition = SupportingFunctions.calculate_tumor_growth_inhibition(control_mean_volumes,
-                                                                                            experiment_mean_volumes)
-            label = ''
+            t_exp = SupportingFunctions.to_float_list(experiment_visualizer.time_data)
+            exp_mean = SupportingFunctions.to_float_list(experiment_visualizer.data_processor.get_mean_tumor_volumes())
 
-            print(f"Time data length: {len(experiment_visualizer.time_data)}")
-            print(f"Tumor growth inhibition length: {len(tumor_growth_inhibition)}")
-
-            # Добавление данных на график
-            min_length = min(len(experiment_visualizer.time_data), len(tumor_growth_inhibition))
-
-            drawgraph.add_plot(
-                experiment_visualizer.time_data[:min_length],
-                tumor_growth_inhibition[:min_length],
-                experiment_visualizer.experiment_params,
-                label,
-                self._use_AUC
+            # контроль → на сетку эксперимента (без обрезания)
+            ctrl_on_exp = SupportingFunctions.interpolate_data_to_common_timepoints(
+                control_times, control_mean, t_exp
             )
 
-            x_data_lists.append(experiment_visualizer.time_data)  # Добавляем данные по оси X для каждого визуализатора
+            # TGI имеет ту же длину, что и t_exp
+            tgi = SupportingFunctions.calculate_tumor_growth_inhibition(ctrl_on_exp, exp_mean)
+
+            # НИКАКИХ min_length и срезов
+            drawgraph.add_plot(
+                t_exp,
+                tgi,
+                experiment_visualizer.experiment_params,
+                '',
+                self._use_AUC
+            )
+            x_data_lists.append(t_exp)
 
         drawgraph.update_axes_limits(x_data_lists)
         drawgraph.finalize_figure('', legend_fontsize=18)

@@ -554,6 +554,40 @@ class SupportingFunctions:
             visualizer.time_data = [int(time) - min_start_time for time in visualizer.time_data]
 
     @staticmethod
+    def build_common_timepoints_from_data(experiments_time_lists, step=None):
+        """
+        Собирает общую сетку времени как объединение реальных дней всех экспериментов.
+        step: если задано (например, 2 или 3), прореживает узлы примерно с таким шагом (в сутках).
+        """
+
+        def _to_float(x):
+            s = str(x).strip()
+            if s == "" or s.lower() in ("nan", "none"):
+                return None
+            try:
+                return float(s.replace(',', '.'))
+            except Exception:
+                return None
+
+        all_pts = []
+        for tl in experiments_time_lists:
+            for x in tl:
+                v = _to_float(x)
+                if v is not None:
+                    all_pts.append(v)
+
+        pts = sorted(set(all_pts))
+        if not step or step <= 1:
+            return pts
+
+        picked, last = [], None
+        for t in pts:
+            if last is None or (t - last) >= step - 1e-9:
+                picked.append(t)
+                last = t
+        return picked
+
+    @staticmethod
     def apply_mann_whitney_test(all_reactions, common_timepoints, upper_bounds_by_time, offset_ratio=0.00,
                                 annotation_fontsize=18):
         """
@@ -633,3 +667,17 @@ class SupportingFunctions:
                 fontsize=annotation_fontsize,  # Используем новый параметр для размера шрифта
                 color='black'
             )
+    @staticmethod
+    def to_float_list(seq):
+        out = []
+        for x in seq:
+            s = str(x).strip()
+            if s == "" or s.lower() == "nan" or s.lower() == "none":
+                out.append(float('nan'))
+            else:
+                # На случай десятичной запятой из Excel
+                try:
+                    out.append(float(s.replace(',', '.')))
+                except Exception:
+                    out.append(float('nan'))
+        return out
