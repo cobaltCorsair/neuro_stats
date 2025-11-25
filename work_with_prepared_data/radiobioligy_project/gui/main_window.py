@@ -111,6 +111,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.annotation_multiplier = 0
         self.data_processor = DataProcessor()
         self.legend_manager = LegendManager()
+        self.cached_visualizer = None  # Кеш для модифицированного визуализатора
+        self.cache_key = None  # Ключ для проверки актуальности кеша
         self.setupUi(self)
         self.action.triggered.connect(self.open_files)
         # Настраиваем модель для 2 столбцов
@@ -208,6 +210,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def on_combobox_changed(self):
         self.selected_outlier_method = self.comboBox.currentIndex()
+        # Сбрасываем кеш при смене метода исключения
+        self.cached_visualizer = None
+        self.cache_key = None
 
     def set_auc_checkbox(self):
         if self.checkBox_2.isChecked():
@@ -231,8 +236,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         rat_labels = get_rat_labels()  # Получаем метки с информацией о наборе данных
         if rat_labels:
             self.comboBox_4.clear()  # Очищаем существующие элементы комбобокса
+            
+            # Удаляем дубликаты, сохраняя порядок
+            seen = set()
+            unique_labels = []
+            for label, file_name in rat_labels:
+                key = (label, file_name)
+                if key not in seen:
+                    seen.add(key)
+                    unique_labels.append((label, file_name))
+            
             # Добавляем метки с форматом "метка крысы (имя файла)"
-            display_labels = [f"{label} ({file_name})" for label, file_name in rat_labels]
+            display_labels = [f"{label} ({file_name})" for label, file_name in unique_labels]
             self.comboBox_4.add_checkable_items(display_labels)
 
     def get_selected_rat_labels_with_index(self):
@@ -241,40 +256,43 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         selected_items = self.comboBox_4.checked_items()
         if not selected_items:
-            print("ВНИМАНИЕ: Нет выбранных элементов в списке для исключения!")
             return []
-            
-        print(f"Выбранные элементы в comboBox_4: {selected_items}")
-        
-        # Извлекаем метки крыс из выделенных элементов (текст до скобки)
-        selected_rat_labels = []
+
+        # Сбрасываем кеш при изменении выбора крыс для исключения
+        self.cached_visualizer = None
+        self.cache_key = None
+
+        # Получаем все зарегистрированные метки и удаляем дубликаты
+        all_rat_labels = get_rat_labels()
+        seen = set()
+        unique_rat_labels = []
+        for label, file_name in all_rat_labels:
+            key = (label, file_name)
+            if key not in seen:
+                seen.add(key)
+                unique_rat_labels.append((label, file_name))
+
+        # Извлекаем метки и имена файлов из выбранных элементов
+        selected_with_files = []
         for item in selected_items:
             try:
-                # Разделяем строку на метку крысы и имя файла
-                parts = item.split(" (")
-                if len(parts) > 1:
+                parts = item.rsplit(" (", 1)
+                if len(parts) == 2:
                     label = parts[0].strip()
-                    selected_rat_labels.append(label)
-                else:
-                    # Если формат неправильный, используем всю строку
-                    selected_rat_labels.append(item.strip())
-            except Exception as e:
-                print(f"Ошибка при извлечении метки из {item}: {e}")
-        
-        print(f"Извлеченные метки крыс: {selected_rat_labels}")
-        
-        # Находим соответствующие индексы для выбранных меток
-        selected_indices = []
-        for label, data_index in rat_labels_with_indices:
-            if label in selected_rat_labels:
-                selected_indices.append(data_index)
-                print(f"Найден индекс {data_index} для метки {label}")
-        
-        print(f"Все зарегистрированные метки: {rat_labels_with_indices}")
-        result = list(zip(selected_rat_labels, selected_indices))
-        print(f"Результат (метки с индексами): {result}")
-        
-        return result  # Возвращаем кортежи (метка крысы, индекс набора данных)
+                    file_name = parts[1].rstrip(")")
+                    selected_with_files.append((label, file_name))
+            except Exception:
+                pass
+
+        # Находим соответствующие метки в unique_rat_labels
+        result = []
+        for sel_label, sel_file in selected_with_files:
+            for label, file_name in unique_rat_labels:
+                if label == sel_label and file_name == sel_file:
+                    result.append((label, file_name))
+                    break
+
+        return result
 
     def set_state_of_auc_and_tests_checkbox(self):
         if self.pushButton_3.isEnabled() and self.checkBox_6.isChecked():
@@ -376,16 +394,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         # Пропускаем применение exclude_rats для этого визуализатора,
                         # но он все равно будет добавлен без изменений
                     else:
-                        # Проверяем, соответствуют ли индексы текущему визуализатору (для отладки)
-                        current_file = os.path.basename(visualizer_instance.file_path) if hasattr(visualizer_instance, 'file_path') else "unknown"
-                        print(f"Применяю исключение крыс к файлу: {current_file}")
-                        
-                        # Сохраняем выбранные метки для последующего восстановления
-                        # self.saved_checked_items = excluded_rats # Это лучше делать при обновлении комбобокса, а не здесь
-                        
-                        # Вызываем метод исключения крыс
-                        print(f"Исключаю крыс {excluded_rats} из визуализатора {visualizer_instance}")
-                        outlier_extractor.exclude_rats(excluded_rats, 'tumor_volumes')
+                        # Определяем правильный атрибут данных в зависимости от типа визуализатора
+                        data_attr = None
+                        if hasattr(visualizer_instance, 'skin_reactions'):
+                            data_attr = 'skin_reactions'
+                        elif hasattr(visualizer_instance, 'tumor_volumes'):
+                            data_attr = 'tumor_volumes'
+
+                        # Вызываем метод исключения крыс с явным указанием атрибута
+                        outlier_extractor.exclude_rats(excluded_rats, data_attr)
             elif self.selected_outlier_method == 7:  # Метод для Евклидова расстояния
                 outlier_extractor.remove_outliers_by_euclidean(
                     percentile_threshold=coefficient)  # Используем percentile_threshold
@@ -455,7 +472,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Этот слот вызывается при изменении данных в таблице.
         Он отвечает за сброс состояния всех чекбоксов в comboBox_4 при изменении файлов.
         """
+        # Сбрасываем кеш визуализатора
+        self.cached_visualizer = None
+        self.cache_key = None
+        
         self.comboBox_4.clear_all_checkboxes()
+        # НЕ очищаем метки здесь, они очистятся при следующем построении графика
         self.update_combobox_with_labels()
 
     def update_control_path(self, text):
@@ -849,13 +871,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                            Должна принимать экземпляр `visualizer` в качестве аргумента.
 
         Returns:
-            QPixmap: Объект QPixmap, содержащий изображение сгенерированного графика.
-
         """
         # Перенаправляем вывод графика в объект BytesIO вместо отображения в окне
         with io.BytesIO() as buf:
-            if isinstance(visualizer, SkinReactionsVisualizer) and len(self.current_selected_paths) > 1:
-                # Вызов статического метода для рисования графика
+            # Проверяем, является ли visualizer списком визуализаторов для множественных экспериментов
+            if isinstance(visualizer, list) and len(visualizer) > 0 and isinstance(visualizer[0], SkinReactionsVisualizer):
+                # Используем модифицированные экземпляры визуализаторов
+                if self.current_plot_type == 'multiple_experiments':
+                    SkinReactionsVisualizer.plot_multiple_experiments_from_visualizers(visualizer, self.use_AUC, self.perform_stat_test)
+                elif self.current_plot_type == 'auc_comparison':
+                    SkinReactionsVisualizer.plot_auc_comparison_from_visualizers(visualizer)
+            elif isinstance(visualizer, SkinReactionsVisualizer) and len(self.current_selected_paths) > 1:
+                # Вызов статического метода для рисования графика из путей (для обратной совместимости)
                 if self.current_plot_type == 'multiple_experiments':
                     SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC, self.perform_stat_test)
                 elif self.current_plot_type == 'auc_comparison':
@@ -872,11 +899,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 else:
                     plotting_func(visualizer)
 
-            self.update_combobox_with_labels()
-            clear_rat_labels()
-            # Восстанавливаем состояние выбранных элементов по индексам
-            self.comboBox_4.restore_checked_indices(self.saved_checked_items)
-            
             # Очищаем предыдущую фигуру, если она есть
             if self.figure is not None:
                 plt.close(self.figure)
@@ -889,8 +911,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # После генерации графика нужно сохранить текущий рисунок в buf
             plt.savefig(buf, format='png')
             
-            # НЕ закрываем фигуру, чтобы можно было извлечь данные легенды
+            # НЕ закрываем эту фигуру, чтобы можно было извлечь данные легенды
             # plt.close()  # Закомментировано для работы с легендой
+            
+            # Обновляем комбобокс ПОСЛЕ построения графика
+            # (Убрано отсюда - будет вызвано в create_graphic после draw_figure_to_pixmap)
+            
             buf.seek(0)
             pixmap = QPixmap()
             pixmap.loadFromData(buf.getvalue())
@@ -921,6 +947,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             ]
         ):
             return  # Ничего не делаем, если параметры не заданы
+
+        # Очищаем старые метки крыс перед построением графика
+        clear_rat_labels()
 
         # Очищаем layout, если он уже существует
         if self.frame.layout() is not None:
@@ -960,13 +989,56 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instance.use_ttest = self.use_ttest
             visualizer_instance.use_AUC = self.use_AUC
         elif self.current_visualizer is SkinReactionsVisualizer:
-            if len(self.current_selected_paths) == 1:
-                visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
+            # ВАЖНО: Для кожных реакций НЕ используем кеш при методе ручного исключения
+            # так как данные должны обновляться при каждом изменении выбора крыс
+            if self.selected_outlier_method == 6:
+                # Метод ручного исключения - всегда создаём новый визуализатор
+                # Для множественных экспериментов создаём список модифицированных визуализаторов
+                if len(self.current_selected_paths) > 1:
+                    visualizer_instances = []
+                    for path in self.current_selected_paths:
+                        vis = self.current_visualizer(path)
+                        if self.selected_outlier_method is not None:
+                            vis = self.apply_selected_outlier_method(vis)
+                        visualizer_instances.append(vis)
+                    visualizer_instance = visualizer_instances
+                else:
+                    visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
+                    if self.selected_outlier_method is not None:
+                        visualizer_instance = self.apply_selected_outlier_method(visualizer_instance)
+
+                # НЕ сохраняем в кеш для метода ручного исключения
+                self.cached_visualizer = None
+                self.cache_key = None
             else:
-                visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
-            # TODO: Метод требует правки  для работы с кожными реакциями
-            # if self.selected_outlier_method is not None:
-            #     visualizer_instance = self.apply_selected_outlier_method(visualizer_instance)
+                # Для других методов используем кеш
+                current_cache_key = (
+                    tuple(self.current_selected_paths),
+                    self.current_visualizer,
+                    self.selected_outlier_method
+                )
+
+                # Проверяем, можем ли использовать кешированный визуализатор
+                if self.cache_key == current_cache_key and self.cached_visualizer is not None:
+                    visualizer_instance = self.cached_visualizer
+                else:
+                    # Для множественных экспериментов создаём список визуализаторов
+                    if len(self.current_selected_paths) > 1:
+                        visualizer_instances = []
+                        for path in self.current_selected_paths:
+                            vis = self.current_visualizer(path)
+                            if self.selected_outlier_method is not None:
+                                vis = self.apply_selected_outlier_method(vis)
+                            visualizer_instances.append(vis)
+                        visualizer_instance = visualizer_instances
+                    else:
+                        visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
+                        if self.selected_outlier_method is not None:
+                            visualizer_instance = self.apply_selected_outlier_method(visualizer_instance)
+
+                    # Сохраняем в кеш
+                    self.cached_visualizer = visualizer_instance
+                    self.cache_key = current_cache_key
 
         pixmap = self.draw_figure_to_pixmap(visualizer_instance, self.current_plotting_func)
 
@@ -975,6 +1047,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         label.setPixmap(pixmap)
         label.setScaledContents(True)
         self.frame.layout().addWidget(label)
+
+        # Обновляем комбобокс с метками крыс после построения графика
+        self.update_combobox_with_labels()
+        
+        # Восстанавливаем состояние выбранных элементов
+        self.comboBox_4.restore_checked_indices(self.saved_checked_items)
 
     def dataframe_to_qtablewidget(self, df):
         table_widget = QTableWidget()

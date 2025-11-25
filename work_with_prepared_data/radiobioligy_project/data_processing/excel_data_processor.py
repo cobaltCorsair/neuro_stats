@@ -45,6 +45,10 @@ def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str],
     if formatted_date:
         experiment_params.append(f"Date={formatted_date}")  # Добавляем дату как параметр
 
+    # Регистрируем метки крыс для кожных реакций
+    file_name = os.path.basename(file_path)
+    register_rat_labels(rat_labels, file_name)
+    
     return experiment_params, time_data, rat_labels, skin_reactions
 
 
@@ -138,5 +142,6 @@ def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str]
         experiment_params.append(f"Date={formatted_date}")  # Добавляем дату как параметр
 
     # Сохраняем данные в датакласс
-    register_rat_labels(rat_labels)  # Регистрируем метки с указанием файла
+    file_name = os.path.basename(file_path)
+    register_rat_labels(rat_labels, file_name)  # Регистрируем метки с указанием файла
     return experiment_params, time_data, rat_labels, tumor_volumes

@@ -123,6 +123,122 @@ class SkinReactionsVisualizer:
         drawgraph.finalize_figure('', '', 1, 25)
 
     @staticmethod
+    def plot_multiple_experiments_from_visualizers(visualizers: List['SkinReactionsVisualizer'], use_AUC: bool = False, apply_statistical_test: bool = False):
+        """
+        Сравнение кожных реакций между экспериментами используя уже созданные и модифицированные визуализаторы.
+        Этот метод позволяет использовать визуализаторы с уже применёнными исключениями крыс.
+
+        Args:
+            visualizers (List[SkinReactionsVisualizer]): Список визуализаторов (могут быть модифицированы).
+            use_AUC (bool): Если True, вычисляется и отображается площадь под кривой (AUC).
+            apply_statistical_test (bool): Флаг для выполнения теста Манна-Уитни.
+        """
+        # Инициализация объекта GraphVisualizer
+        drawgraph = GraphVisualizer(
+            "Сравнение кожных реакций между экспериментами",
+            "Время, сут.",
+            "Кожные реакции, усл. ед.",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
+
+        def _to_float_list(seq):
+            out = []
+            for x in seq:
+                s = str(x).strip()
+                if s == "" or s.lower() in ("nan", "none"):
+                    out.append(float('nan'))
+                else:
+                    try:
+                        out.append(float(s.replace(',', '.')))
+                    except Exception:
+                        out.append(float('nan'))
+            return out
+
+        all_experiments = []
+        x_data_lists = []
+
+        for vis in visualizers:
+            # дни эксперимента (как есть из Excel) и индивидуальные реакции
+            time_data = _to_float_list(vis.time_data)
+            individual = [_to_float_list(row) for row in vis.skin_reactions]
+
+            # среднее/стд/SEM ПОВЕРХ родной сетки времени
+            reactions_arr = np.array(individual, dtype=float)
+            mean_reaction = np.nanmean(reactions_arr, axis=0)
+            std_reaction = np.nanstd(reactions_arr, axis=0)
+            sem_reaction = std_reaction / np.sqrt(len(reactions_arr))
+
+            # error bars через функцию погрешности
+            error_margin = [SupportingFunctions.calculate_error_margin(s, len(reactions_arr)) for s in std_reaction]
+
+            label_text = format_experiment_params(vis.experiment_params)
+
+            # рисуем на СВОИХ днях
+            drawgraph.add_plot(
+                time_data,
+                mean_reaction.tolist(),
+                params={},
+                label=label_text,
+                error_margin=error_margin,
+                calculate_auc=use_AUC
+            )
+
+            all_experiments.append({
+                "time_data": time_data,
+                "reactions": reactions_arr,
+                "mean_reaction": mean_reaction,
+                "sem_reaction": sem_reaction,
+                "label": label_text
+            })
+            x_data_lists.append(time_data)
+
+        # авто-границы осей с учётом всех X
+        drawgraph.update_axes_limits(x_data_lists)
+
+        # опциональная статистика Манна–Уитни
+        if apply_statistical_test and len(all_experiments) >= 2:
+            ref_time = all_experiments[0]["time_data"]
+            upper_bounds_by_time = {}
+            aligned_for_test = []
+
+            for exp in all_experiments:
+                aligned_individual = [
+                    SupportingFunctions.interpolate_data_to_common_timepoints(
+                        exp["time_data"], row.tolist(), ref_time
+                    )
+                    for row in exp["reactions"]
+                ]
+                aligned_individual = np.array(aligned_individual, dtype=float)
+
+                mean_aligned = np.nanmean(aligned_individual, axis=0)
+                std_aligned = np.nanstd(aligned_individual, axis=0)
+                sem_aligned = std_aligned / np.sqrt(len(aligned_individual))
+
+                for i, t in enumerate(ref_time):
+                    ub = mean_aligned[i] + sem_aligned[i]
+                    upper_bounds_by_time[t] = max(upper_bounds_by_time.get(t, -np.inf), ub)
+
+                aligned_for_test.append({
+                    "reactions": aligned_individual,
+                    "mean_reaction": mean_aligned,
+                    "sem_reaction": sem_aligned,
+                    "label": exp["label"]
+                })
+
+            SupportingFunctions.apply_mann_whitney_test(
+                aligned_for_test,
+                ref_time,
+                upper_bounds_by_time,
+                offset_ratio=0.00,
+                annotation_fontsize=18
+            )
+
+        # финализация
+        base = "skin_reactions_comparison.png"
+        drawgraph.finalize_figure(base, ncol=1, legend_fontsize=20)
+
+    @staticmethod
     def plot_multiple_experiments(file_paths: List[str], use_AUC: bool = False, apply_statistical_test: bool = False):
         """
         Сравнение кожных реакций между экспериментами без общей сетки времени.
@@ -246,6 +362,94 @@ class SkinReactionsVisualizer:
         # финализация
         base = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths]) + "_comparison.png"
         drawgraph.finalize_figure(base, ncol=1, legend_fontsize=20)
+
+    @staticmethod
+    def plot_auc_comparison_from_visualizers(visualizers: List['SkinReactionsVisualizer'],
+                                            title="Сравнение AUC кожных реакций",
+                                            x_label="",
+                                            y_label="AUC (усл. ед.)"):
+        """
+        Сравнение AUC кожных реакций используя уже созданные и модифицированные визуализаторы.
+
+        Args:
+            visualizers (List[SkinReactionsVisualizer]): Список визуализаторов (могут быть модифицированы).
+        """
+        import re
+        with sns.axes_style("whitegrid"):
+            def extract_total_dose(experiment_params):
+                total = 0.0
+                for p in experiment_params:
+                    if '=' in p and ('Гр' in p or 'Gy' in p or 'гр' in p or 'gy' in p):
+                        try:
+                            value = re.findall(r'[-+]?\d*\.\d+|\d+', p)
+                            if value:
+                                total += float(value[0].replace(',', '.'))
+                        except Exception:
+                            continue
+                return total if total > 0 else None
+
+            common_timepoints = list(range(0, 25))
+            doses, aucs_for_fit, errors_for_fit, labels_for_legend = [], [], [], []
+            colors = sns.color_palette("Set3", n_colors=len(visualizers))
+
+            for visualizer, color in zip(visualizers, colors):
+                try:
+                    individual_skin_reactions = visualizer.skin_reactions
+                    time_data = np.array(visualizer.time_data, dtype=float)
+
+                    # Интерполяция
+                    interpolated_curves = []
+                    for reaction in individual_skin_reactions:
+                        interpolated = SupportingFunctions.interpolate_data_to_common_timepoints(
+                            time_data, reaction, common_timepoints
+                        )
+                        interpolated_curves.append(interpolated)
+
+                    interpolated_curves = np.array(interpolated_curves)
+                    mean_curve = np.nanmean(interpolated_curves, axis=0)
+
+                    # AUC и ошибка
+                    auc_mean = SupportingFunctions.calculate_auc(mean_curve, common_timepoints)
+                    auc_individual = [SupportingFunctions.calculate_auc(curve, common_timepoints)
+                                      for curve in interpolated_curves]
+                    auc_sem = np.std(auc_individual, ddof=1) / np.sqrt(len(auc_individual))
+
+                    dose = extract_total_dose(visualizer.experiment_params)
+                    if dose is not None:
+                        doses.append(dose)
+                        aucs_for_fit.append(auc_mean)
+                        errors_for_fit.append(auc_sem)
+                        labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
+
+                except Exception as e:
+                    print(f"Ошибка при обработке визуализатора: {e}")
+                    continue
+
+            # Построение графика
+            plt.figure(figsize=(12, 8))
+            bar_width = 2.5 if len(doses) < 10 else 0.8
+            bars = plt.bar(doses, aucs_for_fit, yerr=errors_for_fit, width=bar_width,
+                           color=colors[:len(doses)], edgecolor="black", zorder=2, capsize=8)
+            plt.xlabel("Суммарная доза, Гр", fontsize=14)
+            plt.ylabel(y_label, fontsize=14)
+            plt.title(title, fontsize=16)
+            plt.xticks(doses, [str(d) for d in doses], fontsize=12)
+
+            # Подписи над столбиками
+            for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
+                y_text = bar.get_height() - err - 0.03 * max(aucs_for_fit)
+                y_text = max(0, y_text)
+                plt.text(bar.get_x() + bar.get_width() / 2, y_text, f"{auc:.2f}",
+                         ha='center', va='top', fontsize=12, fontweight='bold', color='black')
+
+            # Легенда
+            legend_patches = [mpatches.Patch(color=col, label=lab)
+                              for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
+            ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
+            plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+                       ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
+
+            plt.tight_layout()
 
     @staticmethod
     def plot_auc_comparison(file_paths: List[str], title="Сравнение AUC кожных реакций", x_label="",
