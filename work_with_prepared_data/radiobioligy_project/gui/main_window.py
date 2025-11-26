@@ -46,15 +46,36 @@ class DataProcessor:
         return plotting_func, selected_path
 
     def process_skin_reactions(self, selected_path, checkboxes_state):
-        if checkboxes_state == (True, False, True, False) and "skin_reactions" in selected_path:
-            plotting_func = SkinReactionsVisualizer.plot_skin_reactions
-        elif checkboxes_state == (False, True, False, True) and "skin_reactions" in selected_path:
-            plotting_func = SkinReactionsVisualizer.plot_mean_skin_reactions
-        elif checkboxes_state == (True, False, False, True) and all("skin_reactions" in path for path in selected_path):
-            plotting_func = SkinReactionsVisualizer.plot_multiple_experiments
+        # Проверяем тип: строка (один файл) или список (несколько файлов)
+        is_single_file = isinstance(selected_path, str)
+        is_skin_reactions = False
+
+        if is_single_file:
+            is_skin_reactions = "skin_reactions" in selected_path
+            # Преобразуем в список для единообразия
+            path_list = [selected_path]
+        else:
+            is_skin_reactions = all("skin_reactions" in path for path in selected_path)
+            path_list = selected_path
+
+        if not is_skin_reactions:
+            raise ValueError("Invalid checkbox state or name")
+
+        # "абс.ед" + "индивидуальные" -> индивидуальные кривые (для любого количества файлов)
+        if checkboxes_state == (True, False, True, False):
+            plotting_func = SkinReactionsVisualizer.plot_all_individual_curves
+            return plotting_func, path_list
+
+        # "абс.ед" + "средние" -> усреднённая кривая (один файл) или сравнение экспериментов (несколько)
+        elif checkboxes_state == (True, False, False, True):
+            if is_single_file:
+                plotting_func = SkinReactionsVisualizer.plot_mean_skin_reactions
+                return plotting_func, selected_path  # Для одного файла возвращаем строку
+            else:
+                plotting_func = SkinReactionsVisualizer.plot_multiple_experiments
+                return plotting_func, path_list
         else:
             raise ValueError("Invalid checkbox state or name")
-        return plotting_func, selected_path
 
     def process_for_comparison(self, selected_paths, checkboxes_state):
         if checkboxes_state == (True, False, True, False):
@@ -547,9 +568,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         Обновляет состояние кнопки в зависимости от выбранных экспериментов и чекбоксов.
 
-        Этот метод проверяет, выбран ли ровно один эксперимент и отмечен ли хотя бы один
-        из двух наборов чекбоксов (checkBox_3 или checkBox_4, и checkBox_5 или checkBox_6).
-        Если оба условия удовлетворены, кнопка становится активной. В противном случае
+        Этот метод проверяет, выбран ли ровно один эксперимент с кожными реакциями
+        и отмечены ли чекбоксы "абс.ед" + ("средние" ИЛИ "индивидуальные").
+        Если все условия удовлетворены, кнопка становится активной. В противном случае
         кнопка деактивируется.
 
         Args:
@@ -560,8 +581,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         selected_paths = self.get_selected_experiments()
         oneExperimentSelected = len(selected_paths) == 1
-        anyCheckboxChecked = ((self.checkBox_3.isChecked() or self.checkBox_6.isChecked()) and
-                              (self.checkBox_4.isChecked() or self.checkBox_5.isChecked()))
+        # Кнопка активна при "абс.ед" + ("средние" ИЛИ "индивидуальные")
+        anyCheckboxChecked = self.checkBox_3.isChecked() and (self.checkBox_6.isChecked() or self.checkBox_5.isChecked())
         fileName = "skin_reactions" in selected_paths[0] if oneExperimentSelected else False
         self.pushButton_2.setEnabled(oneExperimentSelected and anyCheckboxChecked and fileName)
 
@@ -592,12 +613,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def update_fourth_button_state(self):
         selected_paths = self.get_selected_experiments()
-        oneExperimentSelected = len(selected_paths) >= 2
-        anyCheckboxChecked = self.checkBox_3.isChecked() and self.checkBox_6.isChecked()
-        all_skin = all("skin_reactions" in path for path in selected_paths)
-        all_tumor = all("skin_reactions" not in path for path in selected_paths)
-        self.pushButton_4.setEnabled(oneExperimentSelected and anyCheckboxChecked and all_skin)
-        self.pushButton_8.setEnabled(oneExperimentSelected and anyCheckboxChecked and (all_skin or all_tumor))
+        twoOrMoreSelected = len(selected_paths) >= 2
+        # Кнопка активна при "абс.ед" + ("средние" ИЛИ "индивидуальные") для ДВУХ или более экспериментов
+        anyCheckboxChecked = self.checkBox_3.isChecked() and (self.checkBox_6.isChecked() or self.checkBox_5.isChecked())
+        all_skin = all("skin_reactions" in path for path in selected_paths) if selected_paths else False
+        all_tumor = all("skin_reactions" not in path for path in selected_paths) if selected_paths else False
+
+        # pushButton_4 активна для 2+ экспериментов
+        self.pushButton_4.setEnabled(twoOrMoreSelected and anyCheckboxChecked and all_skin)
+
+        # Для AUC требуется минимум 2 эксперимента и только "средние"
+        auc_checkbox_checked = self.checkBox_3.isChecked() and self.checkBox_6.isChecked()
+        self.pushButton_8.setEnabled(twoOrMoreSelected and auc_checkbox_checked and (all_skin or all_tumor))
 
     def update_fifth_button_state(self):
         """
@@ -755,7 +782,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         try:
             plotting_func, selected_path = self.data_processor.process_skin_reactions(selected_paths[0],
                                                                                       checkboxes_state)
-            self.draw_graphic([selected_path], SkinReactionsVisualizer, plotting_func)
+
+            # Устанавливаем тип графика в зависимости от выбранных чекбоксов
+            if self.checkBox_5.isChecked():  # "индивидуальные"
+                self.current_plot_type = 'all_individual_curves'
+            else:  # "средние"
+                self.current_plot_type = None
+
+            # selected_path может быть строкой или списком в зависимости от типа графика
+            # Не оборачиваем в список, если это уже список
+            if isinstance(selected_path, list):
+                self.draw_graphic(selected_path, SkinReactionsVisualizer, plotting_func)
+            else:
+                self.draw_graphic([selected_path], SkinReactionsVisualizer, plotting_func)
         except ValueError as e:
             print(e)
 
@@ -768,9 +807,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         checkboxes_state = (self.checkBox_3.isChecked(), self.checkBox_4.isChecked(),
                             self.checkBox_5.isChecked(), self.checkBox_6.isChecked())
         try:
+            # Для нескольких файлов передаём список
             plotting_func, selected_path = self.data_processor.process_skin_reactions(selected_paths,
                                                                                       checkboxes_state)
-            self.draw_graphic(selected_path, SkinReactionsVisualizer, plotting_func)
+            self.draw_graphic(selected_path if isinstance(selected_path, list) else [selected_path],
+                            SkinReactionsVisualizer, plotting_func)
         except ValueError as e:
             print(e)
 
@@ -823,7 +864,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         layout.addWidget(table)
 
     def handle_pushButton_4(self):
-        self.current_plot_type = 'multiple_experiments'
+        # Определяем тип графика в зависимости от выбранных чекбоксов
+        if self.checkBox_5.isChecked():  # Если выбран "индивидуальные"
+            self.current_plot_type = 'all_individual_curves'
+        else:  # Если выбран "средние"
+            self.current_plot_type = 'multiple_experiments'
         self.create_graphic()
 
     def handle_pushButton_8(self):
@@ -881,12 +926,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     SkinReactionsVisualizer.plot_multiple_experiments_from_visualizers(visualizer, self.use_AUC, self.perform_stat_test)
                 elif self.current_plot_type == 'auc_comparison':
                     SkinReactionsVisualizer.plot_auc_comparison_from_visualizers(visualizer)
+                elif self.current_plot_type == 'all_individual_curves':
+                    SkinReactionsVisualizer.plot_all_individual_curves_from_visualizers(visualizer)
+            elif isinstance(visualizer, SkinReactionsVisualizer) and self.current_plot_type == 'all_individual_curves':
+                # Для одного эксперимента с индивидуальными кривыми
+                SkinReactionsVisualizer.plot_all_individual_curves_from_visualizers([visualizer])
             elif isinstance(visualizer, SkinReactionsVisualizer) and len(self.current_selected_paths) > 1:
                 # Вызов статического метода для рисования графика из путей (для обратной совместимости)
                 if self.current_plot_type == 'multiple_experiments':
                     SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC, self.perform_stat_test)
                 elif self.current_plot_type == 'auc_comparison':
                     SkinReactionsVisualizer.plot_auc_comparison(self.current_selected_paths)
+                elif self.current_plot_type == 'all_individual_curves':
+                    SkinReactionsVisualizer.plot_all_individual_curves(self.current_selected_paths)
             elif isinstance(visualizer, TumorDataVisualizer) and len(self.current_selected_paths) > 1 and self.current_plot_type == 'tumor_auc_comparison':
                 TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths)
             else:
@@ -944,6 +996,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             and self.current_plot_type not in [
                 'auc_comparison',
                 'tumor_auc_comparison',
+                'all_individual_curves',
             ]
         ):
             return  # Ничего не делаем, если параметры не заданы

@@ -364,6 +364,69 @@ class SkinReactionsVisualizer:
         drawgraph.finalize_figure(base, ncol=1, legend_fontsize=20)
 
     @staticmethod
+    def plot_all_individual_curves_from_visualizers(visualizers: List['SkinReactionsVisualizer']):
+        """
+        Отображает все индивидуальные кривые крыс из одного или нескольких экспериментов.
+
+        Args:
+            visualizers (List[SkinReactionsVisualizer]): Список визуализаторов (может быть один).
+        """
+        # Определяем заголовок в зависимости от количества экспериментов
+        if len(visualizers) == 1:
+            title = f"Кожные реакции, Параметры эксперимента: {format_experiment_params(visualizers[0].experiment_params)}"
+        else:
+            title = "Индивидуальные кожные реакции из всех экспериментов"
+
+        drawgraph = GraphVisualizer(
+            title,
+            "Время, сут.",
+            "Кожные реакции, абс. ед.",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
+
+        # Итерация по всем экспериментам
+        for vis in visualizers:
+            # Получаем метку эксперимента (если больше одного)
+            exp_label = format_experiment_params(vis.experiment_params) if len(visualizers) > 1 else ""
+
+            # Итерация по крысам в текущем эксперименте
+            for rat_label, reactions in zip(vis.rat_labels, vis.skin_reactions):
+                # Очистка NaN значений
+                clean_reactions = np.array(reactions)[~np.isnan(reactions)]
+                clean_time_data = np.array(vis.time_data)[~np.isnan(reactions)]
+
+                if not list(clean_reactions):
+                    continue
+
+                # Формируем полную метку
+                if len(visualizers) > 1:
+                    full_label = f"{exp_label} - {rat_label}"
+                else:
+                    full_label = rat_label
+
+                # Добавление данных на график используя стандартный метод
+                drawgraph.add_plot(clean_time_data, clean_reactions, {}, full_label)
+
+        # Финализация с корректными параметрами
+        if len(visualizers) == 1:
+            drawgraph.finalize_figure(visualizers[0].file_path, 'Метки крыс', 2, 25)
+        else:
+            base = "all_individual_skin_reactions_comparison.png"
+            drawgraph.finalize_figure(base, 'Метки крыс', 2, 25)
+
+    @staticmethod
+    def plot_all_individual_curves(file_paths: List[str]):
+        """
+        Отображает все индивидуальные кривые крыс из множественных экспериментов.
+
+        Args:
+            file_paths (List[str]): Пути к файлам данных экспериментов.
+        """
+        visualizers = [SkinReactionsVisualizer(path) for path in file_paths]
+        SkinReactionsVisualizer.plot_all_individual_curves_from_visualizers(visualizers)
+
+    @staticmethod
     def plot_auc_comparison_from_visualizers(visualizers: List['SkinReactionsVisualizer'],
                                             title="Сравнение AUC кожных реакций",
                                             x_label="",

@@ -357,20 +357,18 @@ class ExtractOutliers:
         if data_attribute_name is None:
             data_attribute_name = self.data_attr
 
-        # Проверка на исключение всех крыс
-        if len(excluded_rats) >= len(self.base_class.rat_labels):
-            return
-
         # Используем точное соответствие меток для исключения
+        # Сначала находим, какие крысы из excluded_rats действительно есть в этом эксперименте
         exclude_indices = []
         for i, label in enumerate(self.base_class.rat_labels):
             if label in excluded_rats:
                 exclude_indices.append(i)
 
+        # Если нет крыс для исключения в этом конкретном эксперименте, ничего не делаем
         if not exclude_indices:
             return
 
-        # Дополнительная проверка: если после исключения не останется крыс, отменяем операцию
+        # Проверка: если после исключения не останется крыс, отменяем операцию
         if len(exclude_indices) >= len(self.base_class.rat_labels):
             return
 
