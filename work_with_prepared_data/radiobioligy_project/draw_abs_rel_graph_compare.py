@@ -113,7 +113,7 @@ class TumorDataComparatorAdvanced:
             self.use_ttest
             )
 
-        drawgraph.finalize_figure('')
+        drawgraph.finalize_figure('', legend_fontsize=18)
 
     def compare_relative_volumes(self):
         """
@@ -169,6 +169,7 @@ class TumorDataComparatorAdvanced:
         time_labels = [f"Интервал: {interval}" for interval in time_intervals]
         # drawgraph.add_legend(time_labels, "Интервалы между облучениями", "lower right")
 
+        # Увеличиваем размер шрифта легенды для относительных графиков сравнения
         drawgraph.finalize_figure('', legend_fontsize=18)
 
     def compare_control_and_experiment(self, control_visualizers: List[TumorDataVisualizer]):
@@ -232,7 +233,7 @@ class TumorDataComparatorAdvanced:
             self.use_ttest
         )
 
-        drawgraph.finalize_figure('')
+        drawgraph.finalize_figure('', legend_fontsize=18)
 
     def compare_tumor_growth_inhibition_with_multiple_experiments(self, control_visualizer: TumorDataVisualizer,
                                                                   experiment_visualizers: List[TumorDataVisualizer]):
@@ -292,6 +293,7 @@ class TumorDataComparatorAdvanced:
             x_data_lists.append(t_exp)
 
         drawgraph.update_axes_limits(x_data_lists)
+        # Увеличиваем размер шрифта легенды для графиков торможения роста опухоли
         drawgraph.finalize_figure('', legend_fontsize=18)
 
     def create_tumor_growth_inhibition_table(self, control_visualizer, experiment_visualizers):

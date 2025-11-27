@@ -86,7 +86,7 @@ class SkinReactionsVisualizer:
 
             # Добавление данных на график
             drawgraph.add_plot(clean_time_data, clean_reactions, {}, label)
-        drawgraph.finalize_figure(self.file_path, 'Метки крыс', 2, 25)
+        drawgraph.finalize_figure(self.file_path, 'Метки крыс', 2, 18)
 
     def plot_mean_skin_reactions(self):
         """
@@ -118,9 +118,13 @@ class SkinReactionsVisualizer:
         drawgraph.setup_figure()
         # Получение средних кожных реакций и их статистических характеристик
         mean_reactions, std_dev, error_margin = self.data_processor.get_mean_skin_reactions()
+
+        # Проверяем, нужно ли вычислять AUC
+        calculate_auc = getattr(self, 'use_AUC', False)
+
         # Добавление данных на график
-        drawgraph.add_plot(self.time_data, mean_reactions, self.experiment_params, "", None)
-        drawgraph.finalize_figure('', '', 1, 25)
+        drawgraph.add_plot(self.time_data, mean_reactions, self.experiment_params, "", None, calculate_auc=calculate_auc)
+        drawgraph.finalize_figure('', '', 1, 18)
 
     @staticmethod
     def plot_multiple_experiments_from_visualizers(visualizers: List['SkinReactionsVisualizer'], use_AUC: bool = False, apply_statistical_test: bool = False):
@@ -236,7 +240,7 @@ class SkinReactionsVisualizer:
 
         # финализация
         base = "skin_reactions_comparison.png"
-        drawgraph.finalize_figure(base, ncol=1, legend_fontsize=20)
+        drawgraph.finalize_figure(base, ncol=1, legend_fontsize=18)
 
     @staticmethod
     def plot_multiple_experiments(file_paths: List[str], use_AUC: bool = False, apply_statistical_test: bool = False):
@@ -361,7 +365,7 @@ class SkinReactionsVisualizer:
 
         # финализация
         base = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths]) + "_comparison.png"
-        drawgraph.finalize_figure(base, ncol=1, legend_fontsize=20)
+        drawgraph.finalize_figure(base, ncol=1, legend_fontsize=18)
 
     @staticmethod
     def plot_all_individual_curves_from_visualizers(visualizers: List['SkinReactionsVisualizer']):
@@ -410,10 +414,10 @@ class SkinReactionsVisualizer:
 
         # Финализация с корректными параметрами
         if len(visualizers) == 1:
-            drawgraph.finalize_figure(visualizers[0].file_path, 'Метки крыс', 2, 25)
+            drawgraph.finalize_figure(visualizers[0].file_path, 'Метки крыс', 2, 18)
         else:
             base = "all_individual_skin_reactions_comparison.png"
-            drawgraph.finalize_figure(base, 'Метки крыс', 2, 25)
+            drawgraph.finalize_figure(base, 'Метки крыс', 2, 18)
 
     @staticmethod
     def plot_all_individual_curves(file_paths: List[str]):

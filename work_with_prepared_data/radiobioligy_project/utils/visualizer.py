@@ -519,6 +519,9 @@ class GraphVisualizer:
         Returns:
             None
         """
+        # Сохраняем заголовок основной легенды для использования в отдельном окне
+        self.main_legend_title = main_legend_title
+
         ax = plt.gca()  # Получаем текущий объект Axes
 
         # Устанавливаем деления оси X

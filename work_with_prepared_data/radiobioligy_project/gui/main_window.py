@@ -134,8 +134,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.legend_manager = LegendManager()
         self.cached_visualizer = None  # Кеш для модифицированного визуализатора
         self.cache_key = None  # Ключ для проверки актуальности кеша
+        self.show_legend_separately = False  # Флаг для отображения легенды отдельно
         self.setupUi(self)
+
+        # Добавляем чекбокс "Нарисовать легенду отдельно"
+        from PyQt6.QtWidgets import QCheckBox
+        self.checkBox_separate_legend = QCheckBox("Легенда отдельно", self.centralwidget)
+        self.checkBox_separate_legend.setObjectName("checkBox_separate_legend")
+        # Вставляем чекбокс перед label_6 (положение основной легенды)
+        label_index = self.horizontalLayout_7.indexOf(self.label_6)
+        self.horizontalLayout_7.insertWidget(label_index, self.checkBox_separate_legend)
         self.action.triggered.connect(self.open_files)
+        self.action_2.triggered.connect(self.save_graph)
+
+        # Блокируем неиспользуемые кнопки меню
+        self.action_4.setEnabled(False)    # Сохранить таблицу
+        self.menu_2.setEnabled(False)      # Редактировать (весь выпадающий список)
+        self.menu_3.setEnabled(False)      # Распознать (весь выпадающий список)
+
         # Настраиваем модель для 2 столбцов
         self.model = QStandardItemModel(0, 3, self)
         # Заменяем стандартный comboBox_4 на кастомный комбобокс с чекбоксами
@@ -189,8 +205,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.comboBox_3.currentIndexChanged.connect(self.on_legend_position_changed)
         self.comboBox.currentIndexChanged.connect(self.update_doubleSpinBox_value)
         # Подключение новых кнопок для управления легендой
-        self.pushButton_legend_window.clicked.connect(self.show_legend_window)
-        self.pushButton_save_legend.clicked.connect(self.save_legend_to_file)
+        self.pushButton_legend_window.clicked.connect(self.show_legend_preview)
+
+        # Удаляем кнопку "Сохранить легенду" - она больше не нужна
+        self.pushButton_save_legend.setVisible(False)
+
+        # Подключение чекбокса "Легенда отдельно"
+        self.checkBox_separate_legend.stateChanged.connect(self.on_separate_legend_changed)
 
         # Подключаем сигналы изменения модели таблицы к слоту
         self.model.rowsInserted.connect(self.on_table_data_changed)
@@ -324,6 +345,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.checkBox_2.setEnabled(True)
             self.checkBox_7.setEnabled(True)
             #self.checkBox.setEnabled(True)
+        elif self.pushButton.isEnabled() and self.checkBox_6.isChecked():
+            # Для одной группы опухолей также можно вычислить AUC
+            self.checkBox_2.setEnabled(True)
+            # Но статистические тесты не имеют смысла для одной группы
+            self.checkBox_7.setEnabled(False)
+            self.checkBox_7.setChecked(False)
+            self.checkBox.setEnabled(False)
+            self.checkBox.setChecked(False)
+        elif self.pushButton_2.isEnabled() and self.checkBox_6.isChecked():
+            # Для одной группы кожных реакций также можно вычислить AUC
+            self.checkBox_2.setEnabled(True)
+            # Но статистические тесты не имеют смысла для одной группы
+            self.checkBox_7.setEnabled(False)
+            self.checkBox_7.setChecked(False)
+            self.checkBox.setEnabled(False)
+            self.checkBox.setChecked(False)
         else:
             self.checkBox_2.setEnabled(False)
             self.checkBox_2.setChecked(False)
@@ -340,6 +377,39 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if selected_position == "None":
             selected_position = None
         graph_manager.update_legend_position(selected_position)
+
+        # Автоматически перестраиваем график, если он есть
+        if self.figure is not None:
+            self.create_graphic()
+
+    def on_separate_legend_changed(self):
+        """
+        Обработчик изменения состояния чекбокса "Легенда отдельно".
+        Блокирует/разблокирует выбор положения легенды и автоматически открывает окно легенды.
+        """
+        is_checked = self.checkBox_separate_legend.isChecked()
+        self.show_legend_separately = is_checked
+
+        # Блокируем/разблокируем comboBox_3 (положение легенды)
+        self.comboBox_3.setEnabled(not is_checked)
+
+        if is_checked:
+            # Устанавливаем положение легенды в None (скрываем на графике)
+            self.comboBox_3.setCurrentText("None")
+            graph_manager.update_legend_position(None)
+
+            # Если есть текущий график, обновляем его
+            if self.figure is not None:
+                self.create_graphic()
+        else:
+            # Восстанавливаем положение легенды на "best"
+            if self.comboBox_3.currentText() == "None":
+                self.comboBox_3.setCurrentText("best")
+                graph_manager.update_legend_position("best")
+
+            # Если есть текущий график, обновляем его
+            if self.figure is not None:
+                self.create_graphic()
 
     def update_doubleSpinBox_value(self):
         """
@@ -1021,6 +1091,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
             if self.selected_outlier_method is not None:
                 visualizer_instance = self.apply_selected_outlier_method(visualizer_instance)
+            # Устанавливаем параметры для одного эксперимента
+            visualizer_instance.use_AUC = self.use_AUC
         elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is None:
             # Случай для сравнения нескольких экспериментов
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
@@ -1059,6 +1131,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
                     if self.selected_outlier_method is not None:
                         visualizer_instance = self.apply_selected_outlier_method(visualizer_instance)
+                    # Устанавливаем параметры для одного эксперимента
+                    visualizer_instance.use_AUC = self.use_AUC
 
                 # НЕ сохраняем в кеш для метода ручного исключения
                 self.cached_visualizer = None
@@ -1088,6 +1162,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
                         if self.selected_outlier_method is not None:
                             visualizer_instance = self.apply_selected_outlier_method(visualizer_instance)
+                        # Устанавливаем параметры для одного эксперимента
+                        visualizer_instance.use_AUC = self.use_AUC
 
                     # Сохраняем в кеш
                     self.cached_visualizer = visualizer_instance
@@ -1103,9 +1179,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         # Обновляем комбобокс с метками крыс после построения графика
         self.update_combobox_with_labels()
-        
+
         # Восстанавливаем состояние выбранных элементов
         self.comboBox_4.restore_checked_indices(self.saved_checked_items)
+
+        # Автоматически открываем окно легенды, если включена соответствующая опция
+        if self.show_legend_separately and self.figure is not None:
+            self.show_legend_window()
 
     def dataframe_to_qtablewidget(self, df):
         table_widget = QTableWidget()
@@ -1169,88 +1249,32 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Ошибка", f"Не удалось открыть файл {file_path}.\n{str(e)}")
 
-    def show_legend_window(self):
+    def show_legend_preview(self):
         """
-        Показывает легенду в отдельном окне
+        Показывает окно предпросмотра легенды как изображения с возможностью сохранения
         """
         try:
             # Используем фигуру из canvas, если она есть
             current_figure = self.figure
-            
+
             if current_figure is None:
                 # Если нет фигуры в canvas, пытаемся получить текущую фигуру matplotlib
                 current_figure = plt.gcf() if plt.get_fignums() else None
-            
+
             if current_figure:
-                # Показываем окно легенды с данными из текущей фигуры
-                self.legend_manager.show_legend_window(current_figure, self)
+                # Показываем окно предпросмотра легенды
+                self.legend_manager.show_legend_preview(current_figure, self)
             else:
                 self.show_message("Нет активного графика для отображения легенды", "Информация")
         except Exception as e:
             self.show_message(f"Ошибка при отображении легенды: {str(e)}", "Ошибка")
 
-    def save_legend_to_file(self):
+    def show_legend_window(self):
         """
-        Сохраняет легенду в отдельный файл
+        Показывает легенду в отдельном окне (используется для автоматического открытия)
         """
-        try:
-            from PyQt6.QtWidgets import QFileDialog
-            from PyQt6.QtCore import QStandardPaths
-            import os
-            
-            # Используем фигуру из canvas, если она есть
-            current_figure = self.figure
-            
-            if current_figure is None:
-                # Если нет фигуры в canvas, пытаемся получить текущую фигуру matplotlib
-                current_figure = plt.gcf() if plt.get_fignums() else None
-            
-            if not current_figure:
-                self.show_message("Нет активного графика для сохранения легенды", "Информация")
-                return
-            
-            # Извлекаем данные легенды
-            legend_data = self.legend_manager.extract_legend_from_figure(current_figure)
-            
-            if not legend_data:
-                self.show_message("Нет данных легенды для сохранения", "Информация")
-                return
-            
-            # Предлагаем сохранить в папку Downloads
-            default_path = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
-            file_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "Сохранить легенду",
-                f"{default_path}/legend.txt",
-                "Текстовые файлы (*.txt);;Все файлы (*)"
-            )
-            
-            if file_path:
-                # Формируем текст легенды
-                legend_text = "Легенда графика\n"
-                legend_text += "=" * 50 + "\n\n"
-                
-                for i, item in enumerate(legend_data, 1):
-                    if isinstance(item, dict):
-                        label = item.get('label', f'Элемент {i}')
-                        color = item.get('color', 'black')
-                        marker = item.get('marker', 'o')
-                        linestyle = item.get('linestyle', '-')
-                        legend_text += f"{i}. {label}\n"
-                        legend_text += f"   Цвет: {color}, Маркер: {marker}, Стиль линии: {linestyle}\n\n"
-                    elif isinstance(item, str):
-                        legend_text += f"{i}. {item}\n"
-                    else:
-                        legend_text += f"{i}. {str(item)}\n"
-                
-                # Сохраняем в файл
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(legend_text)
-                
-                self.show_message("Легенда успешно сохранена!", "Успех")
-                
-        except Exception as e:
-            self.show_message(f"Ошибка при сохранении легенды: {str(e)}", "Ошибка")
+        # Используем тот же метод для автоматического открытия
+        self.show_legend_preview()
 
     def show_message(self, message, title="Информация"):
         """
@@ -1258,6 +1282,34 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.information(self, title, message)
+
+    def save_graph(self):
+        """
+        Сохраняет текущий график в файл
+        """
+        if self.figure is None:
+            self.show_message("Нет графика для сохранения. Сначала постройте график.", "Информация")
+            return
+
+        try:
+            # Предлагаем сохранить в папку Downloads
+            from PyQt6.QtCore import QStandardPaths
+            default_path = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Сохранить график",
+                f"{default_path}/graph.png",
+                "PNG файлы (*.png);;JPEG файлы (*.jpg);;PDF файлы (*.pdf);;SVG файлы (*.svg);;Все файлы (*)"
+            )
+
+            if file_path:
+                # Сохраняем текущую фигуру matplotlib
+                self.figure.savefig(file_path, dpi=300, bbox_inches='tight',
+                                   facecolor='white', edgecolor='none')
+                self.show_message("График успешно сохранён!", "Успех")
+
+        except Exception as e:
+            self.show_message(f"Ошибка при сохранении графика: {str(e)}", "Ошибка")
 
 def excepthook(type, value, traceback):
     app = QApplication.instance()

@@ -169,10 +169,13 @@ class TumorDataVisualizer:
         formatted_params = format_experiment_params(self.experiment_params)
         # Создаем уникальную метку для этого эксперимента
         unique_label = f"M/V абс.: {formatted_params}"
-        
+
+        # Проверяем, нужно ли вычислять AUC
+        calculate_auc = getattr(self, 'use_AUC', False)
+
         # Добавление данных на график с уникальной меткой
-        drawgraph.add_plot(self.time_data, mean_volumes, {}, unique_label, error_margin)
-        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_mean_volumes")
+        drawgraph.add_plot(self.time_data, mean_volumes, {}, unique_label, error_margin, calculate_auc=calculate_auc)
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_mean_volumes", legend_fontsize=18)
 
     def plot_average_relative_tumor_volume(self):
         """
@@ -218,11 +221,15 @@ class TumorDataVisualizer:
         # Создаем уникальную метку для этого эксперимента
         unique_label = f"M/V отн.: {formatted_params}"
 
+        # Проверяем, нужно ли вычислять AUC
+        calculate_auc = getattr(self, 'use_AUC', False)
+
         # Добавление данных на график с уникальной меткой
         drawgraph.add_plot(self.time_data, mean_relative_volumes, {}, unique_label,
-                           error_margin_rel)
+                           error_margin_rel, calculate_auc=calculate_auc)
 
-        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_average_relative_volumes")
+        # Увеличиваем размер шрифта легенды для относительных графиков
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_average_relative_volumes", legend_fontsize=18)
 
     def plot_mean_relative_mean_tumor_volume(self):
         """

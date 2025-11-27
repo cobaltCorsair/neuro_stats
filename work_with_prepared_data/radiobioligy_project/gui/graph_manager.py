@@ -43,3 +43,12 @@ def clear_rat_labels():
     """
     global rat_labels
     rat_labels = []
+
+
+def get_last_visualizer():
+    """
+    Возвращает последний зарегистрированный визуализатор.
+    """
+    if visualizers:
+        return visualizers[-1]
+    return None
