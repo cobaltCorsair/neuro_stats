@@ -142,3 +142,7 @@ cython_debug/
 !/work_with_prepared_data/saved_graphics/
 /work_with_prepared_data/datas/
 /work_with_prepared_data/saved_graphics/
+
+# Executable files
+*.exe
+exe/

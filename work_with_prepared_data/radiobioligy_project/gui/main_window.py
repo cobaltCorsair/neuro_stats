@@ -8,7 +8,7 @@ import sys
 import os
 
 # Импорт сгенерированного класса из gui.py
-from gui import Ui_MainWindow
+from work_with_prepared_data.radiobioligy_project.gui.gui import Ui_MainWindow
 from work_with_prepared_data.radiobioligy_project.controls import ControlGroupVisualizer
 from work_with_prepared_data.radiobioligy_project.data_processing.rat_manager import register_rat_labels, \
     get_rat_labels, clear_rat_labels, rat_labels_with_indices
@@ -24,7 +24,7 @@ from work_with_prepared_data.radiobioligy_project.gui.legend_window import Legen
 import matplotlib
 import matplotlib.pyplot as plt
 
-matplotlib.use('QT5Agg')  # Установка бэкенда до импорта pyplot.
+matplotlib.use('QtAgg')  # Установка бэкенда до импорта pyplot (автоматически выберет Qt5 или Qt6).
 
 
 class DataProcessor:
