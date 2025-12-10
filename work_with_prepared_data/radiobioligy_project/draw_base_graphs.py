@@ -280,7 +280,9 @@ class TumorDataVisualizer:
     def plot_auc_comparison(file_paths: List[str],
                              title="Сравнение AUC объёмов опухоли",
                              x_label="",
-                             y_label="AUC (абс. ед.)"):
+                             y_label="AUC (абс. ед.)",
+                             perform_stat_test: bool = False,
+                             control_index: int = 0):
         """
         Построение столбчатого графика для сравнения площади под кривой
         объёмов опухоли между экспериментами.
@@ -290,6 +292,8 @@ class TumorDataVisualizer:
             title: Заголовок графика.
             x_label: Подпись оси X.
             y_label: Подпись оси Y.
+            perform_stat_test: Если True, применяется критерий Манна-Уитни.
+            control_index: Индекс контрольной группы в списке file_paths.
         """
         with sns.axes_style("whitegrid"):
             def extract_total_dose(experiment_params):
@@ -308,6 +312,7 @@ class TumorDataVisualizer:
             errors_for_fit = []
             labels_for_legend = []
             auc_values = []
+            all_individual_aucs = []  # Для критерия Манна-Уитни
             colors = sns.color_palette("Set3", n_colors=len(file_paths))
             for file_path, color in zip(file_paths, colors):
                 visualizer = TumorDataVisualizer(file_path)
@@ -331,8 +336,10 @@ class TumorDataVisualizer:
                     aligned_curves = np.array(aligned_curves)
                     mean_curve = np.nanmean(aligned_curves, axis=0)
                     auc_mean = SupportingFunctions.calculate_auc(mean_curve, common_time_points)
-                    auc_sem = np.std([SupportingFunctions.calculate_auc(curve, common_time_points) for curve in aligned_curves], ddof=1) / np.sqrt(len(aligned_curves))
+                    individual_aucs = [SupportingFunctions.calculate_auc(curve, common_time_points) for curve in aligned_curves]
+                    auc_sem = np.std(individual_aucs, ddof=1) / np.sqrt(len(aligned_curves))
                     auc_values.append(auc_mean)
+                    all_individual_aucs.append(individual_aucs)  # Сохраняем для теста
                     labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
                     dose = extract_total_dose(visualizer.experiment_params)
                     if dose is not None:
@@ -366,6 +373,38 @@ class TumorDataVisualizer:
             ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
             plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
                        ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
+
+            # Критерий Манна-Уитни
+            if perform_stat_test and control_index < len(all_individual_aucs) and len(all_individual_aucs) > 1:
+                from scipy.stats import mannwhitneyu
+                control_aucs = all_individual_aucs[control_index]
+                y_max = max(aucs_for_fit) if aucs_for_fit else 0
+                y_offset = y_max * 0.05
+
+                for i, (bar, dose) in enumerate(zip(bars, doses)):
+                    if i == control_index:
+                        continue
+
+                    # Находим индекс в all_individual_aucs по дозе
+                    dose_index = None
+                    for idx, fp in enumerate(file_paths):
+                        vis = TumorDataVisualizer(fp)
+                        if extract_total_dose(vis.experiment_params) == dose:
+                            dose_index = idx
+                            break
+
+                    if dose_index is not None and dose_index < len(all_individual_aucs):
+                        exp_aucs = all_individual_aucs[dose_index]
+                        try:
+                            _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
+                            if p_value < 0.05:
+                                y_position = bar.get_height() + errors_for_fit[i] + y_offset
+                                plt.text(bar.get_x() + bar.get_width()/2, y_position,
+                                       '*', ha='center', va='bottom',
+                                       fontsize=20, color='black', fontweight='bold')
+                        except Exception as e:
+                            print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
+
             plt.tight_layout()
             # plt.savefig("tumor_auc_comparison_plot.png")
 

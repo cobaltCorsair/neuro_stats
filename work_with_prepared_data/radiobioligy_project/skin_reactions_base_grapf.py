@@ -434,12 +434,16 @@ class SkinReactionsVisualizer:
     def plot_auc_comparison_from_visualizers(visualizers: List['SkinReactionsVisualizer'],
                                             title="Сравнение AUC кожных реакций",
                                             x_label="",
-                                            y_label="AUC (усл. ед.)"):
+                                            y_label="AUC (усл. ед.)",
+                                            perform_stat_test: bool = False,
+                                            control_index: int = 0):
         """
         Сравнение AUC кожных реакций используя уже созданные и модифицированные визуализаторы.
 
         Args:
             visualizers (List[SkinReactionsVisualizer]): Список визуализаторов (могут быть модифицированы).
+            perform_stat_test: Если True, применяется критерий Манна-Уитни.
+            control_index: Индекс контрольной группы в списке visualizers.
         """
         import re
         with sns.axes_style("whitegrid"):
@@ -457,6 +461,7 @@ class SkinReactionsVisualizer:
 
             common_timepoints = list(range(0, 25))
             doses, aucs_for_fit, errors_for_fit, labels_for_legend = [], [], [], []
+            all_individual_aucs = []  # Для критерия Манна-Уитни
             colors = sns.color_palette("Set3", n_colors=len(visualizers))
 
             for visualizer, color in zip(visualizers, colors):
@@ -486,6 +491,7 @@ class SkinReactionsVisualizer:
                         doses.append(dose)
                         aucs_for_fit.append(auc_mean)
                         errors_for_fit.append(auc_sem)
+                        all_individual_aucs.append(auc_individual)  # Сохраняем для теста
                         labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
 
                 except Exception as e:
@@ -516,11 +522,41 @@ class SkinReactionsVisualizer:
             plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
                        ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
 
+            # Критерий Манна-Уитни
+            if perform_stat_test and control_index < len(all_individual_aucs) and len(all_individual_aucs) > 1:
+                from scipy.stats import mannwhitneyu
+                control_aucs = all_individual_aucs[control_index]
+                y_max = max(aucs_for_fit) if aucs_for_fit else 0
+                y_offset = y_max * 0.05
+
+                for i, (bar, dose) in enumerate(zip(bars, doses)):
+                    if i == control_index:
+                        continue
+
+                    # Находим индекс в all_individual_aucs по дозе
+                    dose_index = None
+                    for idx, vis in enumerate(visualizers):
+                        if extract_total_dose(vis.experiment_params) == dose:
+                            dose_index = idx
+                            break
+
+                    if dose_index is not None and dose_index < len(all_individual_aucs):
+                        exp_aucs = all_individual_aucs[dose_index]
+                        try:
+                            _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
+                            if p_value < 0.05:
+                                y_position = bar.get_height() + errors_for_fit[i] + y_offset
+                                plt.text(bar.get_x() + bar.get_width()/2, y_position,
+                                       '*', ha='center', va='bottom',
+                                       fontsize=20, color='black', fontweight='bold')
+                        except Exception as e:
+                            print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
+
             plt.tight_layout()
 
     @staticmethod
     def plot_auc_comparison(file_paths: List[str], title="Сравнение AUC кожных реакций", x_label="",
-                            y_label="AUC (усл. ед.)"):
+                            y_label="AUC (усл. ед.)", perform_stat_test: bool = False, control_index: int = 0):
         import re
         with sns.axes_style("whitegrid"):
             def extract_total_dose(experiment_params):
@@ -537,6 +573,7 @@ class SkinReactionsVisualizer:
 
             common_timepoints = list(range(0, 25))  # как в plot_multiple_experiments
             doses, aucs_for_fit, errors_for_fit, labels_for_legend = [], [], [], []
+            all_individual_aucs = []  # Для критерия Манна-Уитни
             colors = sns.color_palette("Set3", n_colors=len(file_paths))
 
             for file_path, color in zip(file_paths, colors):
@@ -567,6 +604,7 @@ class SkinReactionsVisualizer:
                         doses.append(dose)
                         aucs_for_fit.append(auc_mean)
                         errors_for_fit.append(auc_sem)
+                        all_individual_aucs.append(auc_individual)  # Сохраняем для теста
                         labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
 
                 except Exception as e:
@@ -596,6 +634,37 @@ class SkinReactionsVisualizer:
             ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
             plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
                        ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
+
+            # Критерий Манна-Уитни
+            if perform_stat_test and control_index < len(all_individual_aucs) and len(all_individual_aucs) > 1:
+                from scipy.stats import mannwhitneyu
+                control_aucs = all_individual_aucs[control_index]
+                y_max = max(aucs_for_fit) if aucs_for_fit else 0
+                y_offset = y_max * 0.05
+
+                for i, (bar, dose) in enumerate(zip(bars, doses)):
+                    if i == control_index:
+                        continue
+
+                    # Находим индекс в all_individual_aucs по дозе
+                    dose_index = None
+                    for idx, fp in enumerate(file_paths):
+                        vis = SkinReactionsVisualizer(fp)
+                        if extract_total_dose(vis.experiment_params) == dose:
+                            dose_index = idx
+                            break
+
+                    if dose_index is not None and dose_index < len(all_individual_aucs):
+                        exp_aucs = all_individual_aucs[dose_index]
+                        try:
+                            _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
+                            if p_value < 0.05:
+                                y_position = bar.get_height() + errors_for_fit[i] + y_offset
+                                plt.text(bar.get_x() + bar.get_width()/2, y_position,
+                                       '*', ha='center', va='bottom',
+                                       fontsize=20, color='black', fontweight='bold')
+                        except Exception as e:
+                            print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
 
             plt.tight_layout()
             # plt.savefig("auc_comparison_plot.png")
