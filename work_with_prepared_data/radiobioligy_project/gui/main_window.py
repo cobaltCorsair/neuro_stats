@@ -969,6 +969,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             print("Необходимо выбрать два или более экспериментов")
             return
 
+        # Если включен критерий Манна-Уитни, но контроль не выбран, автоматически помечаем первый файл
+        if self.perform_stat_test and not self.control_path:
+            # Находим первый выбранный файл в таблице и помечаем его как контрольный
+            for row in range(self.model.rowCount()):
+                item = self.model.item(row, 0)
+                if item and item.isCheckable() and item.checkState() == Qt.CheckState.Checked:
+                    control_checkbox = self.model.item(row, 2)
+                    if control_checkbox:
+                        control_checkbox.setCheckState(Qt.CheckState.Checked)
+                        # on_control_checkbox_changed будет вызван автоматически
+                    break
+
         all_skin = all("skin_reactions" in p for p in selected_paths)
         all_tumor = all("skin_reactions" not in p for p in selected_paths)
 

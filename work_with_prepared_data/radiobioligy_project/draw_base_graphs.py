@@ -342,10 +342,12 @@ class TumorDataVisualizer:
                     all_individual_aucs.append(individual_aucs)  # Сохраняем для теста
                     labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
                     dose = extract_total_dose(visualizer.experiment_params)
-                    if dose is not None:
-                        doses.append(dose)
-                        aucs_for_fit.append(auc_mean)
-                        errors_for_fit.append(auc_sem)
+                    # Если доза не найдена (контрольная группа), используем 0
+                    if dose is None:
+                        dose = 0
+                    doses.append(dose)
+                    aucs_for_fit.append(auc_mean)
+                    errors_for_fit.append(auc_sem)
                 except ValueError as e:
                     print(f"Ошибка при обработке файла {file_path}: {e}")
                     continue
@@ -361,7 +363,8 @@ class TumorDataVisualizer:
             # for i, (bar, auc) in enumerate(zip(bars, aucs_for_fit)):
             #     plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, f"{auc:.2f}", ha='center', va='bottom', fontsize=12, fontweight='bold', color='black')
             # Подписи с дозами на тиках оси X
-            plt.xticks(doses, [str(d) for d in doses], fontsize=12)
+            dose_labels = ["Контроль" if d == 0 else str(d) for d in doses]
+            plt.xticks(doses, dose_labels, fontsize=12)
             # Подписи под error bar
             for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
                 y_text = bar.get_height() - err - 0.03 * max(aucs_for_fit)
