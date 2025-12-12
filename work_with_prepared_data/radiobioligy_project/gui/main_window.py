@@ -612,6 +612,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         return selected_paths
 
+    def _find_control_index(self):
+        """
+        Находит индекс контрольного файла в списке current_selected_paths.
+
+        Returns:
+            int: Индекс контрольного файла в списке, или 0 если контроль не найден.
+        """
+        if not self.control_path or not self.current_selected_paths:
+            return 0
+
+        # Нормализуем пути для корректного сравнения
+        import os
+        normalized_control = os.path.normpath(self.control_path)
+
+        for i, path in enumerate(self.current_selected_paths):
+            normalized_path = os.path.normpath(path)
+            if normalized_path == normalized_control:
+                return i
+
+        # Если контрольный файл не найден, возвращаем 0
+        return 0
+
     def update_first_button_state(self):
         """
         Обновляет состояние кнопки в зависимости от выбранных экспериментов и чекбоксов.
@@ -995,7 +1017,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if self.current_plot_type == 'multiple_experiments':
                     SkinReactionsVisualizer.plot_multiple_experiments_from_visualizers(visualizer, self.use_AUC, self.perform_stat_test)
                 elif self.current_plot_type == 'auc_comparison':
-                    SkinReactionsVisualizer.plot_auc_comparison_from_visualizers(visualizer, perform_stat_test=self.perform_stat_test)
+                    # Найти индекс контрольного файла
+                    control_idx = self._find_control_index()
+                    SkinReactionsVisualizer.plot_auc_comparison_from_visualizers(visualizer, perform_stat_test=self.perform_stat_test, control_index=control_idx)
                 elif self.current_plot_type == 'all_individual_curves':
                     SkinReactionsVisualizer.plot_all_individual_curves_from_visualizers(visualizer)
             elif isinstance(visualizer, SkinReactionsVisualizer) and self.current_plot_type == 'all_individual_curves':
@@ -1006,11 +1030,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if self.current_plot_type == 'multiple_experiments':
                     SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC, self.perform_stat_test)
                 elif self.current_plot_type == 'auc_comparison':
-                    SkinReactionsVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test)
+                    # Найти индекс контрольного файла
+                    control_idx = self._find_control_index()
+                    SkinReactionsVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test, control_index=control_idx)
                 elif self.current_plot_type == 'all_individual_curves':
                     SkinReactionsVisualizer.plot_all_individual_curves(self.current_selected_paths)
             elif isinstance(visualizer, TumorDataVisualizer) and len(self.current_selected_paths) > 1 and self.current_plot_type == 'tumor_auc_comparison':
-                TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test)
+                # Найти индекс контрольного файла
+                control_idx = self._find_control_index()
+                TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test, control_index=control_idx)
             else:
                 # Для других случаев, когда используется один файл или другие типы визуализаторов
                 if self.current_control is not None and plotting_func == TumorDataComparatorAdvanced.compare_control_and_experiment:
