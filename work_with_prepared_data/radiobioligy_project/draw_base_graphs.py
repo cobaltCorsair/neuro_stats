@@ -388,26 +388,32 @@ class TumorDataVisualizer:
                     bars.append((bar, dose, data['auc_mean'], data['auc_sem']))
                 else:
                     # Несколько файлов - составной столбец с разными паттернами
-                    # Усредняем значения для общей высоты столбца
-                    avg_auc = np.mean([d['auc_mean'] for d in files_in_dose])
+                    # Каждый сегмент имеет высоту = реальный AUC файла
+                    total_auc = sum([d['auc_mean'] for d in files_in_dose])
                     avg_sem = np.sqrt(sum(d['auc_sem']**2 for d in files_in_dose)) / len(files_in_dose)
 
-                    # Рисуем основной столбец (усредненный)
-                    bar = plt.bar(dose, avg_auc, yerr=avg_sem,
-                                 width=bar_width, color='lightgray',
-                                 edgecolor="black", zorder=2, capsize=8)
+                    # Рисуем error bar для общей высоты
+                    plt.errorbar(dose, total_auc, yerr=avg_sem, fmt='none',
+                                ecolor='black', capsize=8, zorder=4, linewidth=2)
 
-                    # Делим столбец на сегменты по файлам
-                    segment_height = avg_auc / len(files_in_dose)
+                    # Рисуем сегменты с разрывами
+                    gap = total_auc * 0.02  # 2% от общей высоты как разрыв
                     bottom = 0
                     for idx, data in enumerate(files_in_dose):
                         hatch = hatches[idx % len(hatches)]
+                        segment_height = data['auc_mean']
+
+                        # Рисуем сегмент
                         plt.bar(dose, segment_height, bottom=bottom,
                                width=bar_width, color=data['color'],
                                hatch=hatch, edgecolor="black", linewidth=1.5, zorder=3)
-                        bottom += segment_height
 
-                    bars.append((bar, dose, avg_auc, avg_sem))
+                        # Добавляем разрыв после каждого сегмента (кроме последнего)
+                        bottom += segment_height
+                        if idx < len(files_in_dose) - 1:
+                            bottom += gap
+
+                    bars.append((None, dose, total_auc, avg_sem))
 
                 dose_positions.append(dose)
 
