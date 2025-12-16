@@ -385,41 +385,50 @@ class TumorDataVisualizer:
                     bar = plt.bar(dose, data['auc_mean'], yerr=data['auc_sem'],
                                  width=bar_width, color=data['color'],
                                  edgecolor="black", zorder=2, capsize=8)
+
+                    # Подпись AUC НАД столбцом (над error bar)
+                    label_y = data['auc_mean'] + data['auc_sem'] + 0.02 * data['auc_mean']
+                    plt.text(dose, label_y, f"{data['auc_mean']:.2f}",
+                            ha='center', va='bottom', fontsize=12,
+                            fontweight='bold', color='black')
+
                     bars.append((bar, dose, data['auc_mean'], data['auc_sem']))
                 else:
-                    # Несколько файлов - составной столбец с разными паттернами
-                    # Каждый сегмент имеет высоту = реальный AUC файла
-                    total_auc = sum([d['auc_mean'] for d in files_in_dose])
-                    avg_sem = np.sqrt(sum(d['auc_sem']**2 for d in files_in_dose)) / len(files_in_dose)
+                    # Несколько файлов - отдельные столбцы с промежутками (stacked с gap)
+                    # Находим максимальный AUC для расчета промежутка
+                    max_auc_in_group = max([d['auc_mean'] for d in files_in_dose])
+                    gap = max_auc_in_group * 0.15  # 15% от максимального AUC как промежуток
 
-                    # Рисуем error bar для общей высоты
-                    plt.errorbar(dose, total_auc, yerr=avg_sem, fmt='none',
-                                ecolor='black', capsize=8, zorder=4, linewidth=2)
-
-                    # Рисуем сегменты с разрывами
-                    gap = total_auc * 0.02  # 2% от общей высоты как разрыв
+                    # Рисуем столбцы с промежутками
                     bottom = 0
+                    max_height_with_error = 0
                     for idx, data in enumerate(files_in_dose):
                         hatch = hatches[idx % len(hatches)]
                         segment_height = data['auc_mean']
 
-                        # Рисуем сегмент
+                        # Рисуем столбец с error bar
                         plt.bar(dose, segment_height, bottom=bottom,
                                width=bar_width, color=data['color'],
-                               hatch=hatch, edgecolor="black", linewidth=1.5, zorder=3)
+                               hatch=hatch, edgecolor="black", linewidth=1.5,
+                               yerr=data['auc_sem'], capsize=8, zorder=3,
+                               error_kw={'ecolor': 'black', 'linewidth': 2, 'zorder': 4})
 
-                        # Подпись AUC в центре сегмента
-                        segment_center_y = bottom + segment_height / 2
-                        plt.text(dose, segment_center_y, f"{data['auc_mean']:.2f}",
-                                ha='center', va='center', fontsize=12,
+                        # Подпись AUC НАД столбцом (над error bar)
+                        label_y = bottom + segment_height + data['auc_sem'] + 0.02 * max_auc_in_group
+                        plt.text(dose, label_y, f"{data['auc_mean']:.2f}",
+                                ha='center', va='bottom', fontsize=12,
                                 fontweight='bold', color='black')
 
-                        # Добавляем разрыв после каждого сегмента (кроме последнего)
-                        bottom += segment_height
-                        if idx < len(files_in_dose) - 1:
-                            bottom += gap
+                        # Обновляем максимальную высоту для Mann-Whitney
+                        current_top = bottom + segment_height + data['auc_sem']
+                        if current_top > max_height_with_error:
+                            max_height_with_error = current_top
 
-                    bars.append((None, dose, total_auc, avg_sem))
+                        # Добавляем промежуток после каждого столбца
+                        bottom += segment_height + gap
+
+                    # Сохраняем максимальную высоту для размещения символов
+                    bars.append((None, dose, max_height_with_error, 0))
 
                 dose_positions.append(dose)
 
@@ -430,14 +439,6 @@ class TumorDataVisualizer:
             # Подписи с дозами на тиках оси X
             dose_labels = ["Контроль" if d == 0 else str(d) for d in unique_doses]
             plt.xticks(unique_doses, dose_labels, fontsize=12)
-
-            # Подписи значений AUC НАД столбцами (над error bar)
-            for bar_tuple in bars:
-                bar, dose, auc, err = bar_tuple
-                # Для сгруппированных столбцов показываем общую сумму над верхним error bar
-                y_text = auc + err + 0.03 * max([b[2] for b in bars])
-                plt.text(dose, y_text, f"{auc:.2f}", ha='center', va='bottom',
-                        fontsize=12, fontweight='bold', color='black')
 
             # Легенда
             legend_patches = []
