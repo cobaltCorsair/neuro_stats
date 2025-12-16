@@ -282,7 +282,8 @@ class TumorDataVisualizer:
                              x_label="",
                              y_label="AUC (абс. ед.)",
                              perform_stat_test: bool = False,
-                             control_index: int = 0):
+                             control_index: int = 0,
+                             control_groups_info: dict = None):
         """
         Построение столбчатого графика для сравнения площади под кривой
         объёмов опухоли между экспериментами.
@@ -293,7 +294,8 @@ class TumorDataVisualizer:
             x_label: Подпись оси X.
             y_label: Подпись оси Y.
             perform_stat_test: Если True, применяется критерий Манна-Уитни.
-            control_index: Индекс контрольной группы в списке file_paths.
+            control_index: Индекс контрольной группы в списке file_paths (устарел, используйте control_groups_info).
+            control_groups_info: Словарь {control_type: [indices]} для множественных контролей.
         """
         with sns.axes_style("whitegrid"):
             def extract_total_dose(experiment_params):
@@ -378,35 +380,64 @@ class TumorDataVisualizer:
                        ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
 
             # Критерий Манна-Уитни
-            if perform_stat_test and control_index < len(all_individual_aucs) and len(all_individual_aucs) > 1:
+            if perform_stat_test and len(all_individual_aucs) > 1:
                 from scipy.stats import mannwhitneyu
-                control_aucs = all_individual_aucs[control_index]
                 y_max = max(aucs_for_fit) if aucs_for_fit else 0
                 y_offset = y_max * 0.05
 
-                for i, (bar, dose) in enumerate(zip(bars, doses)):
-                    if i == control_index:
-                        continue
+                # Определяем символы для контролей
+                control_symbols = {1: '*', 2: '^', 3: '#'}
 
-                    # Находим индекс в all_individual_aucs по дозе
-                    dose_index = None
-                    for idx, fp in enumerate(file_paths):
-                        vis = TumorDataVisualizer(fp)
-                        if extract_total_dose(vis.experiment_params) == dose:
-                            dose_index = idx
-                            break
+                # Если указаны множественные контроли, используем их
+                if control_groups_info:
+                    for i, (bar, dose) in enumerate(zip(bars, doses)):
+                        # Проверяем, не является ли текущий столбец контрольным
+                        is_control = any(i in indices for indices in control_groups_info.values())
+                        if is_control:
+                            continue
 
-                    if dose_index is not None and dose_index < len(all_individual_aucs):
-                        exp_aucs = all_individual_aucs[dose_index]
-                        try:
-                            _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
-                            if p_value < 0.05:
-                                y_position = bar.get_height() + errors_for_fit[i] + y_offset
-                                plt.text(bar.get_x() + bar.get_width()/2, y_position,
-                                       '*', ha='center', va='bottom',
-                                       fontsize=20, color='black', fontweight='bold')
-                        except Exception as e:
-                            print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
+                        # Сравниваем с каждой контрольной группой
+                        symbols_to_add = []
+                        for control_type, control_indices in sorted(control_groups_info.items()):
+                            for control_idx in control_indices:
+                                if control_idx < len(all_individual_aucs):
+                                    control_aucs = all_individual_aucs[control_idx]
+                                    exp_aucs = all_individual_aucs[i]
+                                    try:
+                                        _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
+                                        if p_value < 0.05:
+                                            symbol = control_symbols.get(control_type, '*')
+                                            if symbol not in symbols_to_add:
+                                                symbols_to_add.append(symbol)
+                                    except Exception as e:
+                                        print(f"Ошибка при выполнении теста для дозы {dose} с контролем {control_type}: {e}")
+
+                        # Добавляем символы над столбцом
+                        if symbols_to_add:
+                            y_position = bar.get_height() + errors_for_fit[i] + y_offset
+                            symbols_text = ''.join(symbols_to_add)
+                            plt.text(bar.get_x() + bar.get_width()/2, y_position,
+                                   symbols_text, ha='center', va='bottom',
+                                   fontsize=20, color='black', fontweight='bold')
+
+                # Если используется старый формат (один контроль)
+                elif control_index < len(all_individual_aucs):
+                    control_aucs = all_individual_aucs[control_index]
+                    for i, (bar, dose) in enumerate(zip(bars, doses)):
+                        if i == control_index:
+                            continue
+
+                        if i < len(all_individual_aucs):
+                            exp_aucs = all_individual_aucs[i]
+                            try:
+                                _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
+                                if p_value < 0.05:
+                                    y_position = bar.get_height() + errors_for_fit[i] + y_offset
+                                    plt.text(bar.get_x() + bar.get_width()/2, y_position,
+                                           '*', ha='center', va='bottom',
+                                           fontsize=20, color='black', fontweight='bold')
+                            except Exception as e:
+                                print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
 
             plt.tight_layout()
             # plt.savefig("tumor_auc_comparison_plot.png")
