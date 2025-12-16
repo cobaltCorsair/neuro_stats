@@ -309,13 +309,10 @@ class TumorDataVisualizer:
                         except Exception:
                             continue
                 return total if total > 0 else None
-            doses = []
-            aucs_for_fit = []
-            errors_for_fit = []
-            labels_for_legend = []
-            auc_values = []
-            all_individual_aucs = []  # Для критерия Манна-Уитни
+            # Сначала собираем все данные по файлам
+            file_data = []  # [(dose, auc_mean, auc_sem, label, individual_aucs, color), ...]
             colors = sns.color_palette("Set3", n_colors=len(file_paths))
+
             for file_path, color in zip(file_paths, colors):
                 visualizer = TumorDataVisualizer(file_path)
                 try:
@@ -340,49 +337,108 @@ class TumorDataVisualizer:
                     auc_mean = SupportingFunctions.calculate_auc(mean_curve, common_time_points)
                     individual_aucs = [SupportingFunctions.calculate_auc(curve, common_time_points) for curve in aligned_curves]
                     auc_sem = np.std(individual_aucs, ddof=1) / np.sqrt(len(aligned_curves))
-                    auc_values.append(auc_mean)
-                    all_individual_aucs.append(individual_aucs)  # Сохраняем для теста
-                    labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
+                    label = format_experiment_params(visualizer.experiment_params)
                     dose = extract_total_dose(visualizer.experiment_params)
                     # Если доза не найдена (контрольная группа), используем 0
                     if dose is None:
                         dose = 0
-                    doses.append(dose)
-                    aucs_for_fit.append(auc_mean)
-                    errors_for_fit.append(auc_sem)
+
+                    file_data.append({
+                        'dose': dose,
+                        'auc_mean': auc_mean,
+                        'auc_sem': auc_sem,
+                        'label': label,
+                        'individual_aucs': individual_aucs,
+                        'color': color,
+                        'file_index': len(file_data)  # Индекс для Mann-Whitney
+                    })
                 except ValueError as e:
                     print(f"Ошибка при обработке файла {file_path}: {e}")
                     continue
+
+            # Группируем файлы по дозе
+            from collections import defaultdict
+            dose_groups = defaultdict(list)
+            for data in file_data:
+                dose_groups[data['dose']].append(data)
+
+            # Подготовка данных для отрисовки
+            unique_doses = sorted(dose_groups.keys())
+            all_individual_aucs = [d['individual_aucs'] for d in file_data]  # Для Mann-Whitney
+
             # --- Barplot по числовой оси X (doses) ---
             plt.figure(figsize=(12, 8))
-            bar_width = 2.5 if len(doses) < 10 else 0.8
-            bars = plt.bar(doses, aucs_for_fit, yerr=errors_for_fit, width=bar_width, color=colors[:len(doses)], edgecolor="black", zorder=2, capsize=8)
+            bar_width = 2.5 if len(unique_doses) < 10 else 0.8
+
+            # Паттерны для разделения файлов в одной дозе
+            hatches = ['', '///', '\\\\\\', '|||', '---', '+++', 'xxx', '...', 'ooo']
+
+            # Рисуем столбцы для каждой дозы
+            bars = []
+            dose_positions = []
+            for dose in unique_doses:
+                files_in_dose = dose_groups[dose]
+
+                if len(files_in_dose) == 1:
+                    # Один файл - простой столбец
+                    data = files_in_dose[0]
+                    bar = plt.bar(dose, data['auc_mean'], yerr=data['auc_sem'],
+                                 width=bar_width, color=data['color'],
+                                 edgecolor="black", zorder=2, capsize=8)
+                    bars.append((bar, dose, data['auc_mean'], data['auc_sem']))
+                else:
+                    # Несколько файлов - составной столбец с разными паттернами
+                    # Усредняем значения для общей высоты столбца
+                    avg_auc = np.mean([d['auc_mean'] for d in files_in_dose])
+                    avg_sem = np.sqrt(sum(d['auc_sem']**2 for d in files_in_dose)) / len(files_in_dose)
+
+                    # Рисуем основной столбец (усредненный)
+                    bar = plt.bar(dose, avg_auc, yerr=avg_sem,
+                                 width=bar_width, color='lightgray',
+                                 edgecolor="black", zorder=2, capsize=8)
+
+                    # Делим столбец на сегменты по файлам
+                    segment_height = avg_auc / len(files_in_dose)
+                    bottom = 0
+                    for idx, data in enumerate(files_in_dose):
+                        hatch = hatches[idx % len(hatches)]
+                        plt.bar(dose, segment_height, bottom=bottom,
+                               width=bar_width, color=data['color'],
+                               hatch=hatch, edgecolor="black", linewidth=1.5, zorder=3)
+                        bottom += segment_height
+
+                    bars.append((bar, dose, avg_auc, avg_sem))
+
+                dose_positions.append(dose)
+
             plt.xlabel("Суммарная доза, Гр", fontsize=14)
             plt.ylabel(y_label, fontsize=14)
             plt.title(title, fontsize=16)
-            # Подписи над столбиками
-            # Удаляю старую подпись над столбиком (оставляю только под error bar)
-            # for i, (bar, auc) in enumerate(zip(bars, aucs_for_fit)):
-            #     plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, f"{auc:.2f}", ha='center', va='bottom', fontsize=12, fontweight='bold', color='black')
+
             # Подписи с дозами на тиках оси X
-            dose_labels = ["Контроль" if d == 0 else str(d) for d in doses]
-            plt.xticks(doses, dose_labels, fontsize=12)
-            # Подписи под error bar
-            for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
-                y_text = bar.get_height() - err - 0.03 * max(aucs_for_fit)
-                # Не уводим подпись ниже нуля
+            dose_labels = ["Контроль" if d == 0 else str(d) for d in unique_doses]
+            plt.xticks(unique_doses, dose_labels, fontsize=12)
+
+            # Подписи значений AUC
+            for bar_tuple in bars:
+                bar, dose, auc, err = bar_tuple
+                y_text = auc - err - 0.03 * max([b[2] for b in bars])
                 y_text = max(0, y_text)
-                plt.text(bar.get_x() + bar.get_width()/2, y_text, f"{auc:.2f}", ha='center', va='top', fontsize=12, fontweight='bold', color='black')
-            # Легенда как раньше
-            legend_patches = [mpatches.Patch(color=col, label=lab) for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
-            ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
+                plt.text(dose, y_text, f"{auc:.2f}", ha='center', va='top',
+                        fontsize=12, fontweight='bold', color='black')
+
+            # Легенда
+            legend_patches = []
+            for data in file_data:
+                legend_patches.append(mpatches.Patch(color=data['color'], label=data['label']))
+            ncol = math.ceil(len(file_data) / 2) if len(file_data) > 4 else len(file_data)
             plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
                        ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
 
             # Критерий Манна-Уитни
             if perform_stat_test and len(all_individual_aucs) > 1:
                 from scipy.stats import mannwhitneyu
-                y_max = max(aucs_for_fit) if aucs_for_fit else 0
+                y_max = max([b[2] for b in bars]) if bars else 0
                 y_offset = y_max * 0.05
 
                 # Определяем символы для контролей
@@ -390,9 +446,9 @@ class TumorDataVisualizer:
 
                 # Если указаны множественные контроли, используем их
                 if control_groups_info:
-                    for i, (bar, dose) in enumerate(zip(bars, doses)):
-                        # Проверяем, не является ли текущий столбец контрольным
-                        is_control = any(i in indices for indices in control_groups_info.values())
+                    for file_idx, data in enumerate(file_data):
+                        # Проверяем, не является ли текущий файл контрольным
+                        is_control = any(file_idx in indices for indices in control_groups_info.values())
                         if is_control:
                             continue
 
@@ -402,7 +458,7 @@ class TumorDataVisualizer:
                             for control_idx in control_indices:
                                 if control_idx < len(all_individual_aucs):
                                     control_aucs = all_individual_aucs[control_idx]
-                                    exp_aucs = all_individual_aucs[i]
+                                    exp_aucs = all_individual_aucs[file_idx]
                                     try:
                                         _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
                                         if p_value < 0.05:
@@ -410,34 +466,44 @@ class TumorDataVisualizer:
                                             if symbol not in symbols_to_add:
                                                 symbols_to_add.append(symbol)
                                     except Exception as e:
-                                        print(f"Ошибка при выполнении теста для дозы {dose} с контролем {control_type}: {e}")
+                                        print(f"Ошибка при выполнении теста для файла {file_idx} с контролем {control_type}: {e}")
 
                         # Добавляем символы над столбцом
                         if symbols_to_add:
-                            y_position = bar.get_height() + errors_for_fit[i] + y_offset
-                            symbols_text = ''.join(symbols_to_add)
-                            plt.text(bar.get_x() + bar.get_width()/2, y_position,
-                                   symbols_text, ha='center', va='bottom',
-                                   fontsize=20, color='black', fontweight='bold')
+                            dose = data['dose']
+                            # Находим столбец для этой дозы
+                            for bar_tuple in bars:
+                                if bar_tuple[1] == dose:
+                                    y_position = bar_tuple[2] + bar_tuple[3] + y_offset
+                                    symbols_text = ''.join(symbols_to_add)
+                                    plt.text(dose, y_position, symbols_text,
+                                           ha='center', va='bottom',
+                                           fontsize=20, color='black', fontweight='bold')
+                                    break
 
                 # Если используется старый формат (один контроль)
                 elif control_index < len(all_individual_aucs):
                     control_aucs = all_individual_aucs[control_index]
-                    for i, (bar, dose) in enumerate(zip(bars, doses)):
-                        if i == control_index:
+                    for file_idx, data in enumerate(file_data):
+                        if file_idx == control_index:
                             continue
 
-                        if i < len(all_individual_aucs):
-                            exp_aucs = all_individual_aucs[i]
+                        if file_idx < len(all_individual_aucs):
+                            exp_aucs = all_individual_aucs[file_idx]
                             try:
                                 _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
                                 if p_value < 0.05:
-                                    y_position = bar.get_height() + errors_for_fit[i] + y_offset
-                                    plt.text(bar.get_x() + bar.get_width()/2, y_position,
-                                           '*', ha='center', va='bottom',
-                                           fontsize=20, color='black', fontweight='bold')
+                                    dose = data['dose']
+                                    # Находим столбец для этой дозы
+                                    for bar_tuple in bars:
+                                        if bar_tuple[1] == dose:
+                                            y_position = bar_tuple[2] + bar_tuple[3] + y_offset
+                                            plt.text(dose, y_position, '*',
+                                                   ha='center', va='bottom',
+                                                   fontsize=20, color='black', fontweight='bold')
+                                            break
                             except Exception as e:
-                                print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
+                                print(f"Ошибка при выполнении теста для файла {file_idx}: {e}")
 
                 # Добавляем пояснение символов, если используются множественные контроли
                 if control_groups_info and len(control_groups_info) > 0:
