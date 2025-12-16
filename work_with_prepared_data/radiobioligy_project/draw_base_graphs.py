@@ -408,6 +408,12 @@ class TumorDataVisualizer:
                                width=bar_width, color=data['color'],
                                hatch=hatch, edgecolor="black", linewidth=1.5, zorder=3)
 
+                        # Подпись AUC в центре сегмента
+                        segment_center_y = bottom + segment_height / 2
+                        plt.text(dose, segment_center_y, f"{data['auc_mean']:.2f}",
+                                ha='center', va='center', fontsize=12,
+                                fontweight='bold', color='black')
+
                         # Добавляем разрыв после каждого сегмента (кроме последнего)
                         bottom += segment_height
                         if idx < len(files_in_dose) - 1:
@@ -425,12 +431,12 @@ class TumorDataVisualizer:
             dose_labels = ["Контроль" if d == 0 else str(d) for d in unique_doses]
             plt.xticks(unique_doses, dose_labels, fontsize=12)
 
-            # Подписи значений AUC
+            # Подписи значений AUC НАД столбцами (над error bar)
             for bar_tuple in bars:
                 bar, dose, auc, err = bar_tuple
-                y_text = auc - err - 0.03 * max([b[2] for b in bars])
-                y_text = max(0, y_text)
-                plt.text(dose, y_text, f"{auc:.2f}", ha='center', va='top',
+                # Для сгруппированных столбцов показываем общую сумму над верхним error bar
+                y_text = auc + err + 0.03 * max([b[2] for b in bars])
+                plt.text(dose, y_text, f"{auc:.2f}", ha='center', va='bottom',
                         fontsize=12, fontweight='bold', color='black')
 
             # Легенда
