@@ -235,7 +235,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Returns:
             None.
         """
-        self.model.setHorizontalHeaderLabels(['Выбор файла', 'Путь к файлу эксперимента', 'Пометить как контрольный', 'Тип группы'])
+        self.model.setHorizontalHeaderLabels(['Выбор файла', 'Путь к файлу эксперимента', 'Пометить как контрольный', 'Контроль для статистики'])
         self.tableView.setModel(self.model)
         # Настройка ширины столбцов
         header = self.tableView.horizontalHeader()
@@ -617,6 +617,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         Обработчик изменения типа контрольной группы в ComboBox.
         Сохраняет выбранный тип в словарь control_groups.
+        Проверяет уникальность - один тип контроля может быть назначен только одному файлу.
         """
         sender = self.sender()  # Получаем ComboBox, который отправил сигнал
         if sender:
@@ -625,6 +626,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if file_path in self.control_groups:
                     del self.control_groups[file_path]
             else:  # Контроль 1, 2 или 3
+                # Проверяем, не назначен ли уже этот тип контроля другому файлу
+                for existing_path, existing_type in list(self.control_groups.items()):
+                    if existing_type == index and existing_path != file_path:
+                        # Сбрасываем ComboBox у другого файла
+                        for row in range(self.model.rowCount()):
+                            path_item = self.model.item(row, 1)
+                            if path_item and path_item.text() == existing_path:
+                                other_combo = self.tableView.indexWidget(self.model.index(row, 3))
+                                if other_combo:
+                                    other_combo.blockSignals(True)  # Блокируем сигналы, чтобы избежать рекурсии
+                                    other_combo.setCurrentIndex(0)  # Сбрасываем на "Не контроль"
+                                    other_combo.blockSignals(False)
+                                break
+                        # Удаляем старую запись
+                        del self.control_groups[existing_path]
+                        break
+
                 self.control_groups[file_path] = index  # index: 1=Контроль1, 2=Контроль2, 3=Контроль3
 
     def get_selected_experiments(self):

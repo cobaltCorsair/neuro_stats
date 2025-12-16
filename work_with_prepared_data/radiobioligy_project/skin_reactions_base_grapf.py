@@ -587,6 +587,19 @@ class SkinReactionsVisualizer:
                             except Exception as e:
                                 print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
 
+                # Добавляем пояснение символов, если используются множественные контроли
+                if control_groups_info and len(control_groups_info) > 0:
+                    explanation_text = "Статистическая значимость (p<0.05): "
+                    symbols_used = []
+                    control_symbols = {1: '*', 2: '^', 3: '#'}
+                    control_names = {1: 'Контроль 1', 2: 'Контроль 2', 3: 'Контроль 3'}
+                    for control_type in sorted(control_groups_info.keys()):
+                        symbol = control_symbols.get(control_type, '*')
+                        name = control_names.get(control_type, f'Контроль {control_type}')
+                        symbols_used.append(f"{symbol} - {name}")
+                    explanation_text += ", ".join(symbols_used)
+                    plt.figtext(0.5, 0.02, explanation_text, ha='center', fontsize=10, style='italic')
+
             plt.tight_layout()
 
     @staticmethod
@@ -733,6 +746,19 @@ class SkinReactionsVisualizer:
                                            fontsize=20, color='black', fontweight='bold')
                             except Exception as e:
                                 print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
+
+                # Добавляем пояснение символов, если используются множественные контроли
+                if control_groups_info and len(control_groups_info) > 0:
+                    explanation_text = "Статистическая значимость (p<0.05): "
+                    symbols_used = []
+                    control_symbols = {1: '*', 2: '^', 3: '#'}
+                    control_names = {1: 'Контроль 1', 2: 'Контроль 2', 3: 'Контроль 3'}
+                    for control_type in sorted(control_groups_info.keys()):
+                        symbol = control_symbols.get(control_type, '*')
+                        name = control_names.get(control_type, f'Контроль {control_type}')
+                        symbols_used.append(f"{symbol} - {name}")
+                    explanation_text += ", ".join(symbols_used)
+                    plt.figtext(0.5, 0.02, explanation_text, ha='center', fontsize=10, style='italic')
 
             plt.tight_layout()
             # plt.savefig("auc_comparison_plot.png")
