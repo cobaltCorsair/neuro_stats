@@ -2,7 +2,7 @@ import io
 from PyQt6.QtCore import QFileInfo, Qt
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel, \
-    QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup
+    QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup, QComboBox
 import subprocess
 import sys
 import os
