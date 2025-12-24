@@ -283,7 +283,8 @@ class TumorDataVisualizer:
                              y_label="AUC (абс. ед.)",
                              perform_stat_test: bool = False,
                              control_index: int = 0,
-                             control_groups_info: dict = None):
+                             control_groups_info: dict = None,
+                             show_separate_legend: bool = False):
         """
         Построение столбчатого графика для сравнения площади под кривой
         объёмов опухоли между экспериментами.
@@ -296,6 +297,7 @@ class TumorDataVisualizer:
             perform_stat_test: Если True, применяется критерий Манна-Уитни.
             control_index: Индекс контрольной группы в списке file_paths (устарел, используйте control_groups_info).
             control_groups_info: Словарь {control_type: [indices]} для множественных контролей.
+            show_separate_legend: Если True, легенда выводится в отдельное окно предпросмотра.
         """
         with sns.axes_style("whitegrid"):
             def extract_total_dose(experiment_params):
@@ -397,7 +399,7 @@ class TumorDataVisualizer:
                     # Несколько файлов - отдельные столбцы с промежутками (stacked с gap)
                     # Находим максимальный AUC для расчета промежутка
                     max_auc_in_group = max([d['auc_mean'] for d in files_in_dose])
-                    gap = max_auc_in_group * 0.15  # 15% от максимального AUC как промежуток
+                    gap = max_auc_in_group * 0.5  # 50% от максимального AUC как промежуток
 
                     # Рисуем столбцы с промежутками
                     bottom = 0
@@ -410,14 +412,14 @@ class TumorDataVisualizer:
                         plt.bar(dose, segment_height, bottom=bottom,
                                width=bar_width, color=data['color'],
                                hatch=hatch, edgecolor="black", linewidth=1.5,
-                               yerr=data['auc_sem'], capsize=8, zorder=3,
-                               error_kw={'ecolor': 'black', 'linewidth': 2, 'zorder': 4})
+                               yerr=data['auc_sem'], capsize=8, zorder=2,
+                               error_kw={'ecolor': 'black', 'linewidth': 2, 'zorder': 3})
 
                         # Подпись AUC НАД столбцом (над error bar)
                         label_y = bottom + segment_height + data['auc_sem'] + 0.02 * max_auc_in_group
                         plt.text(dose, label_y, f"{data['auc_mean']:.2f}",
                                 ha='center', va='bottom', fontsize=12,
-                                fontweight='bold', color='black')
+                                fontweight='bold', color='black', zorder=10)
 
                         # Обновляем максимальную высоту для Mann-Whitney
                         current_top = bottom + segment_height + data['auc_sem']
@@ -443,10 +445,13 @@ class TumorDataVisualizer:
             # Легенда
             legend_patches = []
             for data in file_data:
-                legend_patches.append(mpatches.Patch(color=data['color'], label=data['label']))
+                legend_patches.append(mpatches.Patch(color=data["color"], label=data["label"]))
             ncol = math.ceil(len(file_data) / 2) if len(file_data) > 4 else len(file_data)
-            plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
-                       ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
+            legend = plt.legend(handles=legend_patches, loc="upper center", bbox_to_anchor=(0.5, -0.2),
+                           ncol=ncol, fontsize=11, frameon=False, handletextpad=0.8, columnspacing=3.5)
+            if show_separate_legend:
+                legend.set_visible(False)  # Скрываем легенду на основном графике
+
 
             # Критерий Манна-Уитни
             if perform_stat_test and len(all_individual_aucs) > 1:
@@ -531,7 +536,10 @@ class TumorDataVisualizer:
                     explanation_text += ", ".join(symbols_used)
                     plt.figtext(0.5, 0.02, explanation_text, ha='center', fontsize=10, style='italic')
 
-            plt.tight_layout()
+            if show_separate_legend:
+                plt.tight_layout()  # Легенда отдельно - не нужно дополнительное место
+            else:
+                plt.tight_layout(rect=[0, 0.1, 1, 1])  # Больше места снизу для легенды
             # plt.savefig("tumor_auc_comparison_plot.png")
 
 

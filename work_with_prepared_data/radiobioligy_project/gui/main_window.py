@@ -1132,7 +1132,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 # Получить информацию о контрольных группах
                 control_groups_info = self._get_control_groups_info()
                 control_idx = self._find_control_index()  # для обратной совместимости
-                TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test, control_index=control_idx, control_groups_info=control_groups_info)
+                TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test, control_index=control_idx, control_groups_info=control_groups_info, show_separate_legend=self.show_legend_separately)
             else:
                 # Для других случаев, когда используется один файл или другие типы визуализаторов
                 if self.current_control is not None and plotting_func == TumorDataComparatorAdvanced.compare_control_and_experiment:
