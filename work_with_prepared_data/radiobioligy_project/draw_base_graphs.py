@@ -446,11 +446,15 @@ class TumorDataVisualizer:
             legend_patches = []
             for data in file_data:
                 legend_patches.append(mpatches.Patch(color=data["color"], label=data["label"]))
-            ncol = math.ceil(len(file_data) / 2) if len(file_data) > 4 else len(file_data)
-            legend = plt.legend(handles=legend_patches, loc="upper center", bbox_to_anchor=(0.5, -0.2),
-                           ncol=ncol, fontsize=11, frameon=False, handletextpad=0.8, columnspacing=3.5)
+
             if show_separate_legend:
-                legend.set_visible(False)  # Скрываем легенду на основном графике
+                # Легенда в отдельном окне - каждый элемент на новой строке
+                legend = plt.legend(handles=legend_patches, loc="upper center", bbox_to_anchor=(0.5, -0.05),
+                               ncol=1, fontsize=11, frameon=False, handletextpad=0.8)
+            else:
+                # Легенда под графиком - каждый элемент на новой строке
+                legend = plt.legend(handles=legend_patches, loc="upper center", bbox_to_anchor=(0.5, -0.15),
+                               ncol=1, fontsize=11, frameon=False, handletextpad=0.8)
 
 
             # Критерий Манна-Уитни
@@ -539,8 +543,9 @@ class TumorDataVisualizer:
             if show_separate_legend:
                 plt.tight_layout()  # Легенда отдельно - не нужно дополнительное место
             else:
-                plt.tight_layout(rect=[0, 0.1, 1, 1])  # Больше места снизу для легенды
-            # plt.savefig("tumor_auc_comparison_plot.png")
+                # Вычисляем нужное место в зависимости от количества элементов легенды
+                legend_space = 0.05 + len(file_data) * 0.03  # Базовый отступ + по 3% на элемент
+                plt.tight_layout(rect=[0, legend_space, 1, 1])  # Больше места снизу для легенды
 
 
 
