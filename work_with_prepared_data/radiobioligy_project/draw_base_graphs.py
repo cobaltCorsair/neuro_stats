@@ -448,12 +448,13 @@ class TumorDataVisualizer:
                 legend_patches.append(mpatches.Patch(color=data["color"], label=data["label"]))
 
             if show_separate_legend:
-                # Легенда в отдельном окне - каждый элемент на новой строке
-                legend = plt.legend(handles=legend_patches, loc="upper center", bbox_to_anchor=(0.5, -0.05),
+                # Легенда в отдельном окне - скрываем на графике
+                legend = plt.legend(handles=legend_patches, loc="upper left", bbox_to_anchor=(0.0, -0.05),
                                ncol=1, fontsize=11, frameon=False, handletextpad=0.8)
+                legend.set_visible(False)
             else:
-                # Легенда под графиком - каждый элемент на новой строке
-                legend = plt.legend(handles=legend_patches, loc="upper center", bbox_to_anchor=(0.5, -0.15),
+                # Легенда под графиком - выравнивание по левому краю (где начало оси X)
+                legend = plt.legend(handles=legend_patches, loc="upper left", bbox_to_anchor=(0.0, -0.05),
                                ncol=1, fontsize=11, frameon=False, handletextpad=0.8)
 
 
