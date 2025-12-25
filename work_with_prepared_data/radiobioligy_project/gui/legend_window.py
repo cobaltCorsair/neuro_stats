@@ -244,16 +244,18 @@ class LegendPreviewWindow(QDialog):
         self.setLayout(layout)
 
     def generate_legend_image(self):
-        """Генерирует изображение легенды из GraphVisualizer"""
+        """Генерирует изображение легенды из GraphVisualizer или напрямую из figure"""
         try:
             # Получаем последний визуализатор
             visualizer = graph_manager.get_last_visualizer()
 
+            # Если нет visualizer, пытаемся извлечь легенду из figure напрямую
             if not visualizer:
-                self.image_label.setText("Нет данных легенды для отображения")
+                if self.figure:
+                    self._generate_legend_from_figure()
+                else:
+                    self.image_label.setText("Нет данных легенды для отображения")
                 return
-
-            # Создаем группы легенд
             legend_groups = []
 
             # Группа 1: Основная легенда из self.lines
@@ -379,6 +381,75 @@ class LegendPreviewWindow(QDialog):
 
         except Exception as e:
             self.image_label.setText(f"Ошибка при генерации легенды: {str(e)}")
+
+    def _generate_legend_from_figure(self):
+        """Извлекает и отображает легенду напрямую из matplotlib figure"""
+        try:
+            if not self.figure:
+                self.image_label.setText("Нет фигуры для извлечения легенды")
+                return
+            
+            # Получаем все оси фигуры
+            axes = self.figure.get_axes()
+            if not axes:
+                self.image_label.setText("Нет данных легенды для отображения")
+                return
+            
+            # Извлекаем легенды из всех осей
+            legend_elements = []
+            for ax in axes:
+                legend = ax.get_legend()
+                if legend:
+                    # Извлекаем handles и labels из легенды
+                    handles = legend.legendHandles
+                    labels = [t.get_text() for t in legend.get_texts()]
+                    
+                    for handle, label in zip(handles, labels):
+                        if label and not label.startswith('_'):
+                            legend_elements.append((handle, label))
+            
+            if not legend_elements:
+                self.image_label.setText("Нет данных легенды для отображения")
+                return
+            
+            # Создаем новую фигуру только для легенды
+            fig, ax = plt.subplots(figsize=(8, max(2, len(legend_elements) * 0.5)))
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            
+            # Извлекаем только handles и labels
+            handles = [h for h, l in legend_elements]
+            labels = [l for h, l in legend_elements]
+            
+            # Создаем легенду
+            legend = ax.legend(handles=handles,
+                             labels=labels,
+                             loc='center',
+                             frameon=True,
+                             fancybox=True,
+                             shadow=False,
+                             fontsize=12,
+                             ncol=1)
+            
+            # Сохраняем изображение в буфер
+            buf = io.BytesIO()
+            plt.tight_layout(pad=1.0)
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+            plt.close(fig)
+            
+            buf.seek(0)
+            self.legend_pixmap = QPixmap()
+            self.legend_pixmap.loadFromData(buf.getvalue())
+            
+            # Отображаем изображение
+            self.image_label.setPixmap(self.legend_pixmap)
+            
+        except Exception as e:
+            self.image_label.setText(f"Ошибка при генерации легенды из figure: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def save_legend_image(self):
         """Сохраняет изображение легенды в файл"""
