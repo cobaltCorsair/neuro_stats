@@ -401,7 +401,12 @@ class LegendPreviewWindow(QDialog):
                 legend = ax.get_legend()
                 if legend:
                     # Извлекаем handles и labels из легенды
-                    handles = legend.legendHandles
+                    # Используем совместимый способ для разных версий matplotlib
+                    try:
+                        handles = legend.legend_handles  # Новые версии matplotlib
+                    except AttributeError:
+                        handles = legend.legendHandles  # Старые версии matplotlib
+                    
                     labels = [t.get_text() for t in legend.get_texts()]
                     
                     for handle, label in zip(handles, labels):
@@ -512,7 +517,11 @@ class LegendManager:
                 # Извлекаем элементы из всех найденных легенд
                 if legends:
                     for legend in legends:
-                        for handle, label in zip(legend.legendHandles, legend.get_texts()):
+                        try:
+                            handles = legend.legend_handles
+                        except AttributeError:
+                            handles = legend.legendHandles
+                        for handle, label in zip(handles, legend.get_texts()):
                             label_text = label.get_text()
                             if label_text and not label_text.startswith('_'):
                                 # Определяем тип handle
