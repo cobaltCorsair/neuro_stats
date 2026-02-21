@@ -596,17 +596,14 @@ class TumorDataVisualizer:
 
             all_d_curves.append(d.tolist())
 
-            # Метка пары: «Крыса_N (гр. A / гр. B)»
-            # Берём первые два сегмента имени файла A как идентификатор крысы,
-            # третий сегмент каждого файла — как обозначение метода/группы.
-            def _seg(path, start, end):
+            # Метка пары: короткие имена обоих файлов через «/»
+            # Первые три сегмента имени файла (без даты в конце), например:
+            # «Крыса_2_МРТ / Крыса_1_LWH» — нейтрально, подходит для любых пар.
+            def _short_name(path):
                 parts = os.path.splitext(os.path.basename(path))[0].split('_')
-                return '_'.join(parts[start:end]) if len(parts) > start else os.path.splitext(os.path.basename(path))[0]
+                return '_'.join(parts[:3]) if len(parts) >= 3 else os.path.splitext(os.path.basename(path))[0]
 
-            rat_id = _seg(paths_a[i], 0, 2)      # «Крыса_2»
-            method_a = _seg(paths_a[i], 2, 3)    # «МРТ» или «LWH»
-            method_b = _seg(paths_b[i], 2, 3)    # «LWH» или «МРТ»
-            label = f"{rat_id} (A: {method_a} / B: {method_b})"
+            label = f"{_short_name(paths_a[i])} / {_short_name(paths_b[i])}"
             pair_labels.append(label)
 
         time_data = TumorDataVisualizer(paths_a[0]).time_data
