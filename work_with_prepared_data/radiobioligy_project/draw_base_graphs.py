@@ -618,22 +618,23 @@ class TumorDataVisualizer:
             )
             drawgraph.lines.append(line)
 
-        # Средняя линия — жирнее и с явной меткой в легенде
+        # Средняя линия — как в plot_relative_divergence_per_rat
         mean_line, = plt.plot(
             time_floats, mean_d,
-            linestyle='--', color='black', linewidth=2.5,
-            label='── Среднее', zorder=3
+            linestyle='--', color='black', linewidth=2,
+            label='Среднее', zorder=3
         )
         drawgraph.lines.append(mean_line)
 
         # Горизонтальная линия глобального среднего
-        plt.axhline(y=overall_mean, linestyle=':', color='#7b68ee', linewidth=1.5, zorder=1)
         horiz_label = f"Ср. за период: {overall_mean:.1f}%"
-        plt.text(
-            time_floats[-1], overall_mean,
-            f"  {horiz_label}",
-            va='bottom', ha='right', fontsize=14, color='#7b68ee'
-        )
+        plt.axhline(y=overall_mean, linestyle=':', color='#7b68ee', linewidth=1.5, zorder=1)
+
+        # Добавляем горизонталь в легенду через proxy-линию
+        from matplotlib.lines import Line2D
+        horiz_proxy = Line2D([0], [0], linestyle=':', color='#7b68ee', linewidth=1.5,
+                             label=horiz_label)
+        drawgraph.lines.append(horiz_proxy)
 
         drawgraph.finalize_figure(
             "measurement_divergence_A_vs_B",
