@@ -586,8 +586,8 @@ class TumorDataVisualizer:
                 d = np.where(denom == 0, np.nan, 2.0 * np.abs(mean_a - mean_b) / denom * 100.0)
 
             all_d_curves.append(d.tolist())
-            # Метка пары — метка крысы из файла A (или имя файла без расширения)
-            label = vis_a.rat_labels[0] if vis_a.rat_labels else os.path.splitext(os.path.basename(paths_a[i]))[0]
+            # Метка пары — имя файла A без расширения (уникальна для каждой пары)
+            label = os.path.splitext(os.path.basename(paths_a[i]))[0]
             pair_labels.append(label)
 
         time_data = TumorDataVisualizer(paths_a[0]).time_data

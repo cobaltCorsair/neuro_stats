@@ -1289,13 +1289,36 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if not isinstance(sub_visualizers, list):
                     sub_visualizers = [sub_visualizers]
 
-            # Берём первый визуализатор как базу и дополняем его данными из остальных
+            # Берём первый визуализатор как базу и дополняем его данными из остальных.
+            # Метки крыс делаем уникальными: если метка уже встречалась, добавляем
+            # суффикс из имени файла (без расширения), чтобы избежать одинаковых
+            # меток и путаницы в легенде и кэше стилей.
+            from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import TumorDataProcessor
+            import os as _os
+            seen_labels: set = set()
+
+            def _unique_labels(labels, file_path):
+                suffix = _os.path.splitext(_os.path.basename(file_path))[0]
+                result = []
+                for lbl in labels:
+                    if lbl in seen_labels:
+                        unique = f"{lbl} ({suffix})"
+                    else:
+                        unique = lbl
+                    seen_labels.add(unique)
+                    result.append(unique)
+                return result
+
             visualizer_instance = sub_visualizers[0]
-            for other in sub_visualizers[1:]:
-                visualizer_instance.rat_labels = visualizer_instance.rat_labels + other.rat_labels
+            # Обрабатываем метки первого файла
+            visualizer_instance.rat_labels = _unique_labels(
+                visualizer_instance.rat_labels, self.current_selected_paths[0]
+            )
+            for idx, other in enumerate(sub_visualizers[1:], start=1):
+                unique = _unique_labels(other.rat_labels, self.current_selected_paths[idx])
+                visualizer_instance.rat_labels = visualizer_instance.rat_labels + unique
                 visualizer_instance.tumor_volumes = visualizer_instance.tumor_volumes + other.tumor_volumes
                 # Обновляем data_processor с объединёнными данными
-                from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import TumorDataProcessor
                 visualizer_instance.data_processor = TumorDataProcessor(visualizer_instance.tumor_volumes)
 
         elif self.current_visualizer is TumorDataVisualizer:
