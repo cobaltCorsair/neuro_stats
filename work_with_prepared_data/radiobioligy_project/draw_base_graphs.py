@@ -485,12 +485,6 @@ class TumorDataVisualizer:
             Y — «|ΔV/V₀| / среднее × 100, %»
         """
         relative_volumes = self.data_processor.get_relative_tumor_volumes()
-
-        # При N=2 обе кривые D_i(t) были бы идентичны — показываем одну попарную кривую
-        if len(self.rat_labels) == 2:
-            self.plot_pairwise_divergence_individual()
-            return
-
         pairs = SupportingFunctions.calculate_pairwise_divergence(relative_volumes, self.rat_labels)
 
         if not pairs:
@@ -498,17 +492,26 @@ class TumorDataVisualizer:
 
         n_t = len(self.time_data)
 
-        # Для каждой крысы i: D_i(t) = среднее d(i,j,t) по j≠i, переводим в %
-        per_rat_curves = []
-        for label_i in self.rat_labels:
-            rat_d = []
-            for t in range(n_t):
-                vals = [d_vals[t] for li, lj, d_vals in pairs
-                        if (li == label_i or lj == label_i) and not np.isnan(d_vals[t])]
-                rat_d.append(float(np.mean(vals)) * 100.0 if vals else np.nan)
-            per_rat_curves.append(rat_d)
+        # При N=2 обе кривые D_i(t) идентичны — берём единственную попарную кривую
+        # и умножаем на 100%, чтобы оставаться в тех же единицах (%).
+        if len(self.rat_labels) == 2:
+            li, lj, d_vals = pairs[0]
+            pair_label = f"{li}–{lj}"
+            per_rat_curves = [[v * 100.0 for v in d_vals]]
+            rat_labels_to_plot = [pair_label]
+        else:
+            # Для каждой крысы i: D_i(t) = среднее d(i,j,t) по j≠i, переводим в %
+            per_rat_curves = []
+            rat_labels_to_plot = self.rat_labels
+            for label_i in self.rat_labels:
+                rat_d = []
+                for t in range(n_t):
+                    vals = [d_vals[t] for li, lj, d_vals in pairs
+                            if (li == label_i or lj == label_i) and not np.isnan(d_vals[t])]
+                    rat_d.append(float(np.mean(vals)) * 100.0 if vals else np.nan)
+                per_rat_curves.append(rat_d)
 
-        # Среднее по всем крысам в каждой точке t
+        # Среднее по всем кривым в каждой точке t
         d_matrix = np.array(per_rat_curves, dtype=float)
         mean_d = np.nanmean(d_matrix, axis=0).tolist()
 
@@ -523,10 +526,11 @@ class TumorDataVisualizer:
         )
         drawgraph.setup_figure()
 
-        # Индивидуальные кривые по крысам (одна линия-цвет на крысу)
-        drawgraph.add_individual_plots(self.rat_labels, per_rat_curves, self.time_data)
+        # Индивидуальные кривые (одна линия на крысу, или одна попарная при N=2)
+        drawgraph.add_individual_plots(rat_labels_to_plot, per_rat_curves, self.time_data)
 
-        # Чёрная пунктирная средняя линия
+        # Чёрная пунктирная средняя линия (при N=2 совпадает с единственной кривой,
+        # но оставляем для единообразия оформления)
         time_floats = [float(t) for t in self.time_data]
         mean_line, = plt.plot(
             time_floats, mean_d,
