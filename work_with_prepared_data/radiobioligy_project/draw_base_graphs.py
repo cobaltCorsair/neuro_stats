@@ -485,6 +485,12 @@ class TumorDataVisualizer:
             Y — «|ΔV/V₀| / среднее × 100, %»
         """
         relative_volumes = self.data_processor.get_relative_tumor_volumes()
+
+        # При N=2 обе кривые D_i(t) были бы идентичны — показываем одну попарную кривую
+        if len(self.rat_labels) == 2:
+            self.plot_pairwise_divergence_individual()
+            return
+
         pairs = SupportingFunctions.calculate_pairwise_divergence(relative_volumes, self.rat_labels)
 
         if not pairs:
