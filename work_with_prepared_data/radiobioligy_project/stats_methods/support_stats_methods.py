@@ -713,7 +713,7 @@ class SupportingFunctions:
         """
         from itertools import combinations
         result = []
-        n_timepoints = len(relative_volumes[0]) if relative_volumes else 0
+        n_timepoints = len(relative_volumes[0]) if len(relative_volumes) > 0 else 0
 
         for (i, label_i), (j, label_j) in combinations(enumerate(rat_labels), 2):
             v1 = np.array(relative_volumes[i], dtype=float)
