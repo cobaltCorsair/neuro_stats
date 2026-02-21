@@ -387,7 +387,7 @@ class TumorDataVisualizer:
 
         drawgraph = GraphVisualizer(
             "Попарное расхождение d(t) (индивидуальные пары)",
-            "Время, сут.",
+            "Временная точка, сут.",
             "d(t), отн. ед.",
             figsize=(12, 7)
         )
@@ -429,7 +429,7 @@ class TumorDataVisualizer:
 
         drawgraph = GraphVisualizer(
             "Среднее попарное расхождение d(t)",
-            "Время, сут.",
+            "Временная точка, сут.",
             "d(t), отн. ед.",
             figsize=(12, 7)
         )
@@ -455,7 +455,7 @@ class TumorDataVisualizer:
 
         drawgraph = GraphVisualizer(
             "Коэффициент вариации CV(t)",
-            "Время, сут.",
+            "Временная точка, сут.",
             "CV(t), %",
             figsize=(12, 7)
         )
@@ -511,7 +511,7 @@ class TumorDataVisualizer:
 
         drawgraph = GraphVisualizer(
             "Относительное расхождение по временны\u0301м точкам",
-            "Сутки от перевивки",
+            "Временная точка, сут.",
             "|ΔV/V₀| / среднее × 100, %",
             figsize=(12, 7)
         )
@@ -596,27 +596,17 @@ class TumorDataVisualizer:
         mean_d = np.nanmean(d_matrix, axis=0).tolist()
         overall_mean = float(np.nanmean(np.array(mean_d, dtype=float)))
 
-        import matplotlib.cm as cm
-        tab10_colors = cm.tab10.colors  # 10 различимых цветов
-
         drawgraph = GraphVisualizer(
             "Расхождение замеров между группами A и B",
-            "Сутки от перевивки",
+            "Временная точка, сут.",
             "d(t), %",
             figsize=(12, 7)
         )
         drawgraph.setup_figure()
 
-        # Рисуем каждую пару своим цветом вручную
+        # Используем стандартный цикл стилей как во всех остальных графиках
         time_floats = [float(t) for t in time_data]
-        for i, (label, d_curve) in enumerate(zip(pair_labels, all_d_curves)):
-            color = tab10_colors[i % len(tab10_colors)]
-            line, = plt.plot(
-                time_floats, d_curve,
-                color=color, linewidth=1.5, marker='o', markersize=4,
-                label=label, zorder=2
-            )
-            drawgraph.lines.append(line)
+        drawgraph.add_individual_plots(pair_labels, all_d_curves, time_data)
 
         # Средняя линия — как в plot_relative_divergence_per_rat
         mean_line, = plt.plot(

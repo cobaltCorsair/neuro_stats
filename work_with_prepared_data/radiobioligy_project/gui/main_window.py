@@ -667,6 +667,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         from PyQt6.QtGui import QColor, QBrush
         color_map = {"A": QColor(173, 216, 230), "B": QColor(255, 200, 150), "—": QColor(255, 255, 255)}
         item.setBackground(QBrush(color_map[next_val]))
+        self.update_ninth_button_state()
         self.update_tenth_button_state()
 
     def get_group_assignment(self):
@@ -858,13 +859,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         Обновляет состояние кнопки «Расхождение по крысам».
 
-        Кнопка активна, если выбран хотя бы один файл (не skin_reactions).
-        Чекбоксы не влияют — режим всегда строит полный комбинированный график.
+        Два режима:
+        - Группы A + B назначены → сравнение замеров: достаточно выбрать файлы (чекбоксы не нужны).
+        - Группы не назначены → межособевое расхождение: требуется «отн. ед.» (checkBox_4),
+          так как метод работает с нормированными объёмами V/V₀.
         """
         selected_paths = self.get_selected_experiments()
         at_least_one = len(selected_paths) >= 1
         not_skin = all("skin_reactions" not in p for p in selected_paths) if at_least_one else False
-        self.pushButton_10.setEnabled(at_least_one and not_skin)
+
+        # Проверяем наличие обеих групп среди выбранных файлов
+        groups = self.get_group_assignment()
+        selected_groups = {p: groups.get(p) for p in selected_paths}
+        has_groups = (
+            any(g == 'A' for g in selected_groups.values()) and
+            any(g == 'B' for g in selected_groups.values())
+        )
+
+        if has_groups:
+            # Режим сравнения замеров: чекбоксы не нужны
+            enabled = at_least_one and not_skin
+        else:
+            # Межособевой режим: нужна «отн. ед.» (checkBox_4)
+            enabled = at_least_one and not_skin and self.checkBox_4.isChecked()
+
+        self.pushButton_10.setEnabled(enabled)
 
     def handle_divergence_per_rat(self):
         """
