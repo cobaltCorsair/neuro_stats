@@ -1298,7 +1298,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             seen_labels: set = set()
 
             def _unique_labels(labels, file_path):
-                suffix = _os.path.splitext(_os.path.basename(file_path))[0]
+                basename = _os.path.splitext(_os.path.basename(file_path))[0]
+                parts = basename.split('_')
+                suffix = '_'.join(parts[:2]) if len(parts) >= 2 else basename
                 result = []
                 for lbl in labels:
                     if lbl in seen_labels:

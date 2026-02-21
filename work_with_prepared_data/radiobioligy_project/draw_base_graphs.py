@@ -512,7 +512,7 @@ class TumorDataVisualizer:
         drawgraph = GraphVisualizer(
             "Относительное расхождение по временны\u0301м точкам",
             "Временная точка, сут.",
-            "|ΔV/V₀| / среднее × 100, %",
+            "d(t), %",
             figsize=(12, 7)
         )
         drawgraph.setup_figure()
@@ -527,16 +527,15 @@ class TumorDataVisualizer:
             linestyle='--', color='black', linewidth=2, label='Среднее', zorder=3
         )
 
-        # Точечная горизонтальная линия глобального среднего
+        # Точечная горизонтальная линия глобального среднего + запись в легенду
         plt.axhline(y=overall_mean, linestyle=':', color='#7b68ee', linewidth=1.5, zorder=1)
         horiz_label = f"Ср. за период: {overall_mean:.1f}%"
-        plt.text(
-            time_floats[-1], overall_mean,
-            f"  {horiz_label}",
-            va='bottom', ha='right', fontsize=14, color='#7b68ee'
-        )
+        from matplotlib.lines import Line2D
+        horiz_proxy = Line2D([0], [0], linestyle=':', color='#7b68ee', linewidth=1.5,
+                             label=horiz_label)
 
         drawgraph.lines.append(mean_line)
+        drawgraph.lines.append(horiz_proxy)
         drawgraph.finalize_figure(
             f"{', '.join(self.experiment_params)}_relative_divergence_per_rat",
             "Метка крысы",
