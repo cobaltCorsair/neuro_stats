@@ -371,6 +371,102 @@ class TumorDataVisualizer:
 
 
 
+    def plot_pairwise_divergence_individual(self):
+        """
+        Визуализирует попарное расхождение d(t) для каждой пары крыс — индивидуальные кривые.
+
+        Модернизированная формула (Кизилова, 2026):
+            d(t) = 2 * |V₁(t) − V₂(t)| / (V₁(t) + V₂(t))
+
+        Для каждой пары (i, j) строится отдельная кривая на одном графике. Данные предварительно
+        нормируются на начальный объём (V/V₀). Позволяет оценить межособевую вариабельность
+        в контрольной (необлучённой) группе крыс.
+        """
+        relative_volumes = self.data_processor.get_relative_tumor_volumes()
+        pairs = SupportingFunctions.calculate_pairwise_divergence(relative_volumes, self.rat_labels)
+
+        drawgraph = GraphVisualizer(
+            "Попарное расхождение d(t) (индивидуальные пары)",
+            "Время, сут.",
+            "d(t), отн. ед.",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
+
+        pair_labels = [f"{li}–{lj}" for li, lj, _ in pairs]
+        pair_curves = [d_vals for _, _, d_vals in pairs]
+        drawgraph.add_individual_plots(pair_labels, pair_curves, self.time_data)
+
+        formatted_params = format_experiment_params(self.experiment_params)
+        drawgraph.add_legend([formatted_params], "Параметры эксперимента", "upper center", display_marker=False)
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_pairwise_divergence_individual", "Пара крыс")
+
+    def plot_pairwise_divergence_mean(self):
+        """
+        Визуализирует среднее попарное расхождение d(t) по всем парам крыс с доверительным интервалом.
+
+        Модернизированная формула (Кизилова, 2026):
+            d(t) = 2 * |V₁(t) − V₂(t)| / (V₁(t) + V₂(t))
+
+        Усредняется по всем C(N,2) парам. Отображается одна кривая среднего d(t) ± SEM.
+        Позволяет в едином числе оценить уровень межособевой вариабельности группы.
+        """
+        relative_volumes = self.data_processor.get_relative_tumor_volumes()
+        pairs = SupportingFunctions.calculate_pairwise_divergence(relative_volumes, self.rat_labels)
+
+        if not pairs:
+            return
+
+        # Матрица d(t): (n_пар, n_точек)
+        d_matrix = np.array([d_vals for _, _, d_vals in pairs], dtype=float)
+        mean_d = np.nanmean(d_matrix, axis=0)
+        n_pairs = d_matrix.shape[0]
+        std_d = [SupportingFunctions.calculate_std_dev(
+            [d_matrix[p, t] for p in range(n_pairs) if not np.isnan(d_matrix[p, t])],
+            mean_d[t]
+        ) if n_pairs > 1 else 0.0 for t in range(d_matrix.shape[1])]
+        sem_d = [SupportingFunctions.calculate_error_margin(s, n_pairs) for s in std_d]
+
+        drawgraph = GraphVisualizer(
+            "Среднее попарное расхождение d(t)",
+            "Время, сут.",
+            "d(t), отн. ед.",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
+
+        formatted_params = format_experiment_params(self.experiment_params)
+        unique_label = f"Среднее d(t): {formatted_params}"
+        drawgraph.add_plot(self.time_data, mean_d.tolist(), {}, unique_label, sem_d)
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_pairwise_divergence_mean", legend_fontsize=18)
+
+    def plot_cv(self):
+        """
+        Визуализирует коэффициент вариации CV(t) по группе крыс.
+
+        Стандартная формула:
+            CV(t) = σ(t) / μ(t) × 100%
+
+        Данные предварительно нормируются (V/V₀). Одна кривая CV в % от времени.
+        Применяется при N > 2 как обобщённая мера межособевой вариабельности группы.
+        """
+        relative_volumes = self.data_processor.get_relative_tumor_volumes()
+        cv_values, _ = SupportingFunctions.calculate_cv(relative_volumes)
+
+        drawgraph = GraphVisualizer(
+            "Коэффициент вариации CV(t)",
+            "Время, сут.",
+            "CV(t), %",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
+
+        formatted_params = format_experiment_params(self.experiment_params)
+        unique_label = f"CV(t): {formatted_params}"
+        drawgraph.add_plot(self.time_data, cv_values, {}, unique_label, None)
+        drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_cv", legend_fontsize=18)
+
+
 if __name__ == '__main__':
     # Используем с файлом данных
     #file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'

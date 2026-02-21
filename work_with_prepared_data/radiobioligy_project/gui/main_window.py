@@ -90,6 +90,24 @@ class DataProcessor:
             raise ValueError("Invalid checkbox state")
         return plotting_func, selected_paths
 
+    def process_variability(self, checkboxes_state):
+        """
+        Возвращает функцию визуализации межособевой вариабельности.
+
+        Args:
+            checkboxes_state (tuple): (CB3, CB4, CB5, CB6) — состояния чекбоксов.
+
+        Returns:
+            callable: Метод TumorDataVisualizer для построения графика.
+        """
+        _, _, individual, mean = checkboxes_state
+        if individual:
+            return TumorDataVisualizer.plot_pairwise_divergence_individual
+        elif mean:
+            return TumorDataVisualizer.plot_cv
+        else:
+            raise ValueError("Выберите режим отображения: индивидуальные или средние")
+
     def process_for_control_comparison(self, selected_paths, control_path, checkboxes_state):
         if checkboxes_state == (True, True):
             plotting_func = TumorDataComparatorAdvanced.compare_control_and_experiment
@@ -166,6 +184,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_6.setEnabled(False)
         self.pushButton_7.setEnabled(False)
         self.pushButton_8.setEnabled(False)
+        self.pushButton_9.setEnabled(False)
         self.checkBox_2.setDisabled(True)
         self.checkBox_7.setDisabled(True)
         self.checkBox.setDisabled(True)
@@ -183,6 +202,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_7.clicked.connect(self.handle_compare_with_control)
         self.pushButton_4.clicked.connect(self.handle_pushButton_4)
         self.pushButton_8.clicked.connect(self.handle_pushButton_8)
+        self.pushButton_9.clicked.connect(self.handle_variability)
         # Подключение сигнала изменения выбора комбобокса к обработчику
         self.comboBox.currentIndexChanged.connect(self.on_combobox_changed)
         # Подключаем сигналы изменения состояния чекбоксов
@@ -199,6 +219,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.model.itemChanged.connect(self.update_fourth_button_state)
         self.model.itemChanged.connect(self.update_fifth_button_state)
         self.model.itemChanged.connect(self.update_seventh_button_state)
+        self.model.itemChanged.connect(self.update_ninth_button_state)
         self.model.itemChanged.connect(self.on_control_checkbox_changed)
         self.comboBox_2.currentTextChanged.connect(self.update_control_path)
         self.doubleSpinBox.valueChanged.connect(self.update_annotation_multiplier)
@@ -741,6 +762,44 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         allPathsValid = all("skin_reactions" not in path for path in selected_paths)
         self.pushButton_7.setEnabled(oneExperimentSelected and anyCheckboxChecked and controlChecked and allPathsValid)
 
+    def update_ninth_button_state(self):
+        """
+        Обновляет состояние кнопки «Вариабельность группы».
+
+        Кнопка активна, если:
+        - Выбран ровно один эксперимент (не skin_reactions);
+        - Отмечен чекбокс «индивидуальные» или «средние».
+        """
+        selected_paths = self.get_selected_experiments()
+        one_selected = len(selected_paths) == 1
+        not_skin = "skin_reactions" not in selected_paths[0] if one_selected else False
+        any_mode = self.checkBox_5.isChecked() or self.checkBox_6.isChecked()
+        self.pushButton_9.setEnabled(one_selected and not_skin and any_mode)
+
+    def handle_variability(self):
+        """
+        Обрабатывает нажатие кнопки «Вариабельность группы».
+
+        Режим «индивидуальные» → попарное расхождение d(t) по формуле Кизиловой (2026).
+        Режим «средние» → коэффициент вариации CV(t) = σ(t)/μ(t)×100% по группе.
+        """
+        selected_paths = self.get_selected_experiments()
+        if len(selected_paths) != 1:
+            print("Для анализа вариабельности выберите ровно один эксперимент")
+            return
+
+        checkboxes_state = (
+            self.checkBox_3.isChecked(),
+            self.checkBox_4.isChecked(),
+            self.checkBox_5.isChecked(),
+            self.checkBox_6.isChecked()
+        )
+        try:
+            plotting_func = self.data_processor.process_variability(checkboxes_state)
+            self.draw_graphic([selected_paths[0]], TumorDataVisualizer, plotting_func)
+        except ValueError as e:
+            print(e)
+
     def on_checkbox_pair_changed(self, thisCheckbox, pairedCheckbox):
         """Обработка изменения состояния пары взаимоисключающих чекбоксов.
 
@@ -757,6 +816,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.update_fourth_button_state()
         self.update_fifth_button_state()
         self.update_seventh_button_state()
+        self.update_ninth_button_state()
         self.set_state_of_auc_and_tests_checkbox()
 
     def on_checkbox_tests_changed(self, thisCheckbox, pairedCheckbox):

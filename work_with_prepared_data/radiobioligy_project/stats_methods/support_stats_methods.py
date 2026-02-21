@@ -687,4 +687,68 @@ class SupportingFunctions:
                     out.append(float(s.replace(',', '.')))
                 except Exception:
                     out.append(float('nan'))
+
+    @staticmethod
+    def calculate_pairwise_divergence(
+            relative_volumes: List[List[float]],
+            rat_labels: List[str]
+    ) -> List[Tuple[str, str, List[float]]]:
+        """
+        Вычисляет попарное расхождение между нормированными кривыми роста крыс.
+
+        Модернизированная формула (Кизилова, 2026):
+            d(t) = 2 * |V₁(t) − V₂(t)| / (V₁(t) + V₂(t))
+
+        Функционально эквивалентна точечному коэффициенту вариации для двух наблюдений.
+        Позволяет оценить межособевую вариабельность в контрольной (необлучённой) группе.
+
+        Args:
+            relative_volumes (List[List[float]]): Нормированные объёмы V/V₀ для каждой крысы.
+                Форма: (n_крыс, n_временных_точек).
+            rat_labels (List[str]): Метки крыс (длина = n_крыс).
+
+        Returns:
+            List[Tuple[str, str, List[float]]]: Список кортежей (label_i, label_j, [d(t0), d(t1), ...])
+                для каждой пары (i < j). NaN-значения в точке t заменяются на NaN.
+        """
+        from itertools import combinations
+        result = []
+        n_timepoints = len(relative_volumes[0]) if relative_volumes else 0
+
+        for (i, label_i), (j, label_j) in combinations(enumerate(rat_labels), 2):
+            v1 = np.array(relative_volumes[i], dtype=float)
+            v2 = np.array(relative_volumes[j], dtype=float)
+            denom = v1 + v2
+            # Избегаем деления на ноль: если сумма равна 0 или оба NaN → NaN
+            with np.errstate(invalid='ignore', divide='ignore'):
+                d = np.where(denom == 0, np.nan, 2.0 * np.abs(v1 - v2) / denom)
+            result.append((label_i, label_j, d.tolist()))
+
+        return result
+
+    @staticmethod
+    def calculate_cv(relative_volumes: List[List[float]]) -> Tuple[List[float], List[float]]:
+        """
+        Вычисляет коэффициент вариации CV(t) по группе крыс в каждой временной точке.
+
+        Стандартная формула:
+            CV(t) = σ(t) / μ(t) × 100%
+
+        где σ(t) — стандартное отклонение, μ(t) — среднее нормированных объёмов группы в точке t.
+
+        Args:
+            relative_volumes (List[List[float]]): Нормированные объёмы V/V₀ для каждой крысы.
+                Форма: (n_крыс, n_временных_точек).
+
+        Returns:
+            Tuple[List[float], List[float]]:
+                - cv_values: CV(t) в % для каждой временной точки.
+                - mean_values: среднее V/V₀ по группе в каждой точке (для справки).
+        """
+        data = np.array(relative_volumes, dtype=float)  # (n_крыс, n_точек)
+        mean_vals = np.nanmean(data, axis=0)
+        std_vals = np.nanstd(data, axis=0, ddof=1)
+        with np.errstate(invalid='ignore', divide='ignore'):
+            cv = np.where(mean_vals == 0, np.nan, std_vals / mean_vals * 100.0)
+        return cv.tolist(), mean_vals.tolist()
         return out
