@@ -188,7 +188,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_6.setEnabled(False)
         self.pushButton_7.setEnabled(False)
         self.pushButton_8.setEnabled(False)
-        self.pushButton_9.setEnabled(False)
         self.pushButton_10.setEnabled(False)
         self.checkBox_2.setDisabled(True)
         self.checkBox_7.setDisabled(True)
@@ -207,7 +206,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_7.clicked.connect(self.handle_compare_with_control)
         self.pushButton_4.clicked.connect(self.handle_pushButton_4)
         self.pushButton_8.clicked.connect(self.handle_pushButton_8)
-        self.pushButton_9.clicked.connect(self.handle_variability)
         self.pushButton_10.clicked.connect(self.handle_divergence_per_rat)
         # Подключение сигнала изменения выбора комбобокса к обработчику
         self.comboBox.currentIndexChanged.connect(self.on_combobox_changed)
