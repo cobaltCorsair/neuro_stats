@@ -101,14 +101,14 @@ class DataProcessor:
             callable: Метод TumorDataVisualizer для построения графика.
         """
         _, _, all_curves, mean_curves = checkboxes_state
-        # checkBox_5 = «общие» → все попарные кривые d(t)
+        # checkBox_5 = «общие» → расхождение на крысу со средним и горизонтальной линией
         # checkBox_6 = «средние» → CV(t) по группе
         if all_curves:
-            return TumorDataVisualizer.plot_pairwise_divergence_individual
+            return TumorDataVisualizer.plot_relative_divergence_per_rat
         elif mean_curves:
             return TumorDataVisualizer.plot_cv
         else:
-            raise ValueError("Выберите режим отображения: «общие» (все пары) или «средние» (CV)")
+            raise ValueError("Выберите режим отображения: «общие» или «средние» (CV)")
 
     def process_for_control_comparison(self, selected_paths, control_path, checkboxes_state):
         if checkboxes_state == (True, True):
