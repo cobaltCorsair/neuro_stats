@@ -595,8 +595,18 @@ class TumorDataVisualizer:
                 d = np.where(denom == 0, np.nan, 2.0 * np.abs(mean_a - mean_b) / denom * 100.0)
 
             all_d_curves.append(d.tolist())
-            # Метка пары — имя файла A без расширения (уникальна для каждой пары)
-            label = os.path.splitext(os.path.basename(paths_a[i]))[0]
+
+            # Метка пары: «Крыса_N (гр. A / гр. B)»
+            # Берём первые два сегмента имени файла A как идентификатор крысы,
+            # третий сегмент каждого файла — как обозначение метода/группы.
+            def _seg(path, start, end):
+                parts = os.path.splitext(os.path.basename(path))[0].split('_')
+                return '_'.join(parts[start:end]) if len(parts) > start else os.path.splitext(os.path.basename(path))[0]
+
+            rat_id = _seg(paths_a[i], 0, 2)      # «Крыса_2»
+            method_a = _seg(paths_a[i], 2, 3)    # «МРТ» или «LWH»
+            method_b = _seg(paths_b[i], 2, 3)    # «LWH» или «МРТ»
+            label = f"{rat_id} (A: {method_a} / B: {method_b})"
             pair_labels.append(label)
 
         time_data = TumorDataVisualizer(paths_a[0]).time_data
@@ -614,8 +624,6 @@ class TumorDataVisualizer:
         drawgraph.setup_figure()
 
         # Рисуем каждую пару с is_individual_rat=False — без обращения к кэшу label_styles.
-        # Это гарантирует уникальные цвет/маркер/стиль линии для каждой пары независимо
-        # от того, какие графики строились ранее.
         time_floats = [float(t) for t in time_data]
         for lbl, d_curve in zip(pair_labels, all_d_curves):
             d_arr = np.array(d_curve, dtype=float)
@@ -623,28 +631,27 @@ class TumorDataVisualizer:
             clean_d = d_arr[~np.isnan(d_arr)]
             drawgraph.add_plot(clean_t, clean_d, {}, lbl, error_margin=None, is_individual_rat=False)
 
-        # Средняя линия — как в plot_relative_divergence_per_rat
-        mean_line, = plt.plot(
-            time_floats, mean_d,
-            linestyle='--', color='black', linewidth=2,
-            label='Среднее', zorder=3
-        )
-        drawgraph.lines.append(mean_line)
-
         # Горизонтальная линия глобального среднего
         horiz_label = f"Ср. за период: {overall_mean:.1f}%"
         plt.axhline(y=overall_mean, linestyle=':', color='#7b68ee', linewidth=1.5, zorder=1)
-
-        # Добавляем горизонталь в легенду через proxy-линию
         from matplotlib.lines import Line2D
         horiz_proxy = Line2D([0], [0], linestyle=':', color='#7b68ee', linewidth=1.5,
                              label=horiz_label)
         drawgraph.lines.append(horiz_proxy)
 
+        # Средняя линия нужна только при n_pairs > 1 (при одной паре среднее = та же кривая)
+        if n_pairs > 1:
+            mean_line, = plt.plot(
+                time_floats, mean_d,
+                linestyle='--', color='black', linewidth=2,
+                label='Среднее', zorder=3
+            )
+            drawgraph.lines.append(mean_line)
+
         drawgraph.finalize_figure(
             "measurement_divergence_A_vs_B",
-            "Крыса (пара замеров)",
-            legend_fontsize=16
+            "Крыса (расхождение замеров A и B)",
+            legend_fontsize=14
         )
 
 
