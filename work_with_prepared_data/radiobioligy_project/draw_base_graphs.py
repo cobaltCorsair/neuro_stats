@@ -603,9 +603,15 @@ class TumorDataVisualizer:
         )
         drawgraph.setup_figure()
 
-        # Используем стандартный цикл стилей как во всех остальных графиках
+        # Рисуем каждую пару с is_individual_rat=False — без обращения к кэшу label_styles.
+        # Это гарантирует уникальные цвет/маркер/стиль линии для каждой пары независимо
+        # от того, какие графики строились ранее.
         time_floats = [float(t) for t in time_data]
-        drawgraph.add_individual_plots(pair_labels, all_d_curves, time_data)
+        for lbl, d_curve in zip(pair_labels, all_d_curves):
+            d_arr = np.array(d_curve, dtype=float)
+            clean_t = np.array(time_floats)[~np.isnan(d_arr)]
+            clean_d = d_arr[~np.isnan(d_arr)]
+            drawgraph.add_plot(clean_t, clean_d, {}, lbl, error_margin=None, is_individual_rat=False)
 
         # Средняя линия — как в plot_relative_divergence_per_rat
         mean_line, = plt.plot(
