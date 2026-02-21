@@ -225,7 +225,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.model.itemChanged.connect(self.update_fourth_button_state)
         self.model.itemChanged.connect(self.update_fifth_button_state)
         self.model.itemChanged.connect(self.update_seventh_button_state)
-        self.model.itemChanged.connect(self.update_ninth_button_state)
         self.model.itemChanged.connect(self.update_tenth_button_state)
         self.model.itemChanged.connect(self.on_control_checkbox_changed)
         self.comboBox_2.currentTextChanged.connect(self.update_control_path)
@@ -667,7 +666,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         from PyQt6.QtGui import QColor, QBrush
         color_map = {"A": QColor(173, 216, 230), "B": QColor(255, 200, 150), "—": QColor(255, 255, 255)}
         item.setBackground(QBrush(color_map[next_val]))
-        self.update_ninth_button_state()
         self.update_tenth_button_state()
 
     def get_group_assignment(self):
@@ -813,48 +811,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         allPathsValid = all("skin_reactions" not in path for path in selected_paths)
         self.pushButton_7.setEnabled(oneExperimentSelected and anyCheckboxChecked and controlChecked and allPathsValid)
 
-    def update_ninth_button_state(self):
-        """
-        Обновляет состояние кнопки «Вариабельность группы».
-
-        Кнопка активна, если:
-        - Выбран один или несколько файлов (не skin_reactions);
-        - Отмечены «отн. ед.» (checkBox_4) И «общие» (checkBox_5).
-        """
-        selected_paths = self.get_selected_experiments()
-        at_least_one = len(selected_paths) >= 1
-        not_skin = all("skin_reactions" not in p for p in selected_paths) if at_least_one else False
-        mode_ok = self.checkBox_4.isChecked() and self.checkBox_5.isChecked()
-        self.pushButton_9.setEnabled(at_least_one and not_skin and mode_ok)
-
-    def handle_variability(self):
-        """
-        Обрабатывает нажатие кнопки «Вариабельность группы».
-
-        Поддерживает как один файл с несколькими крысами, так и несколько
-        файлов с одной крысой — крысы из всех файлов объединяются в одну группу.
-
-        Режим «общие» (checkBox_5) → попарное расхождение d(t) по формуле Кизиловой (2026).
-        Режим «средние» (checkBox_6) → коэффициент вариации CV(t) = σ(t)/μ(t)×100% по группе.
-        """
-        selected_paths = self.get_selected_experiments()
-        if len(selected_paths) < 1:
-            print("Для анализа вариабельности выберите хотя бы один файл")
-            return
-
-        checkboxes_state = (
-            self.checkBox_3.isChecked(),
-            self.checkBox_4.isChecked(),
-            self.checkBox_5.isChecked(),
-            self.checkBox_6.isChecked()
-        )
-        try:
-            plotting_func = self.data_processor.process_variability(checkboxes_state)
-            self.current_plot_type = 'variability'
-            self.draw_graphic(selected_paths, TumorDataVisualizer, plotting_func)
-        except ValueError as e:
-            print(e)
-
     def update_tenth_button_state(self):
         """
         Обновляет состояние кнопки «Расхождение по крысам».
@@ -919,7 +875,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.update_fourth_button_state()
         self.update_fifth_button_state()
         self.update_seventh_button_state()
-        self.update_ninth_button_state()
         self.update_tenth_button_state()
         self.set_state_of_auc_and_tests_checkbox()
 

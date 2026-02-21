@@ -260,6 +260,7 @@ class Ui_MainWindow(object):
         self.verticalLayout.addWidget(self.pushButton_7)
         self.pushButton_9 = QtWidgets.QPushButton(parent=self.layoutWidget)
         self.pushButton_9.setObjectName("pushButton_9")
+        self.pushButton_9.setVisible(False)
         self.verticalLayout.addWidget(self.pushButton_9)
         self.pushButton_10 = QtWidgets.QPushButton(parent=self.layoutWidget)
         self.pushButton_10.setObjectName("pushButton_10")
