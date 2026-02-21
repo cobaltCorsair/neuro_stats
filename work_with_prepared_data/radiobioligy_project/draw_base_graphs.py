@@ -596,15 +596,7 @@ class TumorDataVisualizer:
 
             all_d_curves.append(d.tolist())
 
-            # Метка пары: короткие имена обоих файлов через «/»
-            # Первые три сегмента имени файла (без даты в конце), например:
-            # «Крыса_2_МРТ / Крыса_1_LWH» — нейтрально, подходит для любых пар.
-            def _short_name(path):
-                parts = os.path.splitext(os.path.basename(path))[0].split('_')
-                return '_'.join(parts[:3]) if len(parts) >= 3 else os.path.splitext(os.path.basename(path))[0]
-
-            label = f"{_short_name(paths_a[i])} / {_short_name(paths_b[i])}"
-            pair_labels.append(label)
+            pair_labels.append(f"Пара {i + 1}")
 
         time_data = TumorDataVisualizer(paths_a[0]).time_data
 
