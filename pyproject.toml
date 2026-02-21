@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "neuro_stats"}]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.13"
+python = ">=3.9,<3.13"
 # Core dependencies for Radiobiology Analysis
 numpy = "1.26.4"
 pyqt6 = "^6.6.1"
