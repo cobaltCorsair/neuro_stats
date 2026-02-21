@@ -100,13 +100,15 @@ class DataProcessor:
         Returns:
             callable: Метод TumorDataVisualizer для построения графика.
         """
-        _, _, individual, mean = checkboxes_state
-        if individual:
+        _, _, all_curves, mean_curves = checkboxes_state
+        # checkBox_5 = «общие» → все попарные кривые d(t)
+        # checkBox_6 = «средние» → CV(t) по группе
+        if all_curves:
             return TumorDataVisualizer.plot_pairwise_divergence_individual
-        elif mean:
+        elif mean_curves:
             return TumorDataVisualizer.plot_cv
         else:
-            raise ValueError("Выберите режим отображения: индивидуальные или средние")
+            raise ValueError("Выберите режим отображения: «общие» (все пары) или «средние» (CV)")
 
     def process_for_control_comparison(self, selected_paths, control_path, checkboxes_state):
         if checkboxes_state == (True, True):
@@ -768,7 +770,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         Кнопка активна, если:
         - Выбран ровно один эксперимент (не skin_reactions);
-        - Отмечен чекбокс «индивидуальные» или «средние».
+        - Отмечен чекбокс «общие» или «средние».
         """
         selected_paths = self.get_selected_experiments()
         one_selected = len(selected_paths) == 1
@@ -780,8 +782,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         Обрабатывает нажатие кнопки «Вариабельность группы».
 
-        Режим «индивидуальные» → попарное расхождение d(t) по формуле Кизиловой (2026).
-        Режим «средние» → коэффициент вариации CV(t) = σ(t)/μ(t)×100% по группе.
+        Режим «общие» (checkBox_5) → попарное расхождение d(t) по формуле Кизиловой (2026).
+        Режим «средние» (checkBox_6) → коэффициент вариации CV(t) = σ(t)/μ(t)×100% по группе.
         """
         selected_paths = self.get_selected_experiments()
         if len(selected_paths) != 1:
