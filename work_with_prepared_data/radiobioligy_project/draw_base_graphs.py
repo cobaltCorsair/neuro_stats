@@ -529,13 +529,7 @@ class TumorDataVisualizer:
         # Индивидуальные кривые (одна линия на крысу, или одна попарная при N=2)
         drawgraph.add_individual_plots(rat_labels_to_plot, per_rat_curves, self.time_data)
 
-        # Чёрная пунктирная средняя линия (при N=2 совпадает с единственной кривой,
-        # но оставляем для единообразия оформления)
         time_floats = [float(t) for t in self.time_data]
-        mean_line, = plt.plot(
-            time_floats, mean_d,
-            linestyle='--', color='black', linewidth=2, label='Среднее', zorder=3
-        )
 
         # Точечная горизонтальная линия глобального среднего + запись в легенду
         plt.axhline(y=overall_mean, linestyle=':', color='#7b68ee', linewidth=1.5, zorder=1)
@@ -543,9 +537,15 @@ class TumorDataVisualizer:
         from matplotlib.lines import Line2D
         horiz_proxy = Line2D([0], [0], linestyle=':', color='#7b68ee', linewidth=1.5,
                              label=horiz_label)
-
-        drawgraph.lines.append(mean_line)
         drawgraph.lines.append(horiz_proxy)
+
+        # Среднее рисуем только при N > 1 кривых — при одной кривой оно с ней совпадает
+        if len(rat_labels_to_plot) > 1:
+            mean_line, = plt.plot(
+                time_floats, mean_d,
+                linestyle='--', color='black', linewidth=2, label='Среднее', zorder=3
+            )
+            drawgraph.lines.append(mean_line)
         drawgraph.finalize_figure(
             f"{', '.join(self.experiment_params)}_relative_divergence_per_rat",
             "Метка крысы",
