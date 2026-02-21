@@ -596,6 +596,9 @@ class TumorDataVisualizer:
         mean_d = np.nanmean(d_matrix, axis=0).tolist()
         overall_mean = float(np.nanmean(np.array(mean_d, dtype=float)))
 
+        import matplotlib.cm as cm
+        tab10_colors = cm.tab10.colors  # 10 различимых цветов
+
         drawgraph = GraphVisualizer(
             "Расхождение замеров между группами A и B",
             "Сутки от перевивки",
@@ -603,13 +606,27 @@ class TumorDataVisualizer:
             figsize=(12, 7)
         )
         drawgraph.setup_figure()
-        drawgraph.add_individual_plots(pair_labels, all_d_curves, time_data)
 
+        # Рисуем каждую пару своим цветом вручную
         time_floats = [float(t) for t in time_data]
+        for i, (label, d_curve) in enumerate(zip(pair_labels, all_d_curves)):
+            color = tab10_colors[i % len(tab10_colors)]
+            line, = plt.plot(
+                time_floats, d_curve,
+                color=color, linewidth=1.5, marker='o', markersize=4,
+                label=label, zorder=2
+            )
+            drawgraph.lines.append(line)
+
+        # Средняя линия — жирнее и с явной меткой в легенде
         mean_line, = plt.plot(
             time_floats, mean_d,
-            linestyle='--', color='black', linewidth=2, label='Среднее', zorder=3
+            linestyle='--', color='black', linewidth=2.5,
+            label='── Среднее', zorder=3
         )
+        drawgraph.lines.append(mean_line)
+
+        # Горизонтальная линия глобального среднего
         plt.axhline(y=overall_mean, linestyle=':', color='#7b68ee', linewidth=1.5, zorder=1)
         horiz_label = f"Ср. за период: {overall_mean:.1f}%"
         plt.text(
@@ -617,7 +634,7 @@ class TumorDataVisualizer:
             f"  {horiz_label}",
             va='bottom', ha='right', fontsize=14, color='#7b68ee'
         )
-        drawgraph.lines.append(mean_line)
+
         drawgraph.finalize_figure(
             "measurement_divergence_A_vs_B",
             "Крыса (пара замеров)",
