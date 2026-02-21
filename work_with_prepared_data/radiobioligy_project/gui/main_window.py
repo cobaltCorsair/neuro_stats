@@ -145,6 +145,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_control = None
         self.selected_outlier_method = None
         self.current_plot_type = None
+        self._paths_group_a = []
+        self._paths_group_b = []
         self.saved_checked_items = []
         self.perform_stat_test = False
         self.use_ttest = False
@@ -172,8 +174,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.menu_2.setEnabled(False)      # Редактировать (весь выпадающий список)
         self.menu_3.setEnabled(False)      # Распознать (весь выпадающий список)
 
-        # Настраиваем модель для 2 столбцов
-        self.model = QStandardItemModel(0, 3, self)
+        # Настраиваем модель для 4 столбцов
+        self.model = QStandardItemModel(0, 4, self)
         # Заменяем стандартный comboBox_4 на кастомный комбобокс с чекбоксами
         self.replace_combobox_4()
         self.change_table()
@@ -260,21 +262,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Returns:
             None.
         """
-        self.model.setHorizontalHeaderLabels(['Выбор файла', 'Путь к файлу эксперимента', 'Пометить как контрольный'])
+        self.model.setHorizontalHeaderLabels(['Выбор файла', 'Путь к файлу эксперимента', 'Пометить как контрольный', 'Группа'])
         self.tableView.setModel(self.model)
         # Настройка ширины столбцов
         header = self.tableView.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         # Устанавливаем фиксированную ширину для столбца с чекбоксами и именем файла
         header.resizeSection(0, 150)  # Подстраиваем под нужный размер
         header.resizeSection(1, 250)  # Подстраиваем под нужный размер
         header.resizeSection(2, 170)  # Подстраиваем под нужный размер
+        header.resizeSection(3, 70)   # Столбец «Группа»
         # Настройка внешнего вида таблицы
         self.tableView.setShowGrid(True)  # Показать сетку
         # Устанавливаем размеры политики для таблицы, чтобы она заполняла все доступное пространство
         self.tableView.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Клик по ячейке столбца «Группа» — циклически переключает метку A / B / —
+        self.tableView.clicked.connect(self._on_table_cell_clicked)
 
     def on_combobox_changed(self):
         self.selected_outlier_method = self.comboBox.currentIndex()
@@ -577,8 +583,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # Элемент для пути к файлу
             file_path_item = QStandardItem(file_path)
 
+            # Элемент «Группа» — кликабельный текст: «—» → «A» → «B» → «—»
+            group_item = QStandardItem("—")
+            group_item.setEditable(False)
+            group_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
             # Добавление строки в модель
-            self.model.appendRow([check_and_name_item, file_path_item, control_checkbox_item])
+            self.model.appendRow([check_and_name_item, file_path_item, control_checkbox_item, group_item])
 
             # Устанавливаем высоту строк
             for row in range(self.model.rowCount()):
@@ -637,6 +648,40 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 selected_paths.append(path)
 
         return selected_paths
+
+    def _on_table_cell_clicked(self, index):
+        """
+        Обрабатывает клик по ячейке таблицы.
+        Для столбца «Группа» (3) циклически переключает значение: «—» → «A» → «B» → «—».
+        """
+        if index.column() != 3:
+            return
+        item = self.model.itemFromIndex(index)
+        if item is None:
+            return
+        current = item.text()
+        cycle = {"—": "A", "A": "B", "B": "—"}
+        next_val = cycle.get(current, "—")
+        item.setText(next_val)
+        # Цветовая подсветка
+        from PyQt6.QtGui import QColor, QBrush
+        color_map = {"A": QColor(173, 216, 230), "B": QColor(255, 200, 150), "—": QColor(255, 255, 255)}
+        item.setBackground(QBrush(color_map[next_val]))
+        self.update_tenth_button_state()
+
+    def get_group_assignment(self):
+        """
+        Возвращает словарь {path: 'A' | 'B' | None} для всех строк таблицы.
+        Строки с «—» получают None.
+        """
+        result = {}
+        for row in range(self.model.rowCount()):
+            path_item = self.model.item(row, 1)
+            group_item = self.model.item(row, 3)
+            if path_item and group_item:
+                val = group_item.text()
+                result[path_item.text()] = None if val == "—" else val
+        return result
 
     def update_first_button_state(self):
         """
@@ -825,18 +870,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         Обрабатывает нажатие кнопки «Расхождение по крысам».
 
-        Строит комбинированный график:
-        - Цветная линия для каждой крысы: D_i(t) = среднее d(i,j,t) по j≠i × 100%
-        - Чёрный пунктир: среднее по всем крысам
-        - Точечная горизонталь: глобальное среднее за период с подписью
+        Если среди выбранных файлов есть группы A и B — строит попарный сравнительный
+        график «расхождение замеров» (одна крыса × два метода измерения).
+        Иначе — стандартный межособевой комбинированный график.
         """
         selected_paths = self.get_selected_experiments()
         if len(selected_paths) < 1:
             print("Для построения графика выберите хотя бы один файл")
             return
-        self.current_plot_type = 'divergence_per_rat'
-        self.draw_graphic(selected_paths, TumorDataVisualizer,
-                          TumorDataVisualizer.plot_relative_divergence_per_rat)
+
+        groups = self.get_group_assignment()
+        selected_groups = {p: groups.get(p) for p in selected_paths}
+        paths_a = [p for p, g in selected_groups.items() if g == 'A']
+        paths_b = [p for p, g in selected_groups.items() if g == 'B']
+
+        if paths_a and paths_b:
+            # Режим сравнения замеров: группа A vs группа B
+            self.current_plot_type = 'measurement_comparison'
+            self.current_selected_paths = selected_paths
+            self._paths_group_a = paths_a
+            self._paths_group_b = paths_b
+            self.current_visualizer = TumorDataVisualizer
+            self.current_plotting_func = TumorDataVisualizer.plot_relative_divergence_per_rat
+            self.current_control = None
+            self.create_graphic()
+        else:
+            # Обычный режим: межособевое расхождение
+            self.current_plot_type = 'divergence_per_rat'
+            self.draw_graphic(selected_paths, TumorDataVisualizer,
+                              TumorDataVisualizer.plot_relative_divergence_per_rat)
 
     def on_checkbox_pair_changed(self, thisCheckbox, pairedCheckbox):
         """Обработка изменения состояния пары взаимоисключающих чекбоксов.
@@ -1090,6 +1152,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         # Перенаправляем вывод графика в объект BytesIO вместо отображения в окне
         with io.BytesIO() as buf:
+            # Режим сравнения замеров A vs B
+            if self.current_plot_type == 'measurement_comparison':
+                paths_a = getattr(self, '_paths_group_a', [])
+                paths_b = getattr(self, '_paths_group_b', [])
+                TumorDataVisualizer.plot_measurement_divergence(paths_a, paths_b)
+                if self.figure is not None:
+                    plt.close(self.figure)
+                self.figure = plt.gcf()
+                plt.savefig(buf, format='png')
+                buf.seek(0)
+                pixmap = QPixmap()
+                pixmap.loadFromData(buf.getvalue())
+                return pixmap
+
             # Проверяем, является ли visualizer списком визуализаторов для множественных экспериментов
             if isinstance(visualizer, list) and len(visualizer) > 0 and isinstance(visualizer[0], SkinReactionsVisualizer):
                 # Используем модифицированные экземпляры визуализаторов
@@ -1186,6 +1262,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # Если layout еще не был установлен, создаем его
             layout = QVBoxLayout(self.frame)
             self.frame.setLayout(layout)
+
+        if self.current_plot_type == 'measurement_comparison':
+            # Сравнение замеров: группа A vs группа B попарно
+            pixmap = self.draw_figure_to_pixmap(None, None)
+            label = QLabel()
+            label.setPixmap(pixmap)
+            label.setScaledContents(True)
+            self.frame.layout().addWidget(label)
+            self.update_combobox_with_labels()
+            self.comboBox_4.restore_checked_indices(self.saved_checked_items)
+            if self.show_legend_separately and self.figure is not None:
+                self.show_legend_window()
+            return
 
         if self.current_plot_type in ('variability', 'divergence_per_rat'):
             # Объединяем крыс из всех выбранных файлов в один псевдо-визуализатор.

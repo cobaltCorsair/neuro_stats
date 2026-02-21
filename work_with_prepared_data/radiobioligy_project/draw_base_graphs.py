@@ -544,6 +544,87 @@ class TumorDataVisualizer:
         )
 
 
+    @staticmethod
+    def plot_measurement_divergence(paths_a: list, paths_b: list):
+        """
+        Строит график расхождения замеров между двумя группами (A и B).
+
+        Для каждой пары файл_A[i] ↔ файл_B[i] вычисляет кривую d(t):
+            d(t) = 2|V_A(t) − V_B(t)| / (V_A(t) + V_B(t)) × 100%
+        где V — нормированный объём (V/V₀).
+
+        Дополнительно отображает:
+        - Среднюю кривую d(t) по всем парам (чёрный пунктир)
+        - Горизонтальную линию глобального среднего (фиолетовая точечная)
+
+        Args:
+            paths_a: Пути к файлам группы A (замер 1, например ваши измерения).
+            paths_b: Пути к файлам группы B (замер 2, например МРТ студентки).
+        """
+        import os
+        n_pairs = min(len(paths_a), len(paths_b))
+        if n_pairs == 0:
+            return
+
+        all_d_curves = []
+        pair_labels = []
+
+        for i in range(n_pairs):
+            vis_a = TumorDataVisualizer(paths_a[i])
+            vis_b = TumorDataVisualizer(paths_b[i])
+
+            # Используем первую (и обычно единственную) крысу в каждом файле
+            vols_a = np.array(vis_a.data_processor.get_relative_tumor_volumes(), dtype=float)
+            vols_b = np.array(vis_b.data_processor.get_relative_tumor_volumes(), dtype=float)
+
+            # Усредняем по крысам внутри файла (если их несколько)
+            mean_a = np.nanmean(vols_a, axis=0)
+            mean_b = np.nanmean(vols_b, axis=0)
+
+            denom = mean_a + mean_b
+            with np.errstate(invalid='ignore', divide='ignore'):
+                d = np.where(denom == 0, np.nan, 2.0 * np.abs(mean_a - mean_b) / denom * 100.0)
+
+            all_d_curves.append(d.tolist())
+            # Метка пары — метка крысы из файла A (или имя файла без расширения)
+            label = vis_a.rat_labels[0] if vis_a.rat_labels else os.path.splitext(os.path.basename(paths_a[i]))[0]
+            pair_labels.append(label)
+
+        time_data = TumorDataVisualizer(paths_a[0]).time_data
+
+        d_matrix = np.array(all_d_curves, dtype=float)
+        mean_d = np.nanmean(d_matrix, axis=0).tolist()
+        overall_mean = float(np.nanmean(np.array(mean_d, dtype=float)))
+
+        drawgraph = GraphVisualizer(
+            "Расхождение замеров между группами A и B",
+            "Сутки от перевивки",
+            "d(t), %",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
+        drawgraph.add_individual_plots(pair_labels, all_d_curves, time_data)
+
+        time_floats = [float(t) for t in time_data]
+        mean_line, = plt.plot(
+            time_floats, mean_d,
+            linestyle='--', color='black', linewidth=2, label='Среднее', zorder=3
+        )
+        plt.axhline(y=overall_mean, linestyle=':', color='#7b68ee', linewidth=1.5, zorder=1)
+        horiz_label = f"Ср. за период: {overall_mean:.1f}%"
+        plt.text(
+            time_floats[-1], overall_mean,
+            f"  {horiz_label}",
+            va='bottom', ha='right', fontsize=14, color='#7b68ee'
+        )
+        drawgraph.lines.append(mean_line)
+        drawgraph.finalize_figure(
+            "measurement_divergence_A_vs_B",
+            "Крыса (пара замеров)",
+            legend_fontsize=16
+        )
+
+
 if __name__ == '__main__':
     # Используем с файлом данных
     #file_path = r'C:\dev\neuro_stats\work_with_prepared_data\datas\control\16.03.2023_n_22.xlsx'
