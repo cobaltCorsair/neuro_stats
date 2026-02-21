@@ -506,7 +506,7 @@ class GraphVisualizer:
         # Вычисление максимального значения по оси X из всех предоставленных наборов данных
         self.max_x = max(max(x_data) for x_data in x_data_lists) if x_data_lists else self.max_x
 
-    def finalize_figure(self, file_path, main_legend_title="", ncol=1, legend_fontsize='medium'):
+    def finalize_figure(self, file_path, main_legend_title="", ncol=1, legend_fontsize='medium', legend_title_fontsize=None):
         """
         Финализирует и отображает график, добавляя легенду и соответствующие оформления. Также сохраняет график в файл.
 
@@ -548,8 +548,12 @@ class GraphVisualizer:
                     labels.append(original_label)
 
             # Создаём основную легенду с новыми метками
-            first_legend = plt.legend(handles=self.lines, labels=labels, loc=self.legend_position,
-                                      title=main_legend_title, ncol=ncol, fontsize=legend_fontsize)
+            legend_kwargs = dict(handles=self.lines, labels=labels, loc=self.legend_position,
+                                 title=main_legend_title, ncol=ncol, fontsize=legend_fontsize)
+            if legend_title_fontsize is not None:
+                legend_kwargs['title_fontsize'] = legend_title_fontsize
+            first_legend = plt.legend(**legend_kwargs)
+            first_legend.get_title().set_multialignment('center')
             ax.add_artist(first_legend)  # Важно использовать add_artist для сохранения основной легенды
 
         # Создаем и добавляем легенду AUC, если есть значения AUC и легенда не скрыта

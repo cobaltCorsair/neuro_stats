@@ -814,14 +814,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Обновляет состояние кнопки «Расхождение по крысам».
 
         Кнопка активна, если:
-        - Выбран один или несколько файлов (не skin_reactions);
-        - Отмечены «отн. ед.» (checkBox_4) И «общие» (checkBox_5).
+        - Отмечены «отн. ед.» (checkBox_4) И «общие» (checkBox_5);
+        - Нет файлов skin_reactions;
+        - Режим A vs B: |A| == |B| ≥ 1, нет файлов без группы («—»);
+          ИЛИ режим без групп: выбрано ≥2 файлов (у всех группа «—»).
         """
         selected_paths = self.get_selected_experiments()
         at_least_one = len(selected_paths) >= 1
         not_skin = all("skin_reactions" not in p for p in selected_paths) if at_least_one else False
         mode_ok = self.checkBox_4.isChecked() and self.checkBox_5.isChecked()
-        self.pushButton_10.setEnabled(at_least_one and not_skin and mode_ok)
+
+        if at_least_one:
+            groups = self.get_group_assignment()
+            selected_groups = {p: groups.get(p) for p in selected_paths}
+            paths_a = [p for p, g in selected_groups.items() if g == 'A']
+            paths_b = [p for p, g in selected_groups.items() if g == 'B']
+            paths_no_group = [p for p, g in selected_groups.items() if g is None]
+            if paths_a and paths_b:
+                # Режим A vs B: нет файлов без группы И |A| == |B|
+                enough = len(paths_no_group) == 0 and len(paths_a) == len(paths_b)
+            else:
+                enough = len(selected_paths) >= 2   # режим без групп — нужно ≥2
+        else:
+            enough = False
+
+        self.pushButton_10.setEnabled(at_least_one and not_skin and mode_ok and enough)
 
     def handle_divergence_per_rat(self):
         """

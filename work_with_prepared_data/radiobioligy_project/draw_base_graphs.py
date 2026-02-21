@@ -468,88 +468,74 @@ class TumorDataVisualizer:
 
     def plot_relative_divergence_per_rat(self):
         """
-        Визуализирует относительное расхождение каждой крысы со всеми остальными.
+        Визуализирует вариабельность группы в зависимости от числа крыс N.
 
-        Для каждой крысы i строится кривая:
-            D_i(t) = среднее по j≠i [ d(i,j,t) ] × 100%
-            где d(i,j,t) = 2|V_i(t) − V_j(t)| / (V_i(t) + V_j(t))
+        N=2: одна кривая попарного расхождения
+            d(1,2,t) = 2|V₁(t) − V₂(t)| / (V₁(t) + V₂(t)) × 100%
+            Формула симметрична, поэтому D₁ ≡ D₂ — рисуется одна линия.
 
-        На графике отображаются:
-        - Цветная линия для каждой крысы (по метке из столбца «Метка»)
-        - Чёрная пунктирная линия — среднее D(t) по всем крысам
-        - Точечная горизонтальная линия — глобальное среднее за весь период
-          с подписью «Ср. за период: X%»
+        N>2: одна кривая коэффициента вариации по группе
+            CV(t) = σ(t) / μ(t) × 100%
+            где σ(t) — СКО, μ(t) — среднее нормированных объёмов в точке t.
 
-        Подписи осей:
-            X — «Сутки от перевивки» (реальные числа из Excel)
-            Y — «|ΔV/V₀| / среднее × 100, %»
+        На графике всегда отображаются:
+        - Одна кривая вариабельности
+        - Точечная горизонтальная линия — среднее за период с подписью «Ср. за период: X%»
         """
+        from matplotlib.lines import Line2D
         relative_volumes = self.data_processor.get_relative_tumor_volumes()
-        pairs = SupportingFunctions.calculate_pairwise_divergence(relative_volumes, self.rat_labels)
 
-        if not pairs:
+        if len(self.rat_labels) < 2:
             return
 
-        n_t = len(self.time_data)
-
-        # При N=2 обе кривые D_i(t) идентичны — берём единственную попарную кривую
-        # и умножаем на 100%, чтобы оставаться в тех же единицах (%).
         if len(self.rat_labels) == 2:
+            # N=2: попарное расхождение d(1,2,t)
+            pairs = SupportingFunctions.calculate_pairwise_divergence(relative_volumes, self.rat_labels)
+            if not pairs:
+                return
             li, lj, d_vals = pairs[0]
-            pair_label = f"{li}–{lj}"
-            per_rat_curves = [[v * 100.0 for v in d_vals]]
-            rat_labels_to_plot = [pair_label]
+            curve = [v * 100.0 for v in d_vals]
+            curve_label = "Крыса 1–Крыса 2"
+            legend_title = (
+                "$d_{1,2}=\\dfrac{2|V_1-V_2|}{V_1+V_2}$\n"
+                "попарное расхождение двух крыс"
+            )
+            y_label = "d(t), %"
         else:
-            # Для каждой крысы i: D_i(t) = среднее d(i,j,t) по j≠i, переводим в %
-            per_rat_curves = []
-            rat_labels_to_plot = self.rat_labels
-            for label_i in self.rat_labels:
-                rat_d = []
-                for t in range(n_t):
-                    vals = [d_vals[t] for li, lj, d_vals in pairs
-                            if (li == label_i or lj == label_i) and not np.isnan(d_vals[t])]
-                    rat_d.append(float(np.mean(vals)) * 100.0 if vals else np.nan)
-                per_rat_curves.append(rat_d)
-
-        # Среднее по всем кривым в каждой точке t
-        d_matrix = np.array(per_rat_curves, dtype=float)
-        mean_d = np.nanmean(d_matrix, axis=0).tolist()
+            # N>2: коэффициент вариации по группе CV(t)
+            cv_values, _ = SupportingFunctions.calculate_cv(relative_volumes)
+            curve = cv_values
+            curve_label = "CV(t)"
+            legend_title = (
+                "$CV(t)=\\sigma(t)/\\mu(t)\\times100\\%$\n"
+                "коэффициент вариации группы"
+            )
+            y_label = "CV(t), %"
 
         # Глобальное среднее за период
-        overall_mean = float(np.nanmean(np.array(mean_d, dtype=float)))
+        overall_mean = float(np.nanmean(np.array(curve, dtype=float)))
 
         drawgraph = GraphVisualizer(
-            "Относительное расхождение по временны\u0301м точкам",
+            "Вариабельность группы по временны\u0301м точкам",
             "Временная точка, сут.",
-            "d(t), %",
+            y_label,
             figsize=(12, 7)
         )
         drawgraph.setup_figure()
 
-        # Индивидуальные кривые (одна линия на крысу, или одна попарная при N=2)
-        drawgraph.add_individual_plots(rat_labels_to_plot, per_rat_curves, self.time_data)
+        drawgraph.add_individual_plots([curve_label], [curve], self.time_data)
 
-        time_floats = [float(t) for t in self.time_data]
-
-        # Точечная горизонтальная линия глобального среднего + запись в легенду
+        # Горизонталь среднего за период
         plt.axhline(y=overall_mean, linestyle=':', color='#7b68ee', linewidth=1.5, zorder=1)
         horiz_label = f"Ср. за период: {overall_mean:.1f}%"
-        from matplotlib.lines import Line2D
         horiz_proxy = Line2D([0], [0], linestyle=':', color='#7b68ee', linewidth=1.5,
                              label=horiz_label)
         drawgraph.lines.append(horiz_proxy)
 
-        # Среднее рисуем только при N > 1 кривых — при одной кривой оно с ней совпадает
-        if len(rat_labels_to_plot) > 1:
-            mean_line, = plt.plot(
-                time_floats, mean_d,
-                linestyle='--', color='black', linewidth=2, label='Среднее', zorder=3
-            )
-            drawgraph.lines.append(mean_line)
         drawgraph.finalize_figure(
             f"{', '.join(self.experiment_params)}_relative_divergence_per_rat",
-            "Метка крысы",
-            legend_fontsize=16
+            legend_title,
+            legend_fontsize=18
         )
 
 
@@ -639,8 +625,8 @@ class TumorDataVisualizer:
 
         drawgraph.finalize_figure(
             "measurement_divergence_A_vs_B",
-            "Крыса (расхождение замеров A и B)",
-            legend_fontsize=14
+            "$d_{A,B}=\\dfrac{2|V_A-V_B|}{V_A+V_B}$\nрасхождение замеров A и B",
+            legend_fontsize=18
         )
 
 
