@@ -187,6 +187,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_7.setEnabled(False)
         self.pushButton_8.setEnabled(False)
         self.pushButton_9.setEnabled(False)
+        self.pushButton_10.setEnabled(False)
         self.checkBox_2.setDisabled(True)
         self.checkBox_7.setDisabled(True)
         self.checkBox.setDisabled(True)
@@ -205,6 +206,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_4.clicked.connect(self.handle_pushButton_4)
         self.pushButton_8.clicked.connect(self.handle_pushButton_8)
         self.pushButton_9.clicked.connect(self.handle_variability)
+        self.pushButton_10.clicked.connect(self.handle_divergence_per_rat)
         # Подключение сигнала изменения выбора комбобокса к обработчику
         self.comboBox.currentIndexChanged.connect(self.on_combobox_changed)
         # Подключаем сигналы изменения состояния чекбоксов
@@ -222,6 +224,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.model.itemChanged.connect(self.update_fifth_button_state)
         self.model.itemChanged.connect(self.update_seventh_button_state)
         self.model.itemChanged.connect(self.update_ninth_button_state)
+        self.model.itemChanged.connect(self.update_tenth_button_state)
         self.model.itemChanged.connect(self.on_control_checkbox_changed)
         self.comboBox_2.currentTextChanged.connect(self.update_control_path)
         self.doubleSpinBox.valueChanged.connect(self.update_annotation_multiplier)
@@ -806,6 +809,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         except ValueError as e:
             print(e)
 
+    def update_tenth_button_state(self):
+        """
+        Обновляет состояние кнопки «Расхождение по крысам».
+
+        Кнопка активна, если выбран хотя бы один файл (не skin_reactions).
+        Чекбоксы не влияют — режим всегда строит полный комбинированный график.
+        """
+        selected_paths = self.get_selected_experiments()
+        at_least_one = len(selected_paths) >= 1
+        not_skin = all("skin_reactions" not in p for p in selected_paths) if at_least_one else False
+        self.pushButton_10.setEnabled(at_least_one and not_skin)
+
+    def handle_divergence_per_rat(self):
+        """
+        Обрабатывает нажатие кнопки «Расхождение по крысам».
+
+        Строит комбинированный график:
+        - Цветная линия для каждой крысы: D_i(t) = среднее d(i,j,t) по j≠i × 100%
+        - Чёрный пунктир: среднее по всем крысам
+        - Точечная горизонталь: глобальное среднее за период с подписью
+        """
+        selected_paths = self.get_selected_experiments()
+        if len(selected_paths) < 1:
+            print("Для построения графика выберите хотя бы один файл")
+            return
+        self.current_plot_type = 'divergence_per_rat'
+        self.draw_graphic(selected_paths, TumorDataVisualizer,
+                          TumorDataVisualizer.plot_relative_divergence_per_rat)
+
     def on_checkbox_pair_changed(self, thisCheckbox, pairedCheckbox):
         """Обработка изменения состояния пары взаимоисключающих чекбоксов.
 
@@ -823,6 +855,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.update_fifth_button_state()
         self.update_seventh_button_state()
         self.update_ninth_button_state()
+        self.update_tenth_button_state()
         self.set_state_of_auc_and_tests_checkbox()
 
     def on_checkbox_tests_changed(self, thisCheckbox, pairedCheckbox):
@@ -1154,7 +1187,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             layout = QVBoxLayout(self.frame)
             self.frame.setLayout(layout)
 
-        if self.current_plot_type == 'variability':
+        if self.current_plot_type in ('variability', 'divergence_per_rat'):
             # Объединяем крыс из всех выбранных файлов в один псевдо-визуализатор.
             # Это позволяет считать d(t)/CV как между крысами внутри одного файла,
             # так и между крысами из разных файлов (по одной крысе на файл).

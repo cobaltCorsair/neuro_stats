@@ -466,6 +466,83 @@ class TumorDataVisualizer:
         drawgraph.add_plot(self.time_data, cv_values, {}, unique_label, None)
         drawgraph.finalize_figure(f"{', '.join(self.experiment_params)}_cv", legend_fontsize=18)
 
+    def plot_relative_divergence_per_rat(self):
+        """
+        Визуализирует относительное расхождение каждой крысы со всеми остальными.
+
+        Для каждой крысы i строится кривая:
+            D_i(t) = среднее по j≠i [ d(i,j,t) ] × 100%
+            где d(i,j,t) = 2|V_i(t) − V_j(t)| / (V_i(t) + V_j(t))
+
+        На графике отображаются:
+        - Цветная линия для каждой крысы (по метке из столбца «Метка»)
+        - Чёрная пунктирная линия — среднее D(t) по всем крысам
+        - Точечная горизонтальная линия — глобальное среднее за весь период
+          с подписью «Ср. за период: X%»
+
+        Подписи осей:
+            X — «Сутки от перевивки» (реальные числа из Excel)
+            Y — «|ΔV/V₀| / среднее × 100, %»
+        """
+        relative_volumes = self.data_processor.get_relative_tumor_volumes()
+        pairs = SupportingFunctions.calculate_pairwise_divergence(relative_volumes, self.rat_labels)
+
+        if not pairs:
+            return
+
+        n_t = len(self.time_data)
+
+        # Для каждой крысы i: D_i(t) = среднее d(i,j,t) по j≠i, переводим в %
+        per_rat_curves = []
+        for label_i in self.rat_labels:
+            rat_d = []
+            for t in range(n_t):
+                vals = [d_vals[t] for li, lj, d_vals in pairs
+                        if (li == label_i or lj == label_i) and not np.isnan(d_vals[t])]
+                rat_d.append(float(np.mean(vals)) * 100.0 if vals else np.nan)
+            per_rat_curves.append(rat_d)
+
+        # Среднее по всем крысам в каждой точке t
+        d_matrix = np.array(per_rat_curves, dtype=float)
+        mean_d = np.nanmean(d_matrix, axis=0).tolist()
+
+        # Глобальное среднее за период
+        overall_mean = float(np.nanmean(np.array(mean_d, dtype=float)))
+
+        drawgraph = GraphVisualizer(
+            "Относительное расхождение по временны\u0301м точкам",
+            "Сутки от перевивки",
+            "|ΔV/V₀| / среднее × 100, %",
+            figsize=(12, 7)
+        )
+        drawgraph.setup_figure()
+
+        # Индивидуальные кривые по крысам (одна линия-цвет на крысу)
+        drawgraph.add_individual_plots(self.rat_labels, per_rat_curves, self.time_data)
+
+        # Чёрная пунктирная средняя линия
+        time_floats = [float(t) for t in self.time_data]
+        mean_line, = plt.plot(
+            time_floats, mean_d,
+            linestyle='--', color='black', linewidth=2, label='Среднее', zorder=3
+        )
+
+        # Точечная горизонтальная линия глобального среднего
+        plt.axhline(y=overall_mean, linestyle=':', color='#7b68ee', linewidth=1.5, zorder=1)
+        horiz_label = f"Ср. за период: {overall_mean:.1f}%"
+        plt.text(
+            time_floats[-1], overall_mean,
+            f"  {horiz_label}",
+            va='bottom', ha='right', fontsize=14, color='#7b68ee'
+        )
+
+        drawgraph.lines.append(mean_line)
+        drawgraph.finalize_figure(
+            f"{', '.join(self.experiment_params)}_relative_divergence_per_rat",
+            "Метка крысы",
+            legend_fontsize=16
+        )
+
 
 if __name__ == '__main__':
     # Используем с файлом данных
