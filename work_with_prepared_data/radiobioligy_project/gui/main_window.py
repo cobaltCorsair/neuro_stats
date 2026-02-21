@@ -819,13 +819,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         Кнопка активна, если:
         - Выбран один или несколько файлов (не skin_reactions);
-        - Отмечен чекбокс «общие» или «средние».
+        - Отмечены «отн. ед.» (checkBox_4) И «общие» (checkBox_5).
         """
         selected_paths = self.get_selected_experiments()
         at_least_one = len(selected_paths) >= 1
         not_skin = all("skin_reactions" not in p for p in selected_paths) if at_least_one else False
-        any_mode = self.checkBox_5.isChecked() or self.checkBox_6.isChecked()
-        self.pushButton_9.setEnabled(at_least_one and not_skin and any_mode)
+        mode_ok = self.checkBox_4.isChecked() and self.checkBox_5.isChecked()
+        self.pushButton_9.setEnabled(at_least_one and not_skin and mode_ok)
 
     def handle_variability(self):
         """
@@ -859,31 +859,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         Обновляет состояние кнопки «Расхождение по крысам».
 
-        Два режима:
-        - Группы A + B назначены → сравнение замеров: достаточно выбрать файлы (чекбоксы не нужны).
-        - Группы не назначены → межособевое расхождение: требуется «отн. ед.» (checkBox_4),
-          так как метод работает с нормированными объёмами V/V₀.
+        Кнопка активна, если:
+        - Выбран один или несколько файлов (не skin_reactions);
+        - Отмечены «отн. ед.» (checkBox_4) И «общие» (checkBox_5).
         """
         selected_paths = self.get_selected_experiments()
         at_least_one = len(selected_paths) >= 1
         not_skin = all("skin_reactions" not in p for p in selected_paths) if at_least_one else False
-
-        # Проверяем наличие обеих групп среди выбранных файлов
-        groups = self.get_group_assignment()
-        selected_groups = {p: groups.get(p) for p in selected_paths}
-        has_groups = (
-            any(g == 'A' for g in selected_groups.values()) and
-            any(g == 'B' for g in selected_groups.values())
-        )
-
-        if has_groups:
-            # Режим сравнения замеров: чекбоксы не нужны
-            enabled = at_least_one and not_skin
-        else:
-            # Межособевой режим: нужна «отн. ед.» (checkBox_4)
-            enabled = at_least_one and not_skin and self.checkBox_4.isChecked()
-
-        self.pushButton_10.setEnabled(enabled)
+        mode_ok = self.checkBox_4.isChecked() and self.checkBox_5.isChecked()
+        self.pushButton_10.setEnabled(at_least_one and not_skin and mode_ok)
 
     def handle_divergence_per_rat(self):
         """
