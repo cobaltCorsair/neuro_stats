@@ -769,25 +769,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Обновляет состояние кнопки «Вариабельность группы».
 
         Кнопка активна, если:
-        - Выбран ровно один эксперимент (не skin_reactions);
+        - Выбран один или несколько файлов (не skin_reactions);
         - Отмечен чекбокс «общие» или «средние».
         """
         selected_paths = self.get_selected_experiments()
-        one_selected = len(selected_paths) == 1
-        not_skin = "skin_reactions" not in selected_paths[0] if one_selected else False
+        at_least_one = len(selected_paths) >= 1
+        not_skin = all("skin_reactions" not in p for p in selected_paths) if at_least_one else False
         any_mode = self.checkBox_5.isChecked() or self.checkBox_6.isChecked()
-        self.pushButton_9.setEnabled(one_selected and not_skin and any_mode)
+        self.pushButton_9.setEnabled(at_least_one and not_skin and any_mode)
 
     def handle_variability(self):
         """
         Обрабатывает нажатие кнопки «Вариабельность группы».
 
+        Поддерживает как один файл с несколькими крысами, так и несколько
+        файлов с одной крысой — крысы из всех файлов объединяются в одну группу.
+
         Режим «общие» (checkBox_5) → попарное расхождение d(t) по формуле Кизиловой (2026).
         Режим «средние» (checkBox_6) → коэффициент вариации CV(t) = σ(t)/μ(t)×100% по группе.
         """
         selected_paths = self.get_selected_experiments()
-        if len(selected_paths) != 1:
-            print("Для анализа вариабельности выберите ровно один эксперимент")
+        if len(selected_paths) < 1:
+            print("Для анализа вариабельности выберите хотя бы один файл")
             return
 
         checkboxes_state = (
@@ -798,7 +801,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         )
         try:
             plotting_func = self.data_processor.process_variability(checkboxes_state)
-            self.draw_graphic([selected_paths[0]], TumorDataVisualizer, plotting_func)
+            self.current_plot_type = 'variability'
+            self.draw_graphic(selected_paths, TumorDataVisualizer, plotting_func)
         except ValueError as e:
             print(e)
 
@@ -860,6 +864,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         try:
             plotting_func, selected_path = self.data_processor.process_for_single_experiment(selected_paths[0],
                                                                                              checkboxes_state)
+            self.current_plot_type = None
             self.draw_graphic([selected_path], TumorDataVisualizer, plotting_func)
         except ValueError as e:
             print(e)
@@ -874,6 +879,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                             self.checkBox_5.isChecked())
         try:
             plotting_func, selected_paths = self.data_processor.process_for_comparison(selected_paths, checkboxes_state)
+            self.current_plot_type = None
             self.draw_graphic(selected_paths, TumorDataComparatorAdvanced, plotting_func)
         except ValueError as e:
             print(e)
@@ -1148,7 +1154,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             layout = QVBoxLayout(self.frame)
             self.frame.setLayout(layout)
 
-        if self.current_visualizer is TumorDataVisualizer:
+        if self.current_plot_type == 'variability':
+            # Объединяем крыс из всех выбранных файлов в один псевдо-визуализатор.
+            # Это позволяет считать d(t)/CV как между крысами внутри одного файла,
+            # так и между крысами из разных файлов (по одной крысе на файл).
+            sub_visualizers = [TumorDataVisualizer(p) for p in self.current_selected_paths]
+            if self.selected_outlier_method is not None:
+                sub_visualizers = self.apply_selected_outlier_method(sub_visualizers)
+                if not isinstance(sub_visualizers, list):
+                    sub_visualizers = [sub_visualizers]
+
+            # Берём первый визуализатор как базу и дополняем его данными из остальных
+            visualizer_instance = sub_visualizers[0]
+            for other in sub_visualizers[1:]:
+                visualizer_instance.rat_labels = visualizer_instance.rat_labels + other.rat_labels
+                visualizer_instance.tumor_volumes = visualizer_instance.tumor_volumes + other.tumor_volumes
+                # Обновляем data_processor с объединёнными данными
+                from work_with_prepared_data.radiobioligy_project.data_processing.data_processing import TumorDataProcessor
+                visualizer_instance.data_processor = TumorDataProcessor(visualizer_instance.tumor_volumes)
+
+        elif self.current_visualizer is TumorDataVisualizer:
             # Случай для одного эксперимента
             visualizer_instance = self.current_visualizer(self.current_selected_paths[0])
             if self.selected_outlier_method is not None:
