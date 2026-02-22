@@ -2,7 +2,7 @@ import io
 from PyQt6.QtCore import QFileInfo, Qt
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel, \
-    QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup
+    QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup, QComboBox
 import subprocess
 import sys
 import os
@@ -136,6 +136,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """Инициализация главного окна приложения."""
         super(MainWindow, self).__init__(parent)
         self.control_path = None
+        self.control_groups = {}  # Словарь {file_path: control_type} для хранения типов контрольных групп
         self.ax = None
         self.canvas = None
         self.figure = None
@@ -259,7 +260,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Returns:
             None.
         """
-        self.model.setHorizontalHeaderLabels(['Выбор файла', 'Путь к файлу эксперимента', 'Пометить как контрольный', 'Группа'])
+        self.model.setHorizontalHeaderLabels(['Выбор файла', 'Путь к файлу эксперимента', 'Пометить как контрольный', 'Группа', 'Контроль для статистики'])
         self.tableView.setModel(self.model)
         # Настройка ширины столбцов
         header = self.tableView.horizontalHeader()
@@ -272,6 +273,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         header.resizeSection(1, 250)  # Подстраиваем под нужный размер
         header.resizeSection(2, 170)  # Подстраиваем под нужный размер
         header.resizeSection(3, 70)   # Столбец «Группа»
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(4, 150)  # Столбец «Контроль для статистики»
         # Настройка внешнего вида таблицы
         self.tableView.setShowGrid(True)  # Показать сетку
         # Устанавливаем размеры политики для таблицы, чтобы она заполняла все доступное пространство
@@ -580,13 +583,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # Элемент для пути к файлу
             file_path_item = QStandardItem(file_path)
 
-            # Элемент «Группа» — кликабельный текст: «—» → «A» → «B» → «—»
+            # Элемент «Группа» (col 3) — кликабельный текст: «—» → «A» → «B» → «—»
             group_item = QStandardItem("—")
             group_item.setEditable(False)
             group_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
+            # Пустой элемент для ComboBox (col 4)
+            control_type_item = QStandardItem()
+            control_type_item.setEditable(False)
+
             # Добавление строки в модель
-            self.model.appendRow([check_and_name_item, file_path_item, control_checkbox_item, group_item])
+            self.model.appendRow([check_and_name_item, file_path_item, control_checkbox_item, group_item, control_type_item])
+
+            # Создаем ComboBox для выбора типа контрольной группы (col 4)
+            combo = QComboBox()
+            combo.addItems(['Не контроль', 'Контроль 1', 'Контроль 2', 'Контроль 3'])
+            combo.setCurrentIndex(0)
+
+            # Сохраняем путь к файлу в данных ComboBox для последующего использования
+            combo.setProperty('file_path', file_path)
+            combo.currentIndexChanged.connect(self.on_control_type_changed)
+
+            # Устанавливаем ComboBox в ячейку col 4
+            row_index = self.model.rowCount() - 1
+            self.tableView.setIndexWidget(self.model.index(row_index, 4), combo)
 
             # Устанавливаем высоту строк
             for row in range(self.model.rowCount()):
@@ -626,6 +646,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.update_seventh_button_state()
             self.update_fifth_button_state()
             self.update_third_button_state()
+
+    def on_control_type_changed(self, index):
+        """
+        Обработчик изменения типа контрольной группы в ComboBox.
+        Сохраняет выбранный тип в словарь control_groups.
+        Проверяет уникальность - один тип контроля может быть назначен только одному файлу.
+        """
+        sender = self.sender()  # Получаем ComboBox, который отправил сигнал
+        if sender:
+            file_path = sender.property('file_path')
+            if index == 0:  # "Не контроль"
+                if file_path in self.control_groups:
+                    del self.control_groups[file_path]
+            else:  # Контроль 1, 2 или 3
+                # Проверяем, не назначен ли уже этот тип контроля другому файлу
+                for existing_path, existing_type in list(self.control_groups.items()):
+                    if existing_type == index and existing_path != file_path:
+                        # Сбрасываем ComboBox у другого файла
+                        for row in range(self.model.rowCount()):
+                            path_item = self.model.item(row, 1)
+                            if path_item and path_item.text() == existing_path:
+                                other_combo = self.tableView.indexWidget(self.model.index(row, 3))
+                                if other_combo:
+                                    other_combo.blockSignals(True)  # Блокируем сигналы, чтобы избежать рекурсии
+                                    other_combo.setCurrentIndex(0)  # Сбрасываем на "Не контроль"
+                                    other_combo.blockSignals(False)
+                                break
+                        # Удаляем старую запись
+                        del self.control_groups[existing_path]
+                        break
+
+                self.control_groups[file_path] = index  # index: 1=Контроль1, 2=Контроль2, 3=Контроль3
 
     def get_selected_experiments(self):
         """
@@ -679,6 +731,56 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 val = group_item.text()
                 result[path_item.text()] = None if val == "—" else val
         return result
+
+    def _find_control_index(self):
+        """
+        Находит индекс контрольного файла в списке current_selected_paths.
+        (Оставлено для обратной совместимости)
+
+        Returns:
+            int: Индекс контрольного файла в списке, или 0 если контроль не найден.
+        """
+        if not self.control_path or not self.current_selected_paths:
+            return 0
+
+        # Нормализуем пути для корректного сравнения
+        import os
+        normalized_control = os.path.normpath(self.control_path)
+
+        for i, path in enumerate(self.current_selected_paths):
+            normalized_path = os.path.normpath(path)
+            if normalized_path == normalized_control:
+                return i
+
+        # Если контрольный файл не найден, возвращаем 0
+        return 0
+
+    def _get_control_groups_info(self):
+        """
+        Возвращает информацию о всех контрольных группах.
+
+        Returns:
+            dict: Словарь {control_type: [indices]}, где control_type - номер контроля (1, 2, 3),
+                  а indices - список индексов в current_selected_paths
+        """
+        import os
+        if not self.current_selected_paths:
+            return {}
+
+        control_info = {}  # {control_type: [indices]}
+
+        for i, path in enumerate(self.current_selected_paths):
+            normalized_path = os.path.normpath(path)
+            # Проверяем, является ли этот файл контрольным
+            for control_path, control_type in self.control_groups.items():
+                normalized_control = os.path.normpath(control_path)
+                if normalized_path == normalized_control:
+                    if control_type not in control_info:
+                        control_info[control_type] = []
+                    control_info[control_type].append(i)
+                    break
+
+        return control_info
 
     def update_first_button_state(self):
         """
@@ -1083,6 +1185,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             print("Необходимо выбрать два или более экспериментов")
             return
 
+        # Если включен критерий Манна-Уитни, но контроли не выбраны, автоматически помечаем первый файл
+        if self.perform_stat_test and not self.control_groups:
+            # Находим первый выбранный файл в таблице и помечаем его как "Контроль 1"
+            for row in range(self.model.rowCount()):
+                item = self.model.item(row, 0)
+                if item and item.isCheckable() and item.checkState() == Qt.CheckState.Checked:
+                    combo = self.tableView.indexWidget(self.model.index(row, 3))
+                    if combo:
+                        combo.setCurrentIndex(1)  # Устанавливаем "Контроль 1"
+                    break
+
         all_skin = all("skin_reactions" in p for p in selected_paths)
         all_tumor = all("skin_reactions" not in p for p in selected_paths)
 
@@ -1145,7 +1258,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if self.current_plot_type == 'multiple_experiments':
                     SkinReactionsVisualizer.plot_multiple_experiments_from_visualizers(visualizer, self.use_AUC, self.perform_stat_test)
                 elif self.current_plot_type == 'auc_comparison':
-                    SkinReactionsVisualizer.plot_auc_comparison_from_visualizers(visualizer)
+                    # Получить информацию о контрольных группах
+                    control_groups_info = self._get_control_groups_info()
+                    control_idx = self._find_control_index()  # для обратной совместимости
+                    SkinReactionsVisualizer.plot_auc_comparison_from_visualizers(visualizer, perform_stat_test=self.perform_stat_test, control_index=control_idx, control_groups_info=control_groups_info)
                 elif self.current_plot_type == 'all_individual_curves':
                     SkinReactionsVisualizer.plot_all_individual_curves_from_visualizers(visualizer)
             elif isinstance(visualizer, SkinReactionsVisualizer) and self.current_plot_type == 'all_individual_curves':
@@ -1156,11 +1272,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if self.current_plot_type == 'multiple_experiments':
                     SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC, self.perform_stat_test)
                 elif self.current_plot_type == 'auc_comparison':
-                    SkinReactionsVisualizer.plot_auc_comparison(self.current_selected_paths)
+                    # Получить информацию о контрольных группах
+                    control_groups_info = self._get_control_groups_info()
+                    control_idx = self._find_control_index()  # для обратной совместимости
+                    SkinReactionsVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test, control_index=control_idx, control_groups_info=control_groups_info)
                 elif self.current_plot_type == 'all_individual_curves':
                     SkinReactionsVisualizer.plot_all_individual_curves(self.current_selected_paths)
             elif isinstance(visualizer, TumorDataVisualizer) and len(self.current_selected_paths) > 1 and self.current_plot_type == 'tumor_auc_comparison':
-                TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths)
+                # Получить информацию о контрольных группах
+                control_groups_info = self._get_control_groups_info()
+                control_idx = self._find_control_index()  # для обратной совместимости
+                TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test, control_index=control_idx, control_groups_info=control_groups_info, show_separate_legend=self.show_legend_separately)
             else:
                 # Для других случаев, когда используется один файл или другие типы визуализаторов
                 if self.current_control is not None and plotting_func == TumorDataComparatorAdvanced.compare_control_and_experiment:

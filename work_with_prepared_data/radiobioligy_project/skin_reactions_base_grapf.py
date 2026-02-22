@@ -434,12 +434,18 @@ class SkinReactionsVisualizer:
     def plot_auc_comparison_from_visualizers(visualizers: List['SkinReactionsVisualizer'],
                                             title="Сравнение AUC кожных реакций",
                                             x_label="",
-                                            y_label="AUC (усл. ед.)"):
+                                            y_label="AUC (усл. ед.)",
+                                            perform_stat_test: bool = False,
+                                            control_index: int = 0,
+                                            control_groups_info: dict = None):
         """
         Сравнение AUC кожных реакций используя уже созданные и модифицированные визуализаторы.
 
         Args:
             visualizers (List[SkinReactionsVisualizer]): Список визуализаторов (могут быть модифицированы).
+            perform_stat_test: Если True, применяется критерий Манна-Уитни.
+            control_index: Индекс контрольной группы в списке visualizers (устарел).
+            control_groups_info: Словарь {control_type: [indices]} для множественных контролей.
         """
         import re
         with sns.axes_style("whitegrid"):
@@ -457,6 +463,7 @@ class SkinReactionsVisualizer:
 
             common_timepoints = list(range(0, 25))
             doses, aucs_for_fit, errors_for_fit, labels_for_legend = [], [], [], []
+            all_individual_aucs = []  # Для критерия Манна-Уитни
             colors = sns.color_palette("Set3", n_colors=len(visualizers))
 
             for visualizer, color in zip(visualizers, colors):
@@ -482,11 +489,14 @@ class SkinReactionsVisualizer:
                     auc_sem = np.std(auc_individual, ddof=1) / np.sqrt(len(auc_individual))
 
                     dose = extract_total_dose(visualizer.experiment_params)
-                    if dose is not None:
-                        doses.append(dose)
-                        aucs_for_fit.append(auc_mean)
-                        errors_for_fit.append(auc_sem)
-                        labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
+                    # Если доза не найдена (контрольная группа), используем 0
+                    if dose is None:
+                        dose = 0
+                    doses.append(dose)
+                    aucs_for_fit.append(auc_mean)
+                    errors_for_fit.append(auc_sem)
+                    all_individual_aucs.append(auc_individual)  # Сохраняем для теста
+                    labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
 
                 except Exception as e:
                     print(f"Ошибка при обработке визуализатора: {e}")
@@ -500,7 +510,8 @@ class SkinReactionsVisualizer:
             plt.xlabel("Суммарная доза, Гр", fontsize=14)
             plt.ylabel(y_label, fontsize=14)
             plt.title(title, fontsize=16)
-            plt.xticks(doses, [str(d) for d in doses], fontsize=12)
+            dose_labels = ["Контроль" if d == 0 else str(d) for d in doses]
+            plt.xticks(doses, dose_labels, fontsize=12)
 
             # Подписи над столбиками
             for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
@@ -516,11 +527,85 @@ class SkinReactionsVisualizer:
             plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
                        ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
 
+            # Критерий Манна-Уитни
+            if perform_stat_test and len(all_individual_aucs) > 1:
+                from scipy.stats import mannwhitneyu
+                y_max = max(aucs_for_fit) if aucs_for_fit else 0
+                y_offset = y_max * 0.05
+
+                # Определяем символы для контролей
+                control_symbols = {1: '*', 2: '^', 3: '#'}
+
+                # Если указаны множественные контроли, используем их
+                if control_groups_info:
+                    for i, (bar, dose) in enumerate(zip(bars, doses)):
+                        # Проверяем, не является ли текущий столбец контрольным
+                        is_control = any(i in indices for indices in control_groups_info.values())
+                        if is_control:
+                            continue
+
+                        # Сравниваем с каждой контрольной группой
+                        symbols_to_add = []
+                        for control_type, control_indices in sorted(control_groups_info.items()):
+                            for control_idx in control_indices:
+                                if control_idx < len(all_individual_aucs):
+                                    control_aucs = all_individual_aucs[control_idx]
+                                    exp_aucs = all_individual_aucs[i]
+                                    try:
+                                        _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
+                                        if p_value < 0.05:
+                                            symbol = control_symbols.get(control_type, '*')
+                                            if symbol not in symbols_to_add:
+                                                symbols_to_add.append(symbol)
+                                    except Exception as e:
+                                        print(f"Ошибка при выполнении теста для дозы {dose} с контролем {control_type}: {e}")
+
+                        # Добавляем символы над столбцом
+                        if symbols_to_add:
+                            y_position = bar.get_height() + errors_for_fit[i] + y_offset
+                            symbols_text = ''.join(symbols_to_add)
+                            plt.text(bar.get_x() + bar.get_width()/2, y_position,
+                                   symbols_text, ha='center', va='bottom',
+                                   fontsize=20, color='black', fontweight='bold')
+
+                # Если используется старый формат (один контроль)
+                elif control_index < len(all_individual_aucs):
+                    control_aucs = all_individual_aucs[control_index]
+                    for i, (bar, dose) in enumerate(zip(bars, doses)):
+                        if i == control_index:
+                            continue
+
+                        if i < len(all_individual_aucs):
+                            exp_aucs = all_individual_aucs[i]
+                            try:
+                                _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
+                                if p_value < 0.05:
+                                    y_position = bar.get_height() + errors_for_fit[i] + y_offset
+                                    plt.text(bar.get_x() + bar.get_width()/2, y_position,
+                                           '*', ha='center', va='bottom',
+                                           fontsize=20, color='black', fontweight='bold')
+                            except Exception as e:
+                                print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
+
+                # Добавляем пояснение символов, если используются множественные контроли
+                if control_groups_info and len(control_groups_info) > 0:
+                    explanation_text = "Статистическая значимость (p<0.05): "
+                    symbols_used = []
+                    control_symbols = {1: '*', 2: '^', 3: '#'}
+                    control_names = {1: 'Контроль 1', 2: 'Контроль 2', 3: 'Контроль 3'}
+                    for control_type in sorted(control_groups_info.keys()):
+                        symbol = control_symbols.get(control_type, '*')
+                        name = control_names.get(control_type, f'Контроль {control_type}')
+                        symbols_used.append(f"{symbol} - {name}")
+                    explanation_text += ", ".join(symbols_used)
+                    plt.figtext(0.5, 0.02, explanation_text, ha='center', fontsize=10, style='italic')
+
             plt.tight_layout()
 
     @staticmethod
     def plot_auc_comparison(file_paths: List[str], title="Сравнение AUC кожных реакций", x_label="",
-                            y_label="AUC (усл. ед.)"):
+                            y_label="AUC (усл. ед.)", perform_stat_test: bool = False, control_index: int = 0,
+                            control_groups_info: dict = None):
         import re
         with sns.axes_style("whitegrid"):
             def extract_total_dose(experiment_params):
@@ -537,6 +622,7 @@ class SkinReactionsVisualizer:
 
             common_timepoints = list(range(0, 25))  # как в plot_multiple_experiments
             doses, aucs_for_fit, errors_for_fit, labels_for_legend = [], [], [], []
+            all_individual_aucs = []  # Для критерия Манна-Уитни
             colors = sns.color_palette("Set3", n_colors=len(file_paths))
 
             for file_path, color in zip(file_paths, colors):
@@ -563,11 +649,14 @@ class SkinReactionsVisualizer:
                     auc_sem = np.std(auc_individual, ddof=1) / np.sqrt(len(auc_individual))
 
                     dose = extract_total_dose(visualizer.experiment_params)
-                    if dose is not None:
-                        doses.append(dose)
-                        aucs_for_fit.append(auc_mean)
-                        errors_for_fit.append(auc_sem)
-                        labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
+                    # Если доза не найдена (контрольная группа), используем 0
+                    if dose is None:
+                        dose = 0
+                    doses.append(dose)
+                    aucs_for_fit.append(auc_mean)
+                    errors_for_fit.append(auc_sem)
+                    all_individual_aucs.append(auc_individual)  # Сохраняем для теста
+                    labels_for_legend.append(format_experiment_params(visualizer.experiment_params))
 
                 except Exception as e:
                     print(f"Ошибка при обработке {file_path}: {e}")
@@ -581,7 +670,8 @@ class SkinReactionsVisualizer:
             plt.xlabel("Суммарная доза, Гр", fontsize=14)
             plt.ylabel(y_label, fontsize=14)
             plt.title(title, fontsize=16)
-            plt.xticks(doses, [str(d) for d in doses], fontsize=12)
+            dose_labels = ["Контроль" if d == 0 else str(d) for d in doses]
+            plt.xticks(doses, dose_labels, fontsize=12)
 
             # Подписи над столбиками
             for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
@@ -596,6 +686,79 @@ class SkinReactionsVisualizer:
             ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
             plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
                        ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
+
+            # Критерий Манна-Уитни
+            if perform_stat_test and len(all_individual_aucs) > 1:
+                from scipy.stats import mannwhitneyu
+                y_max = max(aucs_for_fit) if aucs_for_fit else 0
+                y_offset = y_max * 0.05
+
+                # Определяем символы для контролей
+                control_symbols = {1: '*', 2: '^', 3: '#'}
+
+                # Если указаны множественные контроли, используем их
+                if control_groups_info:
+                    for i, (bar, dose) in enumerate(zip(bars, doses)):
+                        # Проверяем, не является ли текущий столбец контрольным
+                        is_control = any(i in indices for indices in control_groups_info.values())
+                        if is_control:
+                            continue
+
+                        # Сравниваем с каждой контрольной группой
+                        symbols_to_add = []
+                        for control_type, control_indices in sorted(control_groups_info.items()):
+                            for control_idx in control_indices:
+                                if control_idx < len(all_individual_aucs):
+                                    control_aucs = all_individual_aucs[control_idx]
+                                    exp_aucs = all_individual_aucs[i]
+                                    try:
+                                        _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
+                                        if p_value < 0.05:
+                                            symbol = control_symbols.get(control_type, '*')
+                                            if symbol not in symbols_to_add:
+                                                symbols_to_add.append(symbol)
+                                    except Exception as e:
+                                        print(f"Ошибка при выполнении теста для дозы {dose} с контролем {control_type}: {e}")
+
+                        # Добавляем символы над столбцом
+                        if symbols_to_add:
+                            y_position = bar.get_height() + errors_for_fit[i] + y_offset
+                            symbols_text = ''.join(symbols_to_add)
+                            plt.text(bar.get_x() + bar.get_width()/2, y_position,
+                                   symbols_text, ha='center', va='bottom',
+                                   fontsize=20, color='black', fontweight='bold')
+
+                # Если используется старый формат (один контроль)
+                elif control_index < len(all_individual_aucs):
+                    control_aucs = all_individual_aucs[control_index]
+                    for i, (bar, dose) in enumerate(zip(bars, doses)):
+                        if i == control_index:
+                            continue
+
+                        if i < len(all_individual_aucs):
+                            exp_aucs = all_individual_aucs[i]
+                            try:
+                                _, p_value = mannwhitneyu(control_aucs, exp_aucs, alternative='two-sided')
+                                if p_value < 0.05:
+                                    y_position = bar.get_height() + errors_for_fit[i] + y_offset
+                                    plt.text(bar.get_x() + bar.get_width()/2, y_position,
+                                           '*', ha='center', va='bottom',
+                                           fontsize=20, color='black', fontweight='bold')
+                            except Exception as e:
+                                print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
+
+                # Добавляем пояснение символов, если используются множественные контроли
+                if control_groups_info and len(control_groups_info) > 0:
+                    explanation_text = "Статистическая значимость (p<0.05): "
+                    symbols_used = []
+                    control_symbols = {1: '*', 2: '^', 3: '#'}
+                    control_names = {1: 'Контроль 1', 2: 'Контроль 2', 3: 'Контроль 3'}
+                    for control_type in sorted(control_groups_info.keys()):
+                        symbol = control_symbols.get(control_type, '*')
+                        name = control_names.get(control_type, f'Контроль {control_type}')
+                        symbols_used.append(f"{symbol} - {name}")
+                    explanation_text += ", ".join(symbols_used)
+                    plt.figtext(0.5, 0.02, explanation_text, ha='center', fontsize=10, style='italic')
 
             plt.tight_layout()
             # plt.savefig("auc_comparison_plot.png")
