@@ -48,6 +48,9 @@ from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_
     is_control_file,
     parse_sf_modes,
 )
+from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predictor_gui import (
+    TumorGrowthPredictorWindow,
+)
 
 USE_ALL_CONTROLS = "__all_controls__"
 UNASSIGNED_CONTROL = "__unassigned_control__"
@@ -151,6 +154,7 @@ class FitAlphaBetaWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.run_results: List[AnalysisRunResult] = []
+        self.growth_predictor_window: Optional[TumorGrowthPredictorWindow] = None
         self.setWindowTitle("Survival LQ fitter")
         self.resize(1400, 900)
         self._build_ui()
@@ -162,9 +166,16 @@ class FitAlphaBetaWindow(QMainWindow):
         root_layout.addWidget(self._build_file_group())
         root_layout.addWidget(self._build_options_group())
 
+        action_row = QHBoxLayout()
         self.run_button = QPushButton("Run fit")
         self.run_button.clicked.connect(self.run_analysis)
-        root_layout.addWidget(self.run_button)
+        action_row.addWidget(self.run_button)
+
+        self.predictor_button = QPushButton("Open growth predictor")
+        self.predictor_button.clicked.connect(self.open_growth_predictor)
+        action_row.addWidget(self.predictor_button)
+        action_row.addStretch(1)
+        root_layout.addLayout(action_row)
 
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.addWidget(self._build_summary_panel())
@@ -177,6 +188,16 @@ class FitAlphaBetaWindow(QMainWindow):
         self.setStatusBar(QStatusBar(self))
         self.statusBar().showMessage("Drop .xlsx files сюда или добавьте их кнопками.")
         self.refresh_control_selector()
+
+    def open_growth_predictor(self) -> None:
+        if self.growth_predictor_window is None:
+            self.growth_predictor_window = TumorGrowthPredictorWindow(self.run_results)
+        else:
+            self.growth_predictor_window.run_results = list(self.run_results)
+            self.growth_predictor_window.populate_fit_results()
+        self.growth_predictor_window.show()
+        self.growth_predictor_window.raise_()
+        self.growth_predictor_window.activateWindow()
 
     def _build_file_group(self) -> QGroupBox:
         group = QGroupBox("Input files", self)
