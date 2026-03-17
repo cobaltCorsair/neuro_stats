@@ -77,6 +77,7 @@ TRAIN_HEADERS = [
     "Control",
     "Kind",
     "Fractions",
+    "Schedule",
     "D",
     "D2",
     "SF",
@@ -90,6 +91,7 @@ VALIDATION_HEADERS = [
     "Control",
     "Kind",
     "Fractions",
+    "Schedule",
     "Observed SF",
     "Predicted SF",
     "Abs error",
@@ -315,23 +317,35 @@ class FitAlphaBetaWindow(QMainWindow):
         self.bootstrap_seed_edit.setPlaceholderText("optional")
         layout.addWidget(self.bootstrap_seed_edit, 3, 5)
 
+        layout.addWidget(QLabel("Repair T1/2 (h)"), 4, 0)
+        self.repair_half_time_spin = QDoubleSpinBox(self)
+        self.repair_half_time_spin.setRange(0.0, 240.0)
+        self.repair_half_time_spin.setDecimals(3)
+        self.repair_half_time_spin.setSingleStep(0.25)
+        self.repair_half_time_spin.setValue(0.0)
+        self.repair_half_time_spin.setToolTip(
+            "0 keeps the classic schedule-free LQ model. Positive values enable "
+            "time-aware repair for fractionated regimens with t= intervals."
+        )
+        layout.addWidget(self.repair_half_time_spin, 4, 1)
+
         self.aggregate_check = QCheckBox("Aggregate repeated regimens", self)
-        layout.addWidget(self.aggregate_check, 4, 0, 1, 2)
+        layout.addWidget(self.aggregate_check, 4, 2, 1, 2)
 
         self.dedupe_check = QCheckBox("Deduplicate regimens", self)
-        layout.addWidget(self.dedupe_check, 4, 2, 1, 2)
+        layout.addWidget(self.dedupe_check, 4, 4, 1, 2)
 
         self.verbose_check = QCheckBox("Verbose CLI logging in terminal", self)
-        layout.addWidget(self.verbose_check, 4, 4, 1, 2)
+        layout.addWidget(self.verbose_check, 5, 0, 1, 3)
 
-        layout.addWidget(QLabel("Summary CSV"), 5, 0)
+        layout.addWidget(QLabel("Summary CSV"), 6, 0)
         self.summary_csv_edit = QLineEdit(self)
         self.summary_csv_edit.setPlaceholderText("optional path for summary csv")
-        layout.addWidget(self.summary_csv_edit, 5, 1, 1, 4)
+        layout.addWidget(self.summary_csv_edit, 6, 1, 1, 4)
 
         summary_browse_button = QPushButton("Browse")
         summary_browse_button.clicked.connect(self.choose_summary_csv)
-        layout.addWidget(summary_browse_button, 5, 5)
+        layout.addWidget(summary_browse_button, 6, 5)
 
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(3, 1)
@@ -665,6 +679,9 @@ class FitAlphaBetaWindow(QMainWindow):
         sf_modes = parse_sf_modes([sf_text] if sf_text else None)
         summary_csv = self.summary_csv_edit.text().strip() or None
         alpha = self.alpha_spin.value() if self.fix_alpha_check.isChecked() else None
+        repair_half_time_hours = self.repair_half_time_spin.value()
+        if repair_half_time_hours <= 0.0:
+            repair_half_time_hours = None
 
         seed_text = self.bootstrap_seed_edit.text().strip()
         bootstrap_seed = None
@@ -681,6 +698,7 @@ class FitAlphaBetaWindow(QMainWindow):
                 files=files,
                 sf_modes=sf_modes,
                 alpha=alpha,
+                repair_half_time_hours=repair_half_time_hours,
                 min_sf=self.min_sf_spin.value(),
                 fit_kind=self.fit_kind_combo.currentData(),
                 validate_kind=self.validate_kind_combo.currentData(),
@@ -791,6 +809,7 @@ class FitAlphaBetaWindow(QMainWindow):
                 experiment.control_label,
                 experiment.regimen_kind,
                 format_fractions(experiment.fractions),
+                experiment.schedule_label,
                 f"{experiment.dose_sum:.3f}",
                 f"{experiment.dose2_sum:.3f}",
                 f"{experiment.sf:.6f}",
@@ -818,6 +837,7 @@ class FitAlphaBetaWindow(QMainWindow):
                 experiment.control_label,
                 experiment.regimen_kind,
                 format_fractions(experiment.fractions),
+                experiment.schedule_label,
                 f"{experiment.sf:.6f}",
                 self._format_optional_float(
                     matched_row.predicted_sf if matched_row is not None else None,
@@ -901,6 +921,41 @@ class FitAlphaBetaWindow(QMainWindow):
                     f"alpha/beta = {ratio} Gy",
                 ]
             )
+            if (
+                run.fit_result.repair_half_time_hours is not None
+                and run.fit_result.repair_half_time_hours > 0.0
+            ):
+                lines.append(
+                    f"repair_half_time = {run.fit_result.repair_half_time_hours:.3f} h"
+                )
+            else:
+                lines.append("repair_half_time = disabled (classic LQ)")
+
+        diagnostics = run.timing_diagnostics
+        if diagnostics is not None and diagnostics.repair_model_enabled:
+            lines.extend(
+                [
+                    "Timing diagnostics:",
+                    (
+                        f"- train={diagnostics.train_count}, "
+                        f"fractionated={diagnostics.fractionated_count}, "
+                        f"explicit_timing={diagnostics.explicit_timing_count}, "
+                        f"explicit_fractionated={diagnostics.explicit_fractionated_count}"
+                    ),
+                    (
+                        f"- unique_fractionated_schedules={diagnostics.unique_schedule_count}, "
+                        f"matched_patterns_with_multi_timing={diagnostics.same_fractions_multi_timing_count}, "
+                        f"unique_quadratic={diagnostics.unique_quadratic_count}, "
+                        f"design_rank={diagnostics.design_rank}"
+                    ),
+                ]
+            )
+            if diagnostics.condition_number is not None:
+                lines.append(f"- condition_number={diagnostics.condition_number:.2g}")
+            if diagnostics.warnings:
+                lines.append("Timing warnings:")
+                for warning in diagnostics.warnings:
+                    lines.append(f"- {warning}")
 
         if run.validation_summary is not None:
             lines.extend(
@@ -942,6 +997,7 @@ class FitAlphaBetaWindow(QMainWindow):
                     f"family={experiment.family or '-'}, "
                     f"kind={experiment.regimen_kind}, "
                     f"fractions={format_fractions(experiment.fractions)}, "
+                    f"schedule={experiment.schedule_label}, "
                     f"SF={experiment.sf:.6f}"
                 )
 
@@ -954,6 +1010,7 @@ class FitAlphaBetaWindow(QMainWindow):
                     f"family={experiment.family or '-'}, "
                     f"kind={experiment.regimen_kind}, "
                     f"fractions={format_fractions(experiment.fractions)}, "
+                    f"schedule={experiment.schedule_label}, "
                     f"SF={experiment.sf:.6f}"
                 )
 

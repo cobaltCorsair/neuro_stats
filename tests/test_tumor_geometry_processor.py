@@ -35,7 +35,7 @@ class TumorGeometryProcessorTests(unittest.TestCase):
             path = Path(tmpdir) / "geometry.xlsx"
             df = pd.DataFrame(
                 [
-                    ["Experiment", "y 40 Gy", None],
+                    ["Experiment", "y 40 Gy", "t = 1 ч"],
                     [None, "0", "1"],
                     ["rat-1", "2-4-6", "8"],
                     ["rat-2", "3-3-3", "1-1-1"],
@@ -62,6 +62,7 @@ class TumorGeometryProcessorTests(unittest.TestCase):
         self.assertAlmostEqual(dataset.axis_b[0, 1], expected_sphere, places=6)
         self.assertAlmostEqual(dataset.axis_c[0, 1], expected_sphere, places=6)
         self.assertFalse(dataset.explicit_axes_mask[0, 1])
+        self.assertIn("Irradiation Time=t = 1 ч", dataset.experiment_params)
 
     def test_mean_geometry_returns_per_day_arrays(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

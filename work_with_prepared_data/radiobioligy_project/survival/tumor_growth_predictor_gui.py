@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QSlider,
     QSplitter,
     QStatusBar,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -50,7 +51,8 @@ from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predicto
     GrowthModelParameters,
     GrowthSimulationResult,
     TreatmentFraction,
-    build_default_schedule,
+    build_schedule_from_intervals,
+    parse_irradiation_intervals_days,
     default_geometry_scaling,
     fit_geometry_scaling,
     fit_gompertz_to_control,
@@ -70,6 +72,14 @@ def _parse_numeric_day_labels(labels: Sequence[str]) -> np.ndarray:
     return np.asarray(values, dtype=float)
 
 
+def _format_time_days(value: float) -> str:
+    if not np.isfinite(value):
+        return "-"
+    if abs(value) < 1.0:
+        return f"{value:.4f} d ({value * 24.0:.2f} h)"
+    return f"{value:.2f} d"
+
+
 class TumorGrowthPredictorWindow(QMainWindow):
     """Interactive tumor-growth predictor with plots and a 3D ellipsoid view."""
 
@@ -78,6 +88,8 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.run_results = list(run_results or [])
         self.geometry_dataset: Optional[TumorGeometryDataset] = None
         self.control_dataset: Optional[TumorGeometryDataset] = None
+        self.geometry_path_text: Optional[str] = None
+        self.control_path_text: Optional[str] = None
         self.simulation_result: Optional[GrowthSimulationResult] = None
         self.observed_days: Optional[np.ndarray] = None
         self.observed_volume: Optional[np.ndarray] = None
@@ -86,6 +98,7 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.observed_axis_c: Optional[np.ndarray] = None
         self.reference_geometry: Optional[GeometryReference] = None
         self.geometry_scaling_model: Optional[GeometryScalingModel] = None
+        self.display_frame_times: Optional[np.ndarray] = None
 
         self.timer = QTimer(self)
         self.timer.setInterval(PLAYBACK_INTERVAL_MS)
@@ -99,21 +112,32 @@ class TumorGrowthPredictorWindow(QMainWindow):
     def _build_ui(self) -> None:
         central = QWidget(self)
         root_layout = QHBoxLayout(central)
+        root_layout.setContentsMargins(6, 6, 6, 6)
+        root_layout.setSpacing(6)
 
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
         splitter.addWidget(self._build_controls_panel())
         splitter.addWidget(self._build_results_panel())
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
+        splitter.setSizes([430, 1170])
         root_layout.addWidget(splitter)
 
         self.setCentralWidget(central)
         self.setStatusBar(QStatusBar(self))
         self.statusBar().showMessage("Load a treated tumor file and simulate growth.")
 
+    def resizeEvent(self, event) -> None:  # pragma: no cover - GUI behavior
+        super().resizeEvent(event)
+        self._refresh_path_labels()
+
     def _build_controls_panel(self) -> QWidget:
         panel = QWidget(self)
+        panel.setMinimumWidth(390)
+        panel.setMaximumWidth(520)
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
         layout.addWidget(self._build_file_group())
         layout.addWidget(self._build_parameter_group())
         layout.addWidget(self._build_schedule_group(), 1)
@@ -127,48 +151,54 @@ class TumorGrowthPredictorWindow(QMainWindow):
     def _build_results_panel(self) -> QWidget:
         panel = QWidget(self)
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        splitter = QSplitter(Qt.Orientation.Vertical, self)
-        splitter.addWidget(self._build_plot_panel())
-        splitter.addWidget(self._build_3d_panel())
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        layout.addWidget(splitter, 1)
+        self.results_tabs = QTabWidget(self)
+        self.results_tabs.addTab(self._build_plot_panel(), "Curves")
+        self.results_tabs.addTab(self._build_3d_panel(), "3D")
+        layout.addWidget(self.results_tabs, 1)
         return panel
 
     def _build_file_group(self) -> QGroupBox:
         group = QGroupBox("Files and selection", self)
         layout = QGridLayout(group)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+        layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(6)
 
         self.geometry_label = QLabel("No treated tumor file loaded", self)
         self.geometry_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        geometry_button = QPushButton("Open treated tumor file", self)
+        geometry_button = QPushButton("Open treated file", self)
+        geometry_button.setToolTip("Load treated tumor file with observed a-b-c measurements.")
         geometry_button.clicked.connect(self.open_geometry_file)
         layout.addWidget(QLabel("Treated tumor"), 0, 0)
         layout.addWidget(self.geometry_label, 0, 1)
-        layout.addWidget(geometry_button, 0, 2)
+        layout.addWidget(geometry_button, 1, 1)
 
         self.control_label = QLabel("No control file loaded", self)
         self.control_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         control_button = QPushButton("Open control file", self)
+        control_button.setToolTip("Load control tumor file for untreated growth fitting.")
         control_button.clicked.connect(self.open_control_file)
-        layout.addWidget(QLabel("Control"), 1, 0)
-        layout.addWidget(self.control_label, 1, 1)
-        layout.addWidget(control_button, 1, 2)
+        layout.addWidget(QLabel("Control"), 2, 0)
+        layout.addWidget(self.control_label, 2, 1)
+        layout.addWidget(control_button, 3, 1)
 
         self.selection_combo = QComboBox(self)
         self.selection_combo.currentIndexChanged.connect(self.on_selection_changed)
-        layout.addWidget(QLabel("Tumor"), 2, 0)
-        layout.addWidget(self.selection_combo, 2, 1, 1, 2)
+        layout.addWidget(QLabel("Tumor"), 4, 0)
+        layout.addWidget(self.selection_combo, 4, 1)
 
         self.fit_result_combo = QComboBox(self)
         self.fit_result_combo.currentIndexChanged.connect(self.apply_selected_fit_result)
-        layout.addWidget(QLabel("Alpha/Beta source"), 3, 0)
-        layout.addWidget(self.fit_result_combo, 3, 1, 1, 2)
+        layout.addWidget(QLabel("Alpha/Beta source"), 5, 0)
+        layout.addWidget(self.fit_result_combo, 5, 1)
 
         fit_button = QPushButton("Fit Gompertz from control", self)
         fit_button.clicked.connect(self.fit_growth_from_control)
-        layout.addWidget(fit_button, 4, 0, 1, 3)
+        layout.addWidget(fit_button, 6, 0, 1, 2)
         return group
 
     def _build_parameter_group(self) -> QGroupBox:
@@ -182,6 +212,11 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.clearance_rate_spin = self._create_float_spinbox(0.0, 5.0, 0.10, decimals=4, step=0.01)
         self.horizon_spin = self._create_float_spinbox(0.0, 365.0, 30.0, decimals=2, step=1.0)
         self.step_spin = self._create_float_spinbox(0.01, 10.0, 0.25, decimals=3, step=0.05)
+        self.repair_half_time_spin = self._create_float_spinbox(0.0, 240.0, 0.0, decimals=3, step=0.25)
+        self.repair_half_time_spin.setToolTip(
+            "0 keeps independent per-fraction kill. Positive values enable "
+            "repair-aware interaction between closely spaced fractions."
+        )
 
         layout.addWidget(QLabel("alpha"), 0, 0)
         layout.addWidget(self.alpha_spin, 0, 1)
@@ -200,43 +235,51 @@ class TumorGrowthPredictorWindow(QMainWindow):
 
         layout.addWidget(QLabel("Step (days)"), 3, 0)
         layout.addWidget(self.step_spin, 3, 1)
+        layout.addWidget(QLabel("Repair T1/2 (h)"), 3, 2)
+        layout.addWidget(self.repair_half_time_spin, 3, 3)
 
-        layout.addWidget(QLabel("Geometry mode"), 3, 2)
+        layout.addWidget(QLabel("Geometry mode"), 4, 0)
         self.geometry_mode_combo = QComboBox(self)
         self.geometry_mode_combo.addItem("Fixed ratios", "fixed")
         self.geometry_mode_combo.addItem("Fit from observed shape", "fitted")
         self.geometry_mode_combo.currentIndexChanged.connect(self.on_geometry_mode_changed)
-        layout.addWidget(self.geometry_mode_combo, 3, 3)
+        layout.addWidget(self.geometry_mode_combo, 4, 1, 1, 3)
         return group
 
     def _build_schedule_group(self) -> QGroupBox:
         group = QGroupBox("Dose schedule", self)
         layout = QVBoxLayout(group)
 
-        button_row = QHBoxLayout()
-        prefill_button = QPushButton("Prefill from treated file fractions", self)
+        button_grid = QGridLayout()
+        button_grid.setHorizontalSpacing(6)
+        button_grid.setVerticalSpacing(6)
+        button_grid.setColumnStretch(0, 1)
+        button_grid.setColumnStretch(1, 1)
+
+        prefill_button = QPushButton("Use treated fractions", self)
+        prefill_button.setToolTip("Populate the schedule from the fraction labels in the treated tumor file.")
         prefill_button.clicked.connect(self.prefill_schedule_from_geometry)
-        button_row.addWidget(prefill_button)
+        button_grid.addWidget(prefill_button, 0, 0, 1, 2)
 
         add_button = QPushButton("Add event", self)
         add_button.clicked.connect(self.add_schedule_row)
-        button_row.addWidget(add_button)
+        button_grid.addWidget(add_button, 1, 0)
 
-        remove_button = QPushButton("Remove selected", self)
+        remove_button = QPushButton("Remove rows", self)
+        remove_button.setToolTip("Remove the selected schedule rows.")
         remove_button.clicked.connect(self.remove_selected_schedule_rows)
-        button_row.addWidget(remove_button)
+        button_grid.addWidget(remove_button, 1, 1)
 
         clear_button = QPushButton("Clear schedule", self)
         clear_button.clicked.connect(self.clear_schedule)
-        button_row.addWidget(clear_button)
-        button_row.addStretch(1)
-        layout.addLayout(button_row)
+        button_grid.addWidget(clear_button, 2, 0, 1, 2)
+        layout.addLayout(button_grid)
 
         self.schedule_table = QTableWidget(self)
         self.schedule_table.setColumnCount(2)
-        self.schedule_table.setHorizontalHeaderLabels(["Day", "Dose (Gy)"])
+        self.schedule_table.setHorizontalHeaderLabels(["Time (days)", "Dose (Gy)"])
         self.schedule_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.schedule_table.setMinimumHeight(220)
+        self.schedule_table.setMinimumHeight(150)
         layout.addWidget(self.schedule_table, 1)
         return group
 
@@ -262,6 +305,26 @@ class TumorGrowthPredictorWindow(QMainWindow):
 
         self.frame_label = QLabel("Day: -", self)
         controls.addWidget(self.frame_label)
+        controls.addWidget(QLabel("Frames", self))
+
+        self.frame_mode_combo = QComboBox(self)
+        self.frame_mode_combo.addItem("Daily snapshots", "daily")
+        self.frame_mode_combo.addItem("Raw timeline", "raw")
+        self.frame_mode_combo.currentIndexChanged.connect(self.on_frame_mode_changed)
+        controls.addWidget(self.frame_mode_combo)
+
+        controls.addWidget(QLabel("Speed", self))
+        self.playback_speed_combo = QComboBox(self)
+        self.playback_speed_combo.addItem("Auto", "auto")
+        self.playback_speed_combo.addItem("1x", 1)
+        self.playback_speed_combo.addItem("2x", 2)
+        self.playback_speed_combo.addItem("4x", 4)
+        self.playback_speed_combo.addItem("8x", 8)
+        self.playback_speed_combo.addItem("16x", 16)
+        self.playback_speed_combo.setToolTip(
+            "Playback speed for the 3D slider. In Auto mode, raw timeline runs faster than daily snapshots."
+        )
+        controls.addWidget(self.playback_speed_combo)
         controls.addStretch(1)
         layout.addLayout(controls)
 
@@ -283,7 +346,8 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.summary_text.setReadOnly(True)
         bottom_splitter.addWidget(self.summary_text)
         bottom_splitter.setStretchFactor(0, 3)
-        bottom_splitter.setStretchFactor(1, 2)
+        bottom_splitter.setStretchFactor(1, 1)
+        bottom_splitter.setSizes([900, 280])
         layout.addWidget(bottom_splitter, 1)
         return panel
 
@@ -321,13 +385,51 @@ class TumorGrowthPredictorWindow(QMainWindow):
         if successful_runs:
             self.apply_selected_fit_result()
 
+    def _apply_path_label(
+        self,
+        label: QLabel,
+        path_text: Optional[str],
+        empty_text: str,
+    ) -> None:
+        if not path_text:
+            label.setText(empty_text)
+            label.setToolTip("")
+            return
+
+        available_width = max(120, label.width() - 4)
+        elided = label.fontMetrics().elidedText(
+            path_text,
+            Qt.TextElideMode.ElideMiddle,
+            available_width,
+        )
+        label.setText(elided)
+        label.setToolTip(path_text)
+
+    def _refresh_path_labels(self) -> None:
+        self._apply_path_label(
+            self.geometry_label,
+            self.geometry_path_text,
+            "No treated tumor file loaded",
+        )
+        self._apply_path_label(
+            self.control_label,
+            self.control_path_text,
+            "No control file loaded",
+        )
+
     def apply_selected_fit_result(self) -> None:
         fit = self.fit_result_combo.currentData()
         if fit is None:
             return
         self.alpha_spin.setValue(fit.alpha)
         self.beta_spin.setValue(fit.beta)
-        self.statusBar().showMessage("Loaded alpha/beta from fitter result.")
+        repair_half_time_hours = getattr(fit, "repair_half_time_hours", None)
+        self.repair_half_time_spin.setValue(
+            float(repair_half_time_hours)
+            if repair_half_time_hours is not None and repair_half_time_hours > 0.0
+            else 0.0
+        )
+        self.statusBar().showMessage("Loaded alpha/beta settings from fitter result.")
 
     def open_geometry_file(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
@@ -359,7 +461,8 @@ class TumorGrowthPredictorWindow(QMainWindow):
             return
 
         self.geometry_dataset = dataset
-        self.geometry_label.setText(str(path.resolve()))
+        self.geometry_path_text = str(path.resolve())
+        self._refresh_path_labels()
         self.populate_selection_combo()
         self.prefill_schedule_from_geometry()
         self.suggest_horizon_from_geometry()
@@ -375,7 +478,8 @@ class TumorGrowthPredictorWindow(QMainWindow):
             return
 
         self.control_dataset = dataset
-        self.control_label.setText(str(path.resolve()))
+        self.control_path_text = str(path.resolve())
+        self._refresh_path_labels()
         self.statusBar().showMessage(f"Loaded control file: {path.name}")
 
     def populate_selection_combo(self) -> None:
@@ -395,6 +499,11 @@ class TumorGrowthPredictorWindow(QMainWindow):
     def on_geometry_mode_changed(self) -> None:
         self.update_geometry_scaling_model()
         self.clear_prediction_outputs()
+
+    def on_frame_mode_changed(self) -> None:
+        self.refresh_display_frames(reset_slider=False)
+        if self.simulation_result is not None:
+            self.refresh_3d_view()
 
     def observed_geometry_for_selection(
         self,
@@ -513,15 +622,22 @@ class TumorGrowthPredictorWindow(QMainWindow):
         if self.geometry_dataset is None:
             return
         fractions = parse_fractions(list(self.geometry_dataset.experiment_params))
-        schedule = build_default_schedule(fractions)
+        interval_days = parse_irradiation_intervals_days(self.geometry_dataset.experiment_params)
+        schedule = build_schedule_from_intervals(fractions, interval_days)
         self.populate_schedule_table(schedule)
         if schedule:
-            self.statusBar().showMessage("Schedule prefilled from experiment fractions.")
+            if interval_days:
+                interval_text = ", ".join(f"{gap * 24.0:g} h" for gap in interval_days)
+                self.statusBar().showMessage(
+                    f"Schedule prefilled from experiment fractions and t= intervals ({interval_text})."
+                )
+            else:
+                self.statusBar().showMessage("Schedule prefilled from experiment fractions.")
 
     def populate_schedule_table(self, schedule: Sequence[TreatmentFraction]) -> None:
         self.schedule_table.setRowCount(len(schedule))
         for row_index, event in enumerate(schedule):
-            self.schedule_table.setItem(row_index, 0, QTableWidgetItem(f"{event.day:g}"))
+            self.schedule_table.setItem(row_index, 0, QTableWidgetItem(f"{event.day:.6g}"))
             self.schedule_table.setItem(row_index, 1, QTableWidgetItem(f"{event.dose:g}"))
 
     def add_schedule_row(self) -> None:
@@ -556,6 +672,12 @@ class TumorGrowthPredictorWindow(QMainWindow):
     def build_sample_times(self, schedule: Sequence[TreatmentFraction]) -> np.ndarray:
         step = self.step_spin.value()
         horizon = self.horizon_spin.value()
+        if len(schedule) > 1:
+            schedule_days = np.asarray([event.day for event in schedule], dtype=float)
+            gaps = np.diff(np.unique(np.round(schedule_days, 8)))
+            positive_gaps = gaps[gaps > 1.0e-12]
+            if len(positive_gaps) > 0:
+                step = min(step, float(np.min(positive_gaps)) / 4.0)
         if self.observed_days is not None and len(self.observed_days) > 0:
             horizon = max(horizon, float(np.nanmax(self.observed_days)))
         if schedule:
@@ -590,6 +712,7 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 growth_rate=self.growth_rate_spin.value(),
                 carrying_capacity=self.carrying_capacity_spin.value(),
                 clearance_rate=self.clearance_rate_spin.value(),
+                repair_half_time_hours=self.repair_half_time_spin.value(),
             )
             self.simulation_result = simulate_growth(
                 sample_times,
@@ -603,18 +726,20 @@ class TumorGrowthPredictorWindow(QMainWindow):
             QMessageBox.critical(self, "Simulation failed", str(exc))
             return
 
-        self.frame_slider.blockSignals(True)
-        self.frame_slider.setMaximum(max(len(self.simulation_result.times) - 1, 0))
-        self.frame_slider.setValue(0)
-        self.frame_slider.blockSignals(False)
+        self.refresh_display_frames(reset_slider=True)
         self.refresh_curves()
         self.refresh_3d_view()
         self.statusBar().showMessage("Tumor-growth simulation complete.")
 
     def refresh_curves(self) -> None:
         self.curve_figure.clear()
-        volume_ax = self.curve_figure.add_subplot(211)
-        axis_ax = self.curve_figure.add_subplot(212)
+        axes = self.curve_figure.subplots(
+            2,
+            1,
+            sharex=True,
+            gridspec_kw={"height_ratios": [3, 2]},
+        )
+        volume_ax, axis_ax = axes
 
         if self.simulation_result is None:
             volume_ax.set_title("No prediction available")
@@ -643,7 +768,6 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 )
 
         volume_ax.set_ylabel("Volume")
-        volume_ax.set_xlabel("Day")
         volume_ax.legend(loc="best")
         volume_ax.grid(True, alpha=0.25)
 
@@ -663,10 +787,10 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 axis_ax.scatter(self.observed_days[valid_c], self.observed_axis_c[valid_c], color="#f4a261", marker="^", alpha=0.65)
 
         axis_ax.set_ylabel("Axis length")
-        axis_ax.set_xlabel("Day")
+        axis_ax.set_xlabel("Time (days)")
         axis_ax.legend(loc="best")
         axis_ax.grid(True, alpha=0.25)
-        self.curve_figure.tight_layout()
+        self.curve_figure.tight_layout(pad=1.2)
         self.curve_canvas.draw_idle()
 
     def toggle_playback(self) -> None:
@@ -689,7 +813,89 @@ class TumorGrowthPredictorWindow(QMainWindow):
             self.timer.stop()
             self.play_button.setText("Play")
             return
-        self.frame_slider.setValue(current_index + 1)
+        frame_mode = str(self.frame_mode_combo.currentData() or "daily")
+        step = self.resolve_playback_step(frame_mode, self.playback_speed_combo.currentData())
+        self.frame_slider.setValue(min(current_index + step, self.frame_slider.maximum()))
+
+    @staticmethod
+    def build_display_days(times: Sequence[float]) -> np.ndarray:
+        """Reduce dense simulation times to day-level frames for the 3D viewer."""
+        times_array = np.asarray(times, dtype=float)
+        if times_array.ndim != 1 or len(times_array) == 0:
+            return np.asarray([0.0], dtype=float)
+
+        max_time = float(np.nanmax(times_array))
+        whole_day_count = int(math.floor(max_time + 1.0e-9))
+        if whole_day_count <= 0:
+            return np.asarray([0.0], dtype=float)
+        return np.arange(0.0, float(whole_day_count) + 1.0, 1.0, dtype=float)
+
+    @classmethod
+    def build_display_times(cls, times: Sequence[float], mode: str) -> np.ndarray:
+        """Build display frames for the 3D tab without changing the dense simulation."""
+        times_array = np.asarray(times, dtype=float)
+        if times_array.ndim != 1 or len(times_array) == 0:
+            return np.asarray([0.0], dtype=float)
+        if mode == "raw":
+            return np.unique(np.round(times_array, 6))
+        return cls.build_display_days(times_array)
+
+    @staticmethod
+    def resolve_playback_step(mode: str, speed_value: object) -> int:
+        """Convert the selected speed option into a frame step."""
+        if speed_value == "auto":
+            return 8 if mode == "raw" else 1
+        try:
+            step = int(speed_value)
+        except (TypeError, ValueError):
+            return 1
+        return max(step, 1)
+
+    @staticmethod
+    def interpolate_series(times: np.ndarray, values: np.ndarray, day: float) -> float:
+        """Sample a dense simulation series at a daily display point."""
+        return float(np.interp(day, times, values))
+
+    def refresh_display_frames(self, *, reset_slider: bool) -> None:
+        """Rebuild the 3D display frames for the selected mode."""
+        if self.simulation_result is None:
+            self.display_frame_times = None
+            self.frame_slider.blockSignals(True)
+            self.frame_slider.setMaximum(0)
+            self.frame_slider.setValue(0)
+            self.frame_slider.blockSignals(False)
+            return
+
+        previous_time = 0.0
+        if (
+            not reset_slider
+            and self.display_frame_times is not None
+            and len(self.display_frame_times) > 0
+        ):
+            previous_index = min(self.frame_slider.value(), len(self.display_frame_times) - 1)
+            previous_time = float(self.display_frame_times[previous_index])
+
+        mode = str(self.frame_mode_combo.currentData() or "daily")
+        display_frame_times = self.build_display_times(self.simulation_result.times, mode)
+        self.display_frame_times = display_frame_times
+
+        if reset_slider:
+            target_index = 0
+        else:
+            insertion_index = int(np.searchsorted(display_frame_times, previous_time, side="left"))
+            if insertion_index >= len(display_frame_times):
+                target_index = len(display_frame_times) - 1
+            elif insertion_index > 0:
+                left_time = float(display_frame_times[insertion_index - 1])
+                right_time = float(display_frame_times[insertion_index])
+                target_index = insertion_index - 1 if abs(previous_time - left_time) <= abs(previous_time - right_time) else insertion_index
+            else:
+                target_index = 0
+
+        self.frame_slider.blockSignals(True)
+        self.frame_slider.setMaximum(max(len(display_frame_times) - 1, 0))
+        self.frame_slider.setValue(target_index)
+        self.frame_slider.blockSignals(False)
 
     def current_axis_limit(self) -> float:
         if self.simulation_result is None:
@@ -723,17 +929,26 @@ class TumorGrowthPredictorWindow(QMainWindow):
             self.summary_text.setPlainText("")
             return
 
-        index = self.frame_slider.value()
         result = self.simulation_result
-        day = float(result.times[index])
-        axis_a = float(result.axis_a[index])
-        axis_b = float(result.axis_b[index])
-        axis_c = float(result.axis_c[index])
-        total = float(result.total_volume[index])
-        live = float(result.live_volume[index])
-        dead = float(result.dead_volume[index])
+        frame_mode = str(self.frame_mode_combo.currentData() or "daily")
+        display_frame_times = self.display_frame_times
+        if display_frame_times is None or len(display_frame_times) == 0:
+            display_frame_times = self.build_display_times(result.times, frame_mode)
+            self.display_frame_times = display_frame_times
 
-        self.frame_label.setText(f"Day: {day:.2f}")
+        index = min(self.frame_slider.value(), len(display_frame_times) - 1)
+        day = float(display_frame_times[index])
+        axis_a = self.interpolate_series(result.times, result.axis_a, day)
+        axis_b = self.interpolate_series(result.times, result.axis_b, day)
+        axis_c = self.interpolate_series(result.times, result.axis_c, day)
+        total = self.interpolate_series(result.times, result.total_volume, day)
+        live = self.interpolate_series(result.times, result.live_volume, day)
+        dead = self.interpolate_series(result.times, result.dead_volume, day)
+
+        if frame_mode == "raw":
+            self.frame_label.setText(f"Time: {_format_time_days(day)}")
+        else:
+            self.frame_label.setText(f"Day: {int(round(day))}")
         if all(np.isfinite([axis_a, axis_b, axis_c])) and min(axis_a, axis_b, axis_c) > 0.0:
             x, y, z = self.build_ellipsoid_mesh(axis_a, axis_b, axis_c)
             ax.plot_surface(
@@ -760,7 +975,10 @@ class TumorGrowthPredictorWindow(QMainWindow):
         ax.set_xlabel("a-axis")
         ax.set_ylabel("b-axis")
         ax.set_zlabel("c-axis")
-        ax.set_title(f"{self.selection_combo.currentText()} | day {day:.2f}")
+        if frame_mode == "raw":
+            ax.set_title(f"{self.selection_combo.currentText()} | t = {_format_time_days(day)}")
+        else:
+            ax.set_title(f"{self.selection_combo.currentText()} | day {int(round(day))}")
         self.view_canvas.draw_idle()
 
         self.summary_text.setPlainText(
@@ -778,6 +996,7 @@ class TumorGrowthPredictorWindow(QMainWindow):
         dead: float,
     ) -> str:
         lines = []
+        frame_mode = str(self.frame_mode_combo.currentData() or "daily")
         if self.geometry_dataset is not None:
             lines.append(f"Treated tumor file: {self.geometry_dataset.path.name}")
         if self.control_dataset is not None:
@@ -790,9 +1009,19 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 f"growth_rate = {self.growth_rate_spin.value():.4f}",
                 f"carrying_capacity = {self.carrying_capacity_spin.value():.3f}",
                 f"clearance_rate = {self.clearance_rate_spin.value():.4f}",
+                (
+                    f"repair_half_time_hours = {self.repair_half_time_spin.value():.3f}"
+                    if self.repair_half_time_spin.value() > 0.0
+                    else "repair_half_time_hours = disabled"
+                ),
+                f"frame_mode = {frame_mode}",
                 f"geometry_mode = {self.geometry_mode_combo.currentData()}",
                 "",
-                f"Displayed day = {day:.2f}",
+                (
+                    f"Displayed time = {_format_time_days(day)}"
+                    if frame_mode == "raw"
+                    else f"Displayed day = {int(round(day))}"
+                ),
                 f"Predicted total volume = {total:.3f}",
                 f"Predicted live volume = {live:.3f}",
                 f"Predicted dead volume = {dead:.3f}",
@@ -836,13 +1065,14 @@ class TumorGrowthPredictorWindow(QMainWindow):
             lines.append("")
             lines.append("Dose schedule:")
             for event in schedule:
-                lines.append(f"- day {event.day:g}: {event.dose:g} Gy")
+                lines.append(f"- t = {_format_time_days(event.day)}: {event.dose:g} Gy")
         return "\n".join(lines)
 
     def clear_prediction_outputs(self) -> None:
         self.timer.stop()
         self.play_button.setText("Play")
         self.simulation_result = None
+        self.display_frame_times = None
         self.frame_slider.blockSignals(True)
         self.frame_slider.setMaximum(0)
         self.frame_slider.setValue(0)

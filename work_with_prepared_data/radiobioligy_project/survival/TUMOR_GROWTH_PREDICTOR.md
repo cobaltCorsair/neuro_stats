@@ -6,6 +6,7 @@ It combines:
 
 - fitted `alpha` and `beta`
 - an editable irradiation schedule
+- optional repair-aware interaction between closely spaced fractions
 - Gompertz growth between fractions
 - delayed clearance of damaged tumor mass
 - reconstruction of a 3D ellipsoid from measured `a-b-c`
@@ -58,6 +59,10 @@ The predictor uses this file for:
 - the baseline ellipsoid
 - optional auto-prefill of the dose schedule from the experiment header
 
+If the first row contains irradiation metadata such as `t = 1 ч`, the predictor
+also uses it to reconstruct the spacing between fractions. Internally the model
+still works in days, so `1 ч` becomes `1/24` day.
+
 ### 2. Control file
 
 This is a non-irradiated control series.
@@ -103,9 +108,17 @@ This panel shows 2D curves:
 This panel shows:
 
 - the predicted 3D ellipsoid
-- a time slider
+- a day-by-day slider
+- a `Frames` switch with `Daily snapshots` and `Raw timeline`
+- a `Speed` switch for faster playback, especially in `Raw timeline`
 - `Play/Pause`
 - a text summary of the current model state
+
+The underlying simulation can still run on a finer sub-day grid when hour-scale
+fractions are present, but the 3D tab intentionally displays daily snapshots so
+the animation stays readable.
+If you need to inspect the exact sub-day model states, switch `Frames` to
+`Raw timeline`.
 
 ## Mathematical Model
 
@@ -148,6 +161,30 @@ The plotted total volume is:
 ```text
 V_total = V_live + V_dead
 ```
+
+### Repair-aware mode for short intervals
+
+If `Repair T1/2 (h)` is greater than zero, the predictor keeps a decaying memory
+of unrepaired sublethal damage between fractions.
+
+Conceptually:
+
+```text
+unrepaired(t + dt) = unrepaired(t) * exp(-mu * dt)
+mu = ln(2) * 24 / T1/2_hours
+```
+
+At the next fraction dose `d`, the quadratic LQ term becomes:
+
+```text
+d^2 + 2 * d * unrepaired_before_fraction
+```
+
+This means:
+
+- `T1/2 = 0` keeps the classic predictor behavior
+- `T1/2 > 0` makes `30 min`, `1 h`, `2.5 h` and similar gaps matter radiobiologically
+- short gaps increase effective kill compared with the same doses delivered far apart
 
 ## Geometry Reconstruction Modes
 
@@ -212,6 +249,15 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_g
 11. Click `Simulate`.
 12. Inspect curves and the 3D ellipsoid over time.
 
+If the schedule was auto-filled from a header like `t = 1 ч`, the first column
+shows time in days, for example:
+
+- `0`
+- `0.0417`
+- `0.0833`
+
+which correspond to `0 h`, `1 h`, and `2 h`.
+
 ### Standalone start
 
 You can also open the predictor directly:
@@ -234,6 +280,38 @@ In that case, `alpha` and `beta` start as manual values until you enter them.
 Controls how fast the viable compartment grows between fractions.
 
 Higher `r` means faster regrowth.
+
+### `Repair T1/2 (h)`
+
+Controls how quickly sublethal radiation damage repairs between fractions.
+
+- `0`: classic predictor, each fraction uses only its own `d` and `d^2`
+- positive value: repair-aware predictor, close fractions interact through incomplete repair
+
+Examples:
+
+- `0.5` means fast repair, so interaction fades within a few hours
+- `1.0` means strong sensitivity to hour-scale spacing
+- `4.0` means interaction persists longer between fractions
+
+### `Dose schedule`
+
+The schedule table uses `Time (days)` rather than integer treatment days.
+
+This is important for experiments where fractions are separated by hours rather
+than by full days. When the treated file contains a header token starting with
+`t =`, the predictor tries to parse that interval automatically.
+
+Examples:
+
+- `t = 1 ч` -> repeated 1-hour gaps between fractions
+- `t = 24 ч` -> repeated 1-day gaps between fractions
+
+If no valid `t =` token is found, the auto-prefill falls back to `0, 1, 2, ...`
+days.
+
+If `Repair T1/2 (h)` is enabled, those sub-day gaps affect not only the plot
+timeline but also the radiation kill itself.
 
 ### `Carrying capacity K`
 
@@ -261,7 +339,7 @@ Smaller values give smoother curves and animation, but produce more points.
 
 Each row is one irradiation event:
 
-- `Day`
+- `Time (days)`
 - `Dose (Gy)`
 
 The schedule can be prefilled from the treated file header and then edited manually.
@@ -298,6 +376,7 @@ The summary reports:
 - current files
 - current `alpha`, `beta`
 - growth parameters
+- repair setting
 - geometry mode
 - current predicted `V_total`, `V_live`, `V_dead`
 - current `a`, `b`, `c`
@@ -359,6 +438,7 @@ It is not yet:
 - a segmentation-based anatomical 3D reconstruction
 
 Current `alpha/beta` values in this project are effective parameters derived from tumor-volume response, not classical clonogenic constants.
+Repair-aware mode also uses a single exponential repair half-time, not a full multicomponent repair model.
 
 ## Related Files
 

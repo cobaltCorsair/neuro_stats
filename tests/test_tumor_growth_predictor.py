@@ -6,9 +6,11 @@ from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predicto
     GeometryReference,
     GrowthModelParameters,
     TreatmentFraction,
+    build_schedule_from_intervals,
     fit_geometry_scaling,
     fit_gompertz_to_control,
     gompertz_volume,
+    parse_irradiation_intervals_days,
     simulate_growth,
     surviving_fraction,
 )
@@ -18,6 +20,12 @@ class TumorGrowthPredictorTests(unittest.TestCase):
     def test_surviving_fraction_matches_lq_formula(self) -> None:
         sf = surviving_fraction(0.1, 0.02, 2.0)
         self.assertAlmostEqual(sf, np.exp(-(0.1 * 2.0 + 0.02 * 4.0)), places=8)
+
+    def test_surviving_fraction_uses_unrepaired_dose_memory(self) -> None:
+        sf_without_memory = surviving_fraction(0.1, 0.02, 2.0)
+        sf_with_memory = surviving_fraction(0.1, 0.02, 2.0, prior_unrepaired_dose=1.5)
+
+        self.assertLess(sf_with_memory, sf_without_memory)
 
     def test_single_fraction_moves_volume_from_live_to_dead(self) -> None:
         reference = GeometryReference(axis_a=2.0, axis_b=4.0, axis_c=6.0, volume=12.0)
@@ -88,6 +96,79 @@ class TumorGrowthPredictorTests(unittest.TestCase):
         self.assertAlmostEqual(fit.initial_volume, initial_volume, places=6)
         self.assertAlmostEqual(fit.growth_rate, growth_rate, places=3)
         self.assertAlmostEqual(fit.carrying_capacity, carrying_capacity, places=1)
+
+    def test_parse_irradiation_intervals_days_converts_hours(self) -> None:
+        intervals = parse_irradiation_intervals_days(
+            ("y = 4 Гр", "y = 4 Гр", "y = 32 Гр", "Irradiation Time=t = 1 ч")
+        )
+
+        self.assertEqual(len(intervals), 1)
+        self.assertAlmostEqual(intervals[0], 1.0 / 24.0, places=8)
+
+    def test_build_schedule_from_intervals_uses_subday_spacing(self) -> None:
+        schedule = build_schedule_from_intervals(
+            [4.0, 4.0, 32.0],
+            [1.0 / 24.0],
+        )
+
+        self.assertEqual([event.dose for event in schedule], [4.0, 4.0, 32.0])
+        self.assertAlmostEqual(schedule[0].day, 0.0, places=8)
+        self.assertAlmostEqual(schedule[1].day, 1.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule[2].day, 2.0 / 24.0, places=8)
+
+    def test_repair_aware_simulation_penalizes_short_intervals(self) -> None:
+        reference = GeometryReference(axis_a=2.0, axis_b=4.0, axis_c=6.0, volume=12.0)
+        parameters = GrowthModelParameters(
+            alpha=0.0,
+            beta=0.04,
+            growth_rate=0.0,
+            carrying_capacity=50.0,
+            clearance_rate=0.0,
+            repair_half_time_hours=1.0,
+        )
+
+        short_gap = simulate_growth(
+            sample_times=[0.0, 1.0],
+            parameters=parameters,
+            reference=reference,
+            schedule=[TreatmentFraction(day=0.0, dose=2.0), TreatmentFraction(day=1.0 / 24.0, dose=2.0)],
+        )
+        long_gap = simulate_growth(
+            sample_times=[0.0, 1.0],
+            parameters=parameters,
+            reference=reference,
+            schedule=[TreatmentFraction(day=0.0, dose=2.0), TreatmentFraction(day=1.0, dose=2.0)],
+        )
+
+        self.assertLess(short_gap.live_volume[-1], long_gap.live_volume[-1])
+        self.assertGreater(short_gap.dead_volume[-1], long_gap.dead_volume[-1])
+
+    def test_zero_repair_half_time_keeps_fraction_kill_independent(self) -> None:
+        reference = GeometryReference(axis_a=2.0, axis_b=4.0, axis_c=6.0, volume=12.0)
+        parameters = GrowthModelParameters(
+            alpha=0.0,
+            beta=0.04,
+            growth_rate=0.0,
+            carrying_capacity=50.0,
+            clearance_rate=0.0,
+            repair_half_time_hours=0.0,
+        )
+
+        short_gap = simulate_growth(
+            sample_times=[0.0, 1.0],
+            parameters=parameters,
+            reference=reference,
+            schedule=[TreatmentFraction(day=0.0, dose=2.0), TreatmentFraction(day=1.0 / 24.0, dose=2.0)],
+        )
+        long_gap = simulate_growth(
+            sample_times=[0.0, 1.0],
+            parameters=parameters,
+            reference=reference,
+            schedule=[TreatmentFraction(day=0.0, dose=2.0), TreatmentFraction(day=1.0, dose=2.0)],
+        )
+
+        self.assertAlmostEqual(short_gap.live_volume[-1], long_gap.live_volume[-1], places=8)
+        self.assertAlmostEqual(short_gap.dead_volume[-1], long_gap.dead_volume[-1], places=8)
 
 
 if __name__ == "__main__":

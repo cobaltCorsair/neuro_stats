@@ -13,6 +13,7 @@ from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_
     analyze_fitter,
     infer_radiation_family,
     is_control_file,
+    parse_schedule_days,
     parse_sf_modes,
     resolve_requested_families,
 )
@@ -134,6 +135,18 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
             ["y_fractionated_40.xlsx"],
         )
 
+    def test_parse_schedule_days_converts_hour_intervals(self) -> None:
+        schedule_days, has_explicit_timing = parse_schedule_days(
+            ["y = 4 Гр", "y = 4 Гр", "y = 32 Гр", "t = 1 ч"],
+            fractions=(4.0, 4.0, 32.0),
+        )
+
+        self.assertTrue(has_explicit_timing)
+        self.assertEqual(len(schedule_days), 3)
+        self.assertAlmostEqual(schedule_days[0], 0.0, places=8)
+        self.assertAlmostEqual(schedule_days[1], 1.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[2], 2.0 / 24.0, places=8)
+
     def test_available_families_and_resolution_for_batch_mode(self) -> None:
         fitter = Fitter(
             sf_mode="absolute",
@@ -210,6 +223,30 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertAlmostEqual(merged.sf_std, 0.05, places=6)
         self.assertEqual(len(merged.source_paths), 2)
 
+    def test_aggregate_experiments_keeps_same_doses_with_different_timing_separate(self) -> None:
+        experiments = [
+            TumorExperiment(
+                Path("y_split_1h.xlsx"),
+                (4.0, 4.0, 32.0),
+                0.20,
+                "y",
+                schedule_days=(0.0, 1.0 / 24.0, 2.0 / 24.0),
+                has_explicit_timing=True,
+            ),
+            TumorExperiment(
+                Path("y_split_24h.xlsx"),
+                (4.0, 4.0, 32.0),
+                0.22,
+                "y",
+                schedule_days=(0.0, 1.0, 2.0),
+                has_explicit_timing=True,
+            ),
+        ]
+
+        aggregated = Fitter.aggregate_experiments(experiments)
+
+        self.assertEqual(len(aggregated), 2)
+
     def test_weighted_fit_matches_explicit_repeats(self) -> None:
         fitter = Fitter(
             sf_mode="absolute",
@@ -283,6 +320,131 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         )
 
         self.assertLess(high_var_error, low_var_error)
+
+    def test_fit_uses_repair_aware_quadratic_term(self) -> None:
+        expected_alpha = 0.11
+        expected_beta = 0.025
+        repair_half_time_hours = 1.5
+        repair_rate_per_day = math.log(2.0) * 24.0 / repair_half_time_hours
+
+        short_gap = TumorExperiment(
+            Path("short_gap.xlsx"),
+            (4.0, 4.0, 32.0),
+            1.0,
+            "y",
+            schedule_days=(0.0, 0.5 / 24.0, 3.0 / 24.0),
+            has_explicit_timing=True,
+        )
+        long_gap = TumorExperiment(
+            Path("long_gap.xlsx"),
+            (4.0, 4.0, 32.0),
+            1.0,
+            "y",
+            schedule_days=(0.0, 24.0 / 24.0, 72.0 / 24.0),
+            has_explicit_timing=True,
+        )
+        single = TumorExperiment(
+            Path("single.xlsx"),
+            (40.0,),
+            1.0,
+            "y",
+        )
+        experiments = []
+        for template in (single, short_gap, long_gap):
+            sf = math.exp(
+                -(
+                    expected_alpha * template.dose_sum
+                    + expected_beta * template.quadratic_term(repair_rate_per_day)
+                )
+            )
+            experiments.append(
+                TumorExperiment(
+                    path=template.path,
+                    fractions=template.fractions,
+                    sf=sf,
+                    family=template.family,
+                    schedule_days=template.schedule_days,
+                    has_explicit_timing=template.has_explicit_timing,
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+            repair_half_time_hours=repair_half_time_hours,
+        )
+        result = fitter.fit(experiments=experiments)
+
+        self.assertAlmostEqual(result.alpha, expected_alpha, places=6)
+        self.assertAlmostEqual(result.beta, expected_beta, places=6)
+
+    def test_compute_timing_diagnostics_warns_for_weak_repair_dataset(self) -> None:
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+            repair_half_time_hours=1.0,
+        )
+        experiments = [
+            TumorExperiment(Path("single.xlsx"), (40.0,), 0.1, "y"),
+            TumorExperiment(
+                Path("split.xlsx"),
+                (4.0, 4.0, 32.0),
+                0.2,
+                "y",
+                schedule_days=(0.0, 1.0 / 24.0, 2.0 / 24.0),
+                has_explicit_timing=True,
+            ),
+        ]
+
+        diagnostics = fitter.compute_timing_diagnostics(experiments)
+
+        self.assertTrue(diagnostics.repair_model_enabled)
+        self.assertEqual(diagnostics.same_fractions_multi_timing_count, 0)
+        self.assertGreaterEqual(len(diagnostics.warnings), 1)
+        self.assertTrue(
+            any("likely unstable" in warning for warning in diagnostics.warnings)
+        )
+
+    def test_compute_timing_diagnostics_detects_direct_timing_contrast(self) -> None:
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+            repair_half_time_hours=1.0,
+        )
+        experiments = [
+            TumorExperiment(Path("single.xlsx"), (40.0,), 0.1, "y"),
+            TumorExperiment(
+                Path("split_1h.xlsx"),
+                (4.0, 4.0, 32.0),
+                0.2,
+                "y",
+                schedule_days=(0.0, 1.0 / 24.0, 2.0 / 24.0),
+                has_explicit_timing=True,
+            ),
+            TumorExperiment(
+                Path("split_24h.xlsx"),
+                (4.0, 4.0, 32.0),
+                0.25,
+                "y",
+                schedule_days=(0.0, 1.0, 2.0),
+                has_explicit_timing=True,
+            ),
+        ]
+
+        diagnostics = fitter.compute_timing_diagnostics(experiments)
+
+        self.assertEqual(diagnostics.same_fractions_multi_timing_count, 1)
+        self.assertEqual(diagnostics.explicit_fractionated_count, 2)
+        self.assertGreaterEqual(diagnostics.unique_quadratic_count, 2)
+        self.assertFalse(
+            any("No matched dose pattern" in warning for warning in diagnostics.warnings)
+        )
 
     def test_parse_sf_modes_supports_many_formats(self) -> None:
         self.assertEqual(parse_sf_modes(None), ["absolute"])
@@ -475,6 +637,8 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertEqual(len(run.validation), 1)
         self.assertIsNotNone(run.fit_result)
         self.assertIsNotNone(run.validation_summary)
+        self.assertIsNotNone(run.timing_diagnostics)
+        self.assertFalse(run.timing_diagnostics.repair_model_enabled)
         self.assertAlmostEqual(run.fit_result.alpha, expected_alpha, places=6)
         self.assertAlmostEqual(run.fit_result.beta, expected_beta, places=6)
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 import re
 import sys
 import warnings
@@ -45,6 +46,7 @@ USE_INLINE_PARAMS = False
 INLINE_FILES: Optional[List[str]] = None
 INLINE_SF_MODES: List[str] = ["absolute"]
 INLINE_ALPHA: Optional[float] = None
+INLINE_REPAIR_HALF_TIME_HOURS: Optional[float] = None
 INLINE_MIN_SF = 1.0
 INLINE_FIT_KIND: RegimenKind = "all"
 INLINE_VALIDATE_KIND: ValidationKind = "none"
@@ -62,6 +64,7 @@ NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 GR_SUFFIX = re.compile(r"гр|gy", re.IGNORECASE)
 FAMILY_TOKEN = re.compile(r"[A-Za-zА-Яа-я]+\d*|\d+")
 KNOWN_FAMILIES = ("y", "p", "n", "e")
+TIME_TOKEN = re.compile(r"\bt\s*=")
 
 
 def parse_fractions(experiment_params: List[str]) -> List[float]:
@@ -73,6 +76,144 @@ def parse_fractions(experiment_params: List[str]) -> List[float]:
             for num in NUMBER.findall(token_lower):
                 fractions.append(float(num.replace(",", ".")))
     return fractions
+
+
+def _extract_interval_values_days(token: str) -> List[float]:
+    """Extract one or many time gaps from tokens like ``t = 1 ч`` or ``t=2.5 hr``."""
+    token_lower = token.strip().lower().replace(",", ".")
+    if token_lower.startswith("irradiation time="):
+        token_lower = token_lower.split("=", 1)[1].strip()
+    if not TIME_TOKEN.search(token_lower):
+        return []
+
+    values = [float(num.replace(",", ".")) for num in NUMBER.findall(token_lower)]
+    if not values:
+        return []
+
+    factor = 1.0
+    if any(unit in token_lower for unit in ("ч", "час", "hour", "hours", "hr", "hrs")):
+        factor = 1.0 / 24.0
+    elif any(unit in token_lower for unit in ("мин", "minute", "minutes", "min", "mins")):
+        factor = 1.0 / (24.0 * 60.0)
+    elif any(unit in token_lower for unit in ("сут", "дн", "день", "дня", "дней", "day", "days")):
+        factor = 1.0
+    return [value * factor for value in values if np.isfinite(value) and value >= 0.0]
+
+
+def _build_schedule_from_intervals(
+    fractions: Sequence[float],
+    intervals_days: Sequence[float],
+    *,
+    start_day: float = 0.0,
+    default_spacing_days: float = 1.0,
+) -> Tuple[float, ...]:
+    """Build cumulative fraction times from one or many inter-fraction gaps."""
+    if not fractions:
+        return ()
+
+    times = [float(start_day)]
+    current_time = float(start_day)
+    clean_intervals = [
+        float(value)
+        for value in intervals_days
+        if np.isfinite(value) and float(value) >= 0.0
+    ]
+    for index in range(1, len(fractions)):
+        if clean_intervals:
+            gap = clean_intervals[index - 1] if index - 1 < len(clean_intervals) else clean_intervals[-1]
+        else:
+            gap = float(default_spacing_days)
+        current_time += float(gap)
+        times.append(current_time)
+    return tuple(times)
+
+
+def parse_schedule_days(
+    experiment_params: Sequence[str],
+    fractions: Optional[Sequence[float]] = None,
+    *,
+    start_day: float = 0.0,
+    default_spacing_days: float = 1.0,
+) -> Tuple[Tuple[float, ...], bool]:
+    """Infer fraction times in days from ordered experiment metadata."""
+    doses = [float(dose) for dose in (fractions or parse_fractions(list(experiment_params)))]
+    if not doses:
+        return (), False
+    if len(doses) == 1:
+        has_explicit = any(_extract_interval_values_days(str(token)) for token in experiment_params)
+        return (float(start_day),), has_explicit
+
+    token_entries: List[Tuple[int, List[float], List[float]]] = []
+    for token_index, raw_token in enumerate(experiment_params):
+        token = str(raw_token).strip()
+        dose_values: List[float] = []
+        token_lower = token.lower()
+        if GR_SUFFIX.search(token_lower):
+            dose_values = [float(num.replace(",", ".")) for num in NUMBER.findall(token_lower)]
+        interval_values = _extract_interval_values_days(token)
+        token_entries.append((token_index, dose_values, interval_values))
+
+    interval_positions = [index for index, _, interval_values in token_entries if interval_values]
+    if not interval_positions:
+        return _build_schedule_from_intervals(
+            doses,
+            (),
+            start_day=float(start_day),
+            default_spacing_days=float(default_spacing_days),
+        ), False
+
+    dose_positions = [index for index, dose_values, _ in token_entries if dose_values]
+    if not dose_positions:
+        return _build_schedule_from_intervals(
+            doses,
+            (),
+            start_day=float(start_day),
+            default_spacing_days=float(default_spacing_days),
+        ), False
+
+    last_dose_position = max(dose_positions)
+    if all(index > last_dose_position for index in interval_positions):
+        trailing_intervals = [
+            interval
+            for _, _, interval_values in token_entries
+            for interval in interval_values
+        ]
+        return _build_schedule_from_intervals(
+            doses,
+            trailing_intervals,
+            start_day=float(start_day),
+            default_spacing_days=float(default_spacing_days),
+        ), True
+
+    times: List[float] = []
+    current_time = float(start_day)
+    pending_intervals: List[float] = []
+    emitted_doses = 0
+
+    for _, dose_values, interval_values in token_entries:
+        if dose_values:
+            for _ in dose_values:
+                if emitted_doses == 0:
+                    times.append(current_time)
+                else:
+                    gap = pending_intervals.pop(0) if pending_intervals else float(default_spacing_days)
+                    current_time += gap
+                    times.append(current_time)
+                emitted_doses += 1
+                if emitted_doses >= len(doses):
+                    break
+        if emitted_doses >= len(doses):
+            break
+        if interval_values:
+            pending_intervals.extend(interval_values)
+
+    while emitted_doses < len(doses):
+        gap = pending_intervals.pop(0) if pending_intervals else float(default_spacing_days)
+        current_time += gap
+        times.append(current_time)
+        emitted_doses += 1
+
+    return tuple(times), True
 
 
 def parse_sf_modes(sf_args: Optional[Sequence[str]]) -> List[str]:
@@ -161,6 +302,8 @@ class RawTumorSeries:
     fractions: Tuple[float, ...]
     family: Optional[str]
     volumes: np.ndarray
+    schedule_days: Tuple[float, ...] = ()
+    has_explicit_timing: bool = False
     control_path: Optional[Path] = None
 
     @property
@@ -184,9 +327,11 @@ class TumorExperiment:
     fractions: Tuple[float, ...]
     sf: float
     family: Optional[str] = None
+    schedule_days: Tuple[float, ...] = ()
     repeat_count: int = 1
     sf_std: float = 0.0
     source_paths: Tuple[Path, ...] = ()
+    has_explicit_timing: bool = False
     control_path: Optional[Path] = None
 
     @property
@@ -206,6 +351,33 @@ class TumorExperiment:
         return "single" if self.fraction_count == 1 else "fractionated"
 
     @property
+    def resolved_schedule_days(self) -> Tuple[float, ...]:
+        if len(self.schedule_days) == self.fraction_count:
+            return self.schedule_days
+        return tuple(float(index) for index in range(self.fraction_count))
+
+    @property
+    def interval_days(self) -> Tuple[float, ...]:
+        schedule = self.resolved_schedule_days
+        if len(schedule) < 2:
+            return ()
+        return tuple(
+            float(schedule[index] - schedule[index - 1])
+            for index in range(1, len(schedule))
+        )
+
+    def quadratic_term(self, repair_rate_per_day: Optional[float] = None) -> float:
+        if repair_rate_per_day is None or repair_rate_per_day <= 0.0 or self.fraction_count <= 1:
+            return self.dose2_sum
+        schedule = self.resolved_schedule_days
+        term = 0.0
+        for i, dose_i in enumerate(self.fractions):
+            for j, dose_j in enumerate(self.fractions):
+                delta_days = abs(schedule[i] - schedule[j])
+                term += dose_i * dose_j * math.exp(-repair_rate_per_day * delta_days)
+        return float(term)
+
+    @property
     def path_label(self) -> str:
         if self.repeat_count <= 1:
             return self.path.name
@@ -218,8 +390,24 @@ class TumorExperiment:
         return self.control_path.name
 
     @property
-    def regimen_key(self) -> Tuple[Optional[str], Optional[Path], float, float]:
-        return (self.family, self.control_path, self.dose_sum, self.dose2_sum)
+    def regimen_key(self) -> Tuple[Optional[str], Optional[Path], Tuple[float, ...], Tuple[float, ...]]:
+        return (
+            self.family,
+            self.control_path,
+            tuple(round(dose, 8) for dose in self.fractions),
+            tuple(round(day, 8) for day in self.resolved_schedule_days),
+        )
+
+    @property
+    def schedule_label(self) -> str:
+        parts = []
+        for day in self.resolved_schedule_days:
+            hours = day * 24.0
+            if abs(hours) < 24.0:
+                parts.append(f"{hours:g}h")
+            else:
+                parts.append(f"{day:g}d")
+        return "[" + ", ".join(parts) + "]"
 
     def report(self) -> str:
         family = self.family or "-"
@@ -230,6 +418,9 @@ class TumorExperiment:
         )
         if self.repeat_count > 1:
             line += f"  repeats={self.repeat_count}  sf_std={self.sf_std:.4f}"
+        if self.fraction_count > 1:
+            timing = "explicit" if self.has_explicit_timing else "default-daily"
+            line += f"  schedule={self.schedule_label} ({timing})"
         return line
 
 
@@ -243,6 +434,7 @@ class LQFitResult:
     train_kind: RegimenKind
     family: Optional[str]
     sf_mode: str
+    repair_half_time_hours: Optional[float] = None
 
     @property
     def alpha_beta_ratio(self) -> Optional[float]:
@@ -250,8 +442,15 @@ class LQFitResult:
             return None
         return self.alpha / self.beta
 
+    @property
+    def repair_rate_per_day(self) -> Optional[float]:
+        if self.repair_half_time_hours is None or self.repair_half_time_hours <= 0.0:
+            return None
+        return math.log(2.0) * 24.0 / self.repair_half_time_hours
+
     def predict_sf(self, experiment: TumorExperiment) -> float:
-        return float(np.exp(-(self.alpha * experiment.dose_sum + self.beta * experiment.dose2_sum)))
+        quadratic_term = experiment.quadratic_term(self.repair_rate_per_day)
+        return float(np.exp(-(self.alpha * experiment.dose_sum + self.beta * quadratic_term)))
 
 
 @dataclass(frozen=True)
@@ -307,6 +506,24 @@ class BootstrapSummary:
 
 
 @dataclass(frozen=True)
+class TimingDiagnostics:
+    """How informative the training set is for schedule-aware fitting."""
+
+    repair_model_enabled: bool
+    repair_half_time_hours: Optional[float]
+    train_count: int
+    fractionated_count: int
+    explicit_timing_count: int
+    explicit_fractionated_count: int
+    unique_schedule_count: int
+    same_fractions_multi_timing_count: int
+    unique_quadratic_count: int
+    design_rank: int
+    condition_number: Optional[float]
+    warnings: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class AnalysisRunSummary:
     """Outcome of one (sf_mode, family) analysis run."""
 
@@ -345,6 +562,7 @@ class AnalysisRunResult:
     fit_result: Optional[LQFitResult] = None
     validation_summary: Optional[ValidationSummary] = None
     bootstrap_summary: Optional[BootstrapSummary] = None
+    timing_diagnostics: Optional[TimingDiagnostics] = None
 
     @property
     def label(self) -> str:
@@ -364,12 +582,14 @@ class Fitter:
         min_sf: float,
         alpha_fixed: Optional[float],
         verbose: bool,
+        repair_half_time_hours: Optional[float] = None,
         aggregate_regimens: bool = False,
         dedupe_regimens: bool = False,
     ):
         self.sf_mode = sf_mode
         self.min_sf = min_sf
         self.alpha_fixed = alpha_fixed
+        self.repair_half_time_hours = repair_half_time_hours
         self.verbose = verbose
         self.aggregate_regimens = aggregate_regimens
         self.dedupe_regimens = dedupe_regimens
@@ -377,6 +597,12 @@ class Fitter:
         self.controls: Dict[Path, np.ndarray] = {}
         self.experiments: List[TumorExperiment] = []
         self.control_curve: Optional[np.ndarray] = None
+
+    @property
+    def repair_rate_per_day(self) -> Optional[float]:
+        if self.repair_half_time_hours is None or self.repair_half_time_hours <= 0.0:
+            return None
+        return math.log(2.0) * 24.0 / self.repair_half_time_hours
 
     @staticmethod
     def _mean_tumor_volumes(volumes: np.ndarray) -> np.ndarray:
@@ -450,9 +676,11 @@ class Fitter:
             fractions=raw_experiment.fractions,
             sf=sf,
             family=raw_experiment.family,
+            schedule_days=raw_experiment.schedule_days,
             repeat_count=1,
             sf_std=0.0,
             source_paths=(raw_experiment.path,),
+            has_explicit_timing=raw_experiment.has_explicit_timing,
             control_path=raw_experiment.control_path,
         )
 
@@ -498,7 +726,7 @@ class Fitter:
 
         if self.dedupe_regimens:
             unique_experiments: Dict[
-                Tuple[Optional[str], Optional[Path], float, float],
+                Tuple[Optional[str], Optional[Path], Tuple[float, ...], Tuple[float, ...]],
                 TumorExperiment,
             ] = {}
             for experiment in experiments:
@@ -516,7 +744,7 @@ class Fitter:
         experiments: Sequence[TumorExperiment],
     ) -> List[TumorExperiment]:
         grouped: Dict[
-            Tuple[Optional[str], Optional[Path], float, float],
+            Tuple[Optional[str], Optional[Path], Tuple[float, ...], Tuple[float, ...]],
             List[TumorExperiment],
         ] = {}
         for experiment in experiments:
@@ -537,9 +765,11 @@ class Fitter:
                     fractions=first.fractions,
                     sf=float(np.mean(sfs)),
                     family=first.family,
+                    schedule_days=first.schedule_days,
                     repeat_count=len(group),
                     sf_std=float(np.std(sfs, ddof=0)),
                     source_paths=source_paths,
+                    has_explicit_timing=first.has_explicit_timing,
                     control_path=first.control_path,
                 )
             )
@@ -592,6 +822,7 @@ class Fitter:
                 if self.verbose:
                     print(f"WARNING {path.name}: dose fractions were not parsed -> skip")
                 continue
+            schedule_days, has_explicit_timing = parse_schedule_days(params, fractions)
 
             assigned_control = None
             if normalized_control_map is not None:
@@ -617,9 +848,20 @@ class Fitter:
                     fractions=fractions,
                     family=infer_radiation_family(path),
                     volumes=np.asarray(volumes, dtype=float),
+                    schedule_days=schedule_days,
+                    has_explicit_timing=has_explicit_timing,
                     control_path=assigned_control,
                 )
             )
+            if self.verbose and len(fractions) > 1:
+                if has_explicit_timing:
+                    schedule_hours = ", ".join(f"{day * 24.0:g}h" for day in schedule_days)
+                    print(f"INFO {path.name}: parsed schedule {schedule_hours}")
+                elif self.repair_half_time_hours is not None and self.repair_half_time_hours > 0.0:
+                    print(
+                        f"INFO {path.name}: no explicit t= intervals found, "
+                        "using default 24h spacing between fractions."
+                    )
 
         if len(self.controls) == 1:
             self.control_curve = self._build_control_curve(control_paths=controls)
@@ -713,16 +955,16 @@ class Fitter:
         alpha: float,
         beta: float,
     ) -> np.ndarray:
-        dose_sum, dose2_sum = xdata
-        return np.exp(-(alpha * dose_sum + beta * dose2_sum))
+        dose_sum, quadratic_term = xdata
+        return np.exp(-(alpha * dose_sum + beta * quadratic_term))
 
     @staticmethod
     def _initial_guess(
         dose_sum: np.ndarray,
-        dose2_sum: np.ndarray,
+        quadratic_term: np.ndarray,
         sf: np.ndarray,
     ) -> np.ndarray:
-        design = np.column_stack((dose_sum, dose2_sum))
+        design = np.column_stack((dose_sum, quadratic_term))
         y_log = -np.log(sf)
         guess, *_ = np.linalg.lstsq(design, y_log, rcond=None)
         guess = np.asarray(guess, dtype=float)
@@ -734,7 +976,7 @@ class Fitter:
     @staticmethod
     def _fit_beta_for_fixed_alpha(
         dose_sum: np.ndarray,
-        dose2_sum: np.ndarray,
+        quadratic_term: np.ndarray,
         sf: np.ndarray,
         sigma_log_sf: np.ndarray,
         alpha: float,
@@ -742,20 +984,20 @@ class Fitter:
         y_log = -np.log(sf)
         y_shift = y_log - alpha * dose_sum
         weights = 1.0 / np.square(np.clip(sigma_log_sf, 1.0e-8, None))
-        weighted_d2 = weights * dose2_sum
-        denom = float(np.dot(weighted_d2, dose2_sum))
+        weighted_quadratic = weights * quadratic_term
+        denom = float(np.dot(weighted_quadratic, quadratic_term))
         if denom == 0.0:
             raise RuntimeError("Cannot fit beta: denominator is zero.")
-        return max(0.0, float(np.dot(weighted_d2, y_shift) / denom))
+        return max(0.0, float(np.dot(weighted_quadratic, y_shift) / denom))
 
     def _fit_free_alpha_beta(
         self,
         dose_sum: np.ndarray,
-        dose2_sum: np.ndarray,
+        quadratic_term: np.ndarray,
         sf: np.ndarray,
         sigma_sf: np.ndarray,
     ) -> Tuple[float, float]:
-        design = np.column_stack((dose_sum, dose2_sum))
+        design = np.column_stack((dose_sum, quadratic_term))
         if np.linalg.matrix_rank(design) < 2:
             raise RuntimeError(
                 "Need at least two linearly independent regimens to fit both alpha and beta."
@@ -765,9 +1007,9 @@ class Fitter:
             warnings.simplefilter("ignore", OptimizeWarning)
             params, _ = curve_fit(
                 self._lq_model,
-                (dose_sum, dose2_sum),
+                (dose_sum, quadratic_term),
                 sf,
-                p0=self._initial_guess(dose_sum, dose2_sum, sf),
+                p0=self._initial_guess(dose_sum, quadratic_term, sf),
                 bounds=(0.0, np.inf),
                 sigma=np.clip(sigma_sf, 1.0e-8, None),
                 absolute_sigma=False,
@@ -779,9 +1021,13 @@ class Fitter:
     @staticmethod
     def _to_arrays(
         experiments: Sequence[TumorExperiment],
+        repair_rate_per_day: Optional[float] = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         dose_sum = np.array([experiment.dose_sum for experiment in experiments], dtype=float)
-        dose2_sum = np.array([experiment.dose2_sum for experiment in experiments], dtype=float)
+        quadratic_term = np.array(
+            [experiment.quadratic_term(repair_rate_per_day) for experiment in experiments],
+            dtype=float,
+        )
         sf = np.array([experiment.sf for experiment in experiments], dtype=float)
         sigma_sf = np.array(
             [
@@ -798,7 +1044,7 @@ class Fitter:
             dtype=float,
         )
         sigma_log_sf = np.clip(sigma_sf / np.clip(sf, 1.0e-8, None), 1.0e-8, None)
-        return dose_sum, dose2_sum, sf, sigma_sf, sigma_log_sf
+        return dose_sum, quadratic_term, sf, sigma_sf, sigma_log_sf
 
     def fit(
         self,
@@ -811,14 +1057,17 @@ class Fitter:
         if len(experiments) < 2:
             raise RuntimeError("Need at least two valid experiments for fitting.")
 
-        dose_sum, dose2_sum, sf, sigma_sf, sigma_log_sf = self._to_arrays(experiments)
+        dose_sum, quadratic_term, sf, sigma_sf, sigma_log_sf = self._to_arrays(
+            experiments,
+            repair_rate_per_day=self.repair_rate_per_day,
+        )
         if np.any(~np.isfinite(sf)) or np.any(sf <= 0.0) or np.any(sf > 1.0):
             raise ValueError("All SF values must be finite and in the interval (0, 1].")
 
         if self.alpha_fixed is not None:
             beta = self._fit_beta_for_fixed_alpha(
                 dose_sum=dose_sum,
-                dose2_sum=dose2_sum,
+                quadratic_term=quadratic_term,
                 sf=sf,
                 sigma_log_sf=sigma_log_sf,
                 alpha=self.alpha_fixed,
@@ -827,7 +1076,7 @@ class Fitter:
         else:
             alpha, beta = self._fit_free_alpha_beta(
                 dose_sum=dose_sum,
-                dose2_sum=dose2_sum,
+                quadratic_term=quadratic_term,
                 sf=sf,
                 sigma_sf=sigma_sf,
             )
@@ -839,6 +1088,95 @@ class Fitter:
             train_kind=train_kind,
             family=normalize_family(family),
             sf_mode=sf_mode or self.sf_mode,
+            repair_half_time_hours=self.repair_half_time_hours,
+        )
+
+    def compute_timing_diagnostics(
+        self,
+        experiments: Sequence[TumorExperiment],
+    ) -> TimingDiagnostics:
+        """Describe whether the training set can really inform time-aware fitting."""
+        experiments = list(experiments)
+        fractionated = [experiment for experiment in experiments if experiment.regimen_kind == "fractionated"]
+        explicit_timing_count = sum(1 for experiment in experiments if experiment.has_explicit_timing)
+        explicit_fractionated_count = sum(
+            1 for experiment in fractionated if experiment.has_explicit_timing
+        )
+        unique_schedule_count = len(
+            {
+                tuple(round(day, 8) for day in experiment.resolved_schedule_days)
+                for experiment in fractionated
+            }
+        )
+        schedule_groups: Dict[Tuple[float, ...], set[Tuple[float, ...]]] = {}
+        for experiment in fractionated:
+            dose_key = tuple(round(dose, 8) for dose in experiment.fractions)
+            schedule_key = tuple(round(day, 8) for day in experiment.resolved_schedule_days)
+            schedule_groups.setdefault(dose_key, set()).add(schedule_key)
+        same_fractions_multi_timing_count = sum(
+            1 for schedules in schedule_groups.values() if len(schedules) > 1
+        )
+
+        repair_rate = self.repair_rate_per_day
+        quadratic_term = np.array(
+            [experiment.quadratic_term(repair_rate) for experiment in experiments],
+            dtype=float,
+        )
+        unique_quadratic_count = len({round(value, 8) for value in quadratic_term})
+
+        if experiments:
+            dose_sum = np.array([experiment.dose_sum for experiment in experiments], dtype=float)
+            design = np.column_stack((dose_sum, quadratic_term))
+            design_rank = int(np.linalg.matrix_rank(design))
+            condition_number = None
+            if len(experiments) >= 2 and design_rank >= 2:
+                condition_number = float(np.linalg.cond(design))
+        else:
+            design_rank = 0
+            condition_number = None
+
+        warnings_list: List[str] = []
+        if repair_rate is not None:
+            if len(experiments) < 3:
+                warnings_list.append(
+                    "Only two training regimens are available; repair-aware alpha/beta is likely unstable."
+                )
+            if not fractionated:
+                warnings_list.append("No fractionated regimens are present in the training set.")
+            if explicit_fractionated_count == 0 and fractionated:
+                warnings_list.append(
+                    "Fractionated regimens have no explicit t= timing metadata; default 24h spacing is being used."
+                )
+            if explicit_fractionated_count > 0 and same_fractions_multi_timing_count == 0:
+                warnings_list.append(
+                    "No matched dose pattern is represented at multiple interval schedules, so timing contrast is weak."
+                )
+            if unique_quadratic_count < 2:
+                warnings_list.append(
+                    "The repair-aware quadratic term does not vary across training regimens."
+                )
+            if design_rank < 2:
+                warnings_list.append(
+                    "The repair-aware design matrix rank is below 2, so alpha and beta are not identifiable."
+                )
+            elif condition_number is not None and condition_number > 1.0e4:
+                warnings_list.append(
+                    f"The repair-aware design matrix is ill-conditioned (cond={condition_number:.2g})."
+                )
+
+        return TimingDiagnostics(
+            repair_model_enabled=repair_rate is not None,
+            repair_half_time_hours=self.repair_half_time_hours,
+            train_count=len(experiments),
+            fractionated_count=len(fractionated),
+            explicit_timing_count=explicit_timing_count,
+            explicit_fractionated_count=explicit_fractionated_count,
+            unique_schedule_count=unique_schedule_count,
+            same_fractions_multi_timing_count=same_fractions_multi_timing_count,
+            unique_quadratic_count=unique_quadratic_count,
+            design_rank=design_rank,
+            condition_number=condition_number,
+            warnings=tuple(warnings_list),
         )
 
     def evaluate(
@@ -956,6 +1294,13 @@ class Fitter:
             f"sf_mode={result.sf_mode} family={family} "
             f"train_kind={result.train_kind} count={result.train_count}"
         )
+        if result.repair_half_time_hours is not None and result.repair_half_time_hours > 0.0:
+            print(
+                "model=time-aware-lq "
+                f"repair_half_time_hours={result.repair_half_time_hours:.3f}"
+            )
+        else:
+            print("model=classic-lq")
         for experiment in experiments:
             print(experiment.report())
         print("\n===== FIT RESULT =====")
@@ -1145,6 +1490,7 @@ def analyze_fitter(
                 family=run_family,
                 experiments=experiments,
             )
+            timing_diagnostics = fitter.compute_timing_diagnostics(train) if train else None
 
             if len(train) < 2:
                 reason = (
@@ -1170,6 +1516,7 @@ def analyze_fitter(
                         validation=tuple(validation),
                         train_kind=fit_kind,
                         validation_kind=validate_kind,
+                        timing_diagnostics=timing_diagnostics,
                     )
                 )
                 continue
@@ -1218,6 +1565,7 @@ def analyze_fitter(
                     fit_result=fit_result,
                     validation_summary=validation_summary,
                     bootstrap_summary=bootstrap_summary,
+                    timing_diagnostics=timing_diagnostics,
                 )
             )
 
@@ -1228,6 +1576,7 @@ def analyze_files(
     files: Optional[List[str]],
     sf_modes: Sequence[str],
     alpha: Optional[float],
+    repair_half_time_hours: Optional[float],
     min_sf: float,
     fit_kind: RegimenKind,
     validate_kind: ValidationKind,
@@ -1246,6 +1595,7 @@ def analyze_files(
         sf_mode=sf_modes[0] if sf_modes else "absolute",
         min_sf=min_sf,
         alpha_fixed=alpha,
+        repair_half_time_hours=repair_half_time_hours,
         verbose=verbose,
         aggregate_regimens=aggregate_regimens,
         dedupe_regimens=dedupe_regimens,
@@ -1276,6 +1626,24 @@ def report_analysis_run(fitter: Fitter, run: AnalysisRunResult) -> None:
         return
 
     fitter.report_training(run.train, run.fit_result)
+    diagnostics = run.timing_diagnostics
+    if diagnostics is not None and diagnostics.repair_model_enabled:
+        print("\n# Timing diagnostics:")
+        print(
+            "timing: "
+            f"train={diagnostics.train_count} "
+            f"fractionated={diagnostics.fractionated_count} "
+            f"explicit_timing={diagnostics.explicit_timing_count} "
+            f"explicit_fractionated={diagnostics.explicit_fractionated_count} "
+            f"unique_fractionated_schedules={diagnostics.unique_schedule_count} "
+            f"matched_patterns_with_multi_timing={diagnostics.same_fractions_multi_timing_count} "
+            f"unique_quadratic={diagnostics.unique_quadratic_count} "
+            f"design_rank={diagnostics.design_rank}"
+        )
+        if diagnostics.condition_number is not None:
+            print(f"condition_number={diagnostics.condition_number:.2g}")
+        for warning in diagnostics.warnings:
+            print(f"WARNING timing: {warning}")
 
     if run.validation_kind != "none":
         if run.validation_summary is None:
@@ -1311,6 +1679,14 @@ def parse_cli() -> argparse.Namespace:
         help="Fix alpha and fit only beta (example: --alpha 0.3)",
     )
     parser.add_argument(
+        "--repair-half-time-hours",
+        type=float,
+        help=(
+            "Repair half-time in hours for time-aware fractionation fitting. "
+            "When omitted, the classic schedule-free LQ model is used."
+        ),
+    )
+    parser.add_argument(
         "--min-sf",
         type=float,
         default=1.0,
@@ -1344,12 +1720,15 @@ def parse_cli() -> argparse.Namespace:
     parser.add_argument(
         "--aggregate-regimens",
         action="store_true",
-        help="Average repeated experiments with the same (family, D, D2) into one weighted regimen",
+        help=(
+            "Average repeated experiments with the same family, fraction sizes, and timing "
+            "into one weighted regimen"
+        ),
     )
     parser.add_argument(
         "--dedupe-regimens",
         action="store_true",
-        help="Keep only one experiment per (family, D, D2) regimen",
+        help="Keep only one experiment per identical family + fraction/timing regimen",
     )
     parser.add_argument(
         "--bootstrap",
@@ -1374,6 +1753,7 @@ def run_fit(
     files: Optional[List[str]],
     sf_modes: Sequence[str],
     alpha: Optional[float],
+    repair_half_time_hours: Optional[float],
     min_sf: float,
     fit_kind: RegimenKind,
     validate_kind: ValidationKind,
@@ -1390,6 +1770,7 @@ def run_fit(
         files=files,
         sf_modes=sf_modes,
         alpha=alpha,
+        repair_half_time_hours=repair_half_time_hours,
         min_sf=min_sf,
         fit_kind=fit_kind,
         validate_kind=validate_kind,
@@ -1421,6 +1802,7 @@ def main() -> None:
             files=INLINE_FILES,
             sf_modes=INLINE_SF_MODES,
             alpha=INLINE_ALPHA,
+            repair_half_time_hours=INLINE_REPAIR_HALF_TIME_HOURS,
             min_sf=INLINE_MIN_SF,
             fit_kind=INLINE_FIT_KIND,
             validate_kind=INLINE_VALIDATE_KIND,
@@ -1440,6 +1822,7 @@ def main() -> None:
         files=args.files,
         sf_modes=parse_sf_modes(args.sf),
         alpha=args.alpha,
+        repair_half_time_hours=args.repair_half_time_hours,
         min_sf=args.min_sf,
         fit_kind=args.fit_kind,
         validate_kind=args.validate_kind,
