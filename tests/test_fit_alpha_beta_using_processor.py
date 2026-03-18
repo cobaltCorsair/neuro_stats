@@ -2,6 +2,7 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -9,12 +10,14 @@ from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_
     Fitter,
     RawTumorSeries,
     AnalysisRunSummary,
+    InventoryReport,
     TumorExperiment,
     analyze_fitter,
     infer_radiation_family,
     is_control_file,
     parse_schedule_days,
     parse_sf_modes,
+    parse_time_days,
     resolve_requested_families,
 )
 
@@ -147,6 +150,10 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertAlmostEqual(schedule_days[1], 1.0 / 24.0, places=8)
         self.assertAlmostEqual(schedule_days[2], 2.0 / 24.0, places=8)
 
+    def test_parse_time_days_falls_back_to_indices_for_non_numeric_labels(self) -> None:
+        self.assertEqual(parse_time_days(["0", "1.5", "3"]), (0.0, 1.5, 3.0))
+        self.assertEqual(parse_time_days(["day0", "day2", "day5"]), (0.0, 1.0, 2.0))
+
     def test_available_families_and_resolution_for_batch_mode(self) -> None:
         fitter = Fitter(
             sf_mode="absolute",
@@ -202,9 +209,9 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
             Fitter.write_analysis_summaries_csv(output, summaries)
             text = output.read_text(encoding="utf-8")
 
-        self.assertIn("sf_mode,family,status,total_count", text)
-        self.assertIn("absolute,e,ok,3,2,1,2,1,0.1,0.02,5.0,", text)
-        self.assertIn("absolute,n,skipped,1,1,0,1,0,,,", text)
+        self.assertIn("sf_mode,response_mode,model_kind,family,status,total_count", text)
+        self.assertIn("absolute,scalar,classic_lq,e,ok,3,2,1,2,1,0.1,0.02,5.0,", text)
+        self.assertIn("absolute,scalar,classic_lq,n,skipped,1,1,0,1,0,,,", text)
 
     def test_aggregate_experiments_merges_repeats(self) -> None:
         experiments = [
@@ -379,6 +386,211 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
 
         self.assertAlmostEqual(result.alpha, expected_alpha, places=6)
         self.assertAlmostEqual(result.beta, expected_beta, places=6)
+
+    def test_fit_linear_model_recovers_alpha(self) -> None:
+        expected_alpha = 0.08
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+        )
+        experiments = [
+            TumorExperiment(Path("a.xlsx"), (8.0,), math.exp(-(expected_alpha * 8.0)), "y"),
+            TumorExperiment(Path("b.xlsx"), (10.0,), math.exp(-(expected_alpha * 10.0)), "y"),
+            TumorExperiment(Path("c.xlsx"), (12.0,), math.exp(-(expected_alpha * 12.0)), "y"),
+        ]
+
+        result = fitter.fit(experiments=experiments, model_kind="linear")
+
+        self.assertAlmostEqual(result.alpha, expected_alpha, places=6)
+        self.assertAlmostEqual(result.beta, 0.0, places=8)
+
+    def test_curve_mode_fit_recovers_alpha_beta_and_clearance(self) -> None:
+        expected_alpha = 0.08
+        expected_beta = 0.012
+        expected_clearance = 0.35
+        time_days = (0.0, 1.0, 2.0, 3.0)
+        control_relative_curve = (1.0, 1.10, 1.25, 1.45)
+        templates = [
+            ("single10.xlsx", (10.0,)),
+            ("split10.xlsx", (5.0, 5.0)),
+            ("single12.xlsx", (12.0,)),
+        ]
+
+        experiments = []
+        for name, fractions in templates:
+            dose_sum = sum(fractions)
+            quadratic = sum(dose * dose for dose in fractions)
+            sf = math.exp(-(expected_alpha * dose_sum + expected_beta * quadratic))
+            curve = [1.0]
+            for day, control_relative in zip(time_days[1:], control_relative_curve[1:]):
+                curve.append(
+                    sf + (1.0 - sf) * math.exp(-expected_clearance * day) / control_relative
+                )
+            experiments.append(
+                TumorExperiment(
+                    path=Path(name),
+                    fractions=fractions,
+                    sf=sf,
+                    family="y",
+                    time_days=time_days,
+                    curve_response=tuple(curve),
+                    control_relative_curve=control_relative_curve,
+                    schedule_days=tuple(float(index) for index in range(len(fractions))),
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+        )
+        result = fitter.fit(
+            experiments=experiments,
+            response_mode="curve",
+            model_kind="classic_lq",
+        )
+
+        self.assertAlmostEqual(result.alpha, expected_alpha, places=4)
+        self.assertAlmostEqual(result.beta, expected_beta, places=4)
+        self.assertIsNotNone(result.curve_clearance_rate)
+        self.assertAlmostEqual(result.curve_clearance_rate or 0.0, expected_clearance, places=4)
+
+    def test_fit_lq_l_model_recovers_transition_dose(self) -> None:
+        expected_alpha = 0.08
+        expected_beta = 0.012
+        expected_transition_dose = 6.0
+        experiments = []
+        for name, fractions in (
+            ("single4.xlsx", (4.0,)),
+            ("single8.xlsx", (8.0,)),
+            ("single12.xlsx", (12.0,)),
+            ("split6_6.xlsx", (6.0, 6.0)),
+            ("split4_8.xlsx", (4.0, 8.0)),
+        ):
+            exponent = sum(
+                Fitter.lql_fraction_kill(
+                    dose=dose,
+                    alpha=expected_alpha,
+                    beta=expected_beta,
+                    transition_dose=expected_transition_dose,
+                )
+                for dose in fractions
+            )
+            experiments.append(
+                TumorExperiment(
+                    Path(name),
+                    fractions,
+                    math.exp(-exponent),
+                    "y",
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+        )
+        result = fitter.fit(experiments=experiments, model_kind="lq_l")
+
+        self.assertAlmostEqual(result.alpha, expected_alpha, places=4)
+        self.assertAlmostEqual(result.beta, expected_beta, places=4)
+        self.assertIsNotNone(result.transition_dose)
+        self.assertAlmostEqual(result.transition_dose or 0.0, expected_transition_dose, places=4)
+
+    def test_compare_models_keeps_classic_lq_ahead_of_linear_on_lq_data(self) -> None:
+        expected_alpha = 0.12
+        expected_beta = 0.03
+        experiments = [
+            TumorExperiment(
+                Path("single10.xlsx"),
+                (10.0,),
+                math.exp(-(expected_alpha * 10.0 + expected_beta * 100.0)),
+                "y",
+            ),
+            TumorExperiment(
+                Path("split10.xlsx"),
+                (5.0, 5.0),
+                math.exp(-(expected_alpha * 10.0 + expected_beta * 50.0)),
+                "y",
+            ),
+            TumorExperiment(
+                Path("single12.xlsx"),
+                (12.0,),
+                math.exp(-(expected_alpha * 12.0 + expected_beta * 144.0)),
+                "y",
+            ),
+        ]
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+        )
+
+        comparison = fitter.compare_models(
+            experiments=experiments,
+            response_mode="scalar",
+            family="y",
+            sf_mode="absolute",
+        )
+
+        positions = {row.model_kind: index for index, row in enumerate(comparison)}
+        self.assertIn("classic_lq", positions)
+        self.assertIn("linear", positions)
+        self.assertLess(positions["classic_lq"], positions["linear"])
+        self.assertEqual(comparison[positions["classic_lq"]].status, "ok")
+
+    def test_compare_models_ranks_lq_l_first_on_lq_l_data(self) -> None:
+        expected_alpha = 0.08
+        expected_beta = 0.012
+        expected_transition_dose = 6.0
+        experiments = []
+        for name, fractions in (
+            ("single4.xlsx", (4.0,)),
+            ("single8.xlsx", (8.0,)),
+            ("single12.xlsx", (12.0,)),
+            ("split6_6.xlsx", (6.0, 6.0)),
+            ("split4_8.xlsx", (4.0, 8.0)),
+        ):
+            exponent = sum(
+                Fitter.lql_fraction_kill(
+                    dose=dose,
+                    alpha=expected_alpha,
+                    beta=expected_beta,
+                    transition_dose=expected_transition_dose,
+                )
+                for dose in fractions
+            )
+            experiments.append(
+                TumorExperiment(
+                    Path(name),
+                    fractions,
+                    math.exp(-exponent),
+                    "y",
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+        )
+        comparison = fitter.compare_models(
+            experiments=experiments,
+            response_mode="scalar",
+            family="y",
+            sf_mode="absolute",
+        )
+
+        self.assertGreaterEqual(len(comparison), 3)
+        self.assertEqual(comparison[0].model_kind, "lq_l")
+        self.assertEqual(comparison[0].status, "ok")
+        self.assertEqual(comparison[0].reason, "rank=1")
 
     def test_compute_timing_diagnostics_warns_for_weak_repair_dataset(self) -> None:
         fitter = Fitter(
@@ -577,9 +789,64 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
 
     def test_infer_radiation_family_from_file_name(self) -> None:
         self.assertEqual(infer_radiation_family(Path("19.03.2025_y_40.xlsx")), "y")
-        self.assertEqual(infer_radiation_family(Path("22.10.2025_p16_p16_p16_in_peak.xlsx")), "p")
+        self.assertEqual(infer_radiation_family(Path("22.10.2025_p16_p16_p16_in_peak.xlsx")), "p_peak")
+        self.assertEqual(infer_radiation_family(Path("08.10.2021_p_32_прострел.xlsx")), "p_through")
         self.assertEqual(infer_radiation_family(Path("02.02.2023_n_12.xlsx")), "n")
         self.assertEqual(infer_radiation_family(Path("15.01.2026_e_18.xlsx")), "e")
+        self.assertEqual(infer_radiation_family(Path("05.12.2018_c_12.xlsx")), "c")
+        self.assertEqual(infer_radiation_family(Path("10.12.2014_с_12.xlsx")), "c")
+
+    def test_inspect_files_marks_fit_ready_and_notes(self) -> None:
+        control = Path("control.xlsx").resolve()
+        peak_a = Path("22.10.2025_p40_in_peak.xlsx").resolve()
+        peak_b = Path("22.10.2025_p32_in_peak.xlsx").resolve()
+        generic_proton = Path("19.04.2024_p_36.xlsx").resolve()
+
+        def fake_processor(path_str: str):
+            path = Path(path_str).resolve()
+            if path == peak_a:
+                return ["p = 40 Gy"], [], [], np.ones((2, 3), dtype=float)
+            if path == peak_b:
+                return ["p = 32 Gy"], [], [], np.ones((2, 3), dtype=float)
+            if path == generic_proton:
+                return ["p = 4 Gy", "p = 4 Gy", "p = 32 Gy"], [], [], np.ones((2, 3), dtype=float)
+            raise AssertionError(f"Unexpected path {path}")
+
+        with patch(
+            "work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor.process_tumor_data_excel",
+            side_effect=fake_processor,
+        ):
+            report = Fitter.inspect_files([control, peak_a, peak_b, generic_proton])
+
+        self.assertIsInstance(report, InventoryReport)
+        rows_by_name = {row.path.name: row for row in report.rows}
+        self.assertTrue(rows_by_name["22.10.2025_p40_in_peak.xlsx"].fit_ready)
+        self.assertTrue(rows_by_name["22.10.2025_p32_in_peak.xlsx"].fit_ready)
+        self.assertEqual(rows_by_name["22.10.2025_p40_in_peak.xlsx"].control_label, "control.xlsx")
+
+        generic_notes = rows_by_name["19.04.2024_p_36.xlsx"].notes_label
+        self.assertFalse(rows_by_name["19.04.2024_p_36.xlsx"].fit_ready)
+        self.assertIn("proton context is not specified", generic_notes)
+        self.assertIn("fewer than 2 analyzable experiments", generic_notes)
+
+        family_summary = {summary.family: summary for summary in report.family_summaries}
+        self.assertTrue(family_summary["p_peak"].fit_ready)
+        self.assertFalse(family_summary["p"].fit_ready)
+
+    def test_inspect_files_requires_control_mapping_when_multiple_controls_exist(self) -> None:
+        control_a = Path("control_a.xlsx").resolve()
+        control_b = Path("control_b.xlsx").resolve()
+        experiment = Path("02.06.2025_y_45.xlsx").resolve()
+
+        with patch(
+            "work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor.process_tumor_data_excel",
+            return_value=(["y = 45 Gy"], [], [], np.ones((2, 3), dtype=float)),
+        ):
+            report = Fitter.inspect_files([control_a, control_b, experiment])
+
+        row = next(row for row in report.rows if row.path == experiment)
+        self.assertFalse(row.fit_ready)
+        self.assertIn("multiple control files loaded; assign one explicitly", row.notes_label)
 
     def test_is_control_file_uses_file_name(self) -> None:
         self.assertTrue(is_control_file(Path("control_2016.xlsx")))
@@ -624,6 +891,9 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
             validate_kind="fractionated",
             family="y",
             by_family=False,
+            response_mode="scalar",
+            requested_model_kind="auto",
+            compare_models=True,
             bootstrap=0,
             bootstrap_seed=None,
         )
@@ -636,8 +906,10 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertEqual(len(run.train), 2)
         self.assertEqual(len(run.validation), 1)
         self.assertIsNotNone(run.fit_result)
+        self.assertIsNotNone(run.training_metrics)
         self.assertIsNotNone(run.validation_summary)
         self.assertIsNotNone(run.timing_diagnostics)
+        self.assertGreaterEqual(len(run.model_comparison), 2)
         self.assertFalse(run.timing_diagnostics.repair_model_enabled)
         self.assertAlmostEqual(run.fit_result.alpha, expected_alpha, places=6)
         self.assertAlmostEqual(run.fit_result.beta, expected_beta, places=6)

@@ -52,6 +52,60 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_u
   --sf absolute --sf absindex:1 --sf absindex:2
 ```
 
+## Response modes
+
+Теперь fitter поддерживает два режима отклика:
+
+- `scalar`
+  - старый режим;
+  - для каждого режима облучения строится один `SF`, и fit идет по набору точек `SF(D)`.
+- `curve`
+  - новый режим;
+  - вместо одного `SF` используется вся нормированная кривая ответа опухоли;
+  - fitter дополнительно оценивает `curve_clearance_rate`, чтобы описать возврат от раннего ответа к более поздней динамике.
+
+CLI:
+
+```bash
+--response-mode scalar
+--response-mode curve
+```
+
+Замечание:
+- при `curve` fitter использует только первый `--sf`, потому что остальные `SF`-метрики относятся к scalar-постановке.
+
+## Model selection and comparison
+
+Доступные семейства моделей:
+
+- `--model-kind auto`
+- `--model-kind classic_lq`
+- `--model-kind repair_lq`
+- `--model-kind lq_l`
+- `--model-kind linear`
+
+Смысл:
+
+- `classic_lq`
+  - `SF = exp(-alpha * D - beta * sum(d_i^2))`
+- `repair_lq`
+  - тот же LQ, но с учетом `t=` интервалов и репарации через `--repair-half-time-hours`
+- `lq_l`
+  - LQ-L with transition dose;
+  - до переходной дозы используется обычный квадратичный член, а выше включается линейный хвост
+- `linear`
+  - частный случай без квадратичного члена, то есть `beta = 0`
+
+Для явного сравнения моделей:
+
+```bash
+--compare-models
+```
+
+В этом режиме fitter считает несколько кандидатов и ранжирует их по ошибке на train-наборе (`MAE`, `RMSE`, `mean_abs_log_error`, `AIC`).
+
+Для `LQ-L` в результате дополнительно выводится `transition_dose`.
+
 ## Family
 
 Скрипт пытается автоматически определить family по имени файла:
@@ -70,6 +124,21 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_u
 Разные family не стоит смешивать в одном fit без отдельного радиобиологического обоснования.
 
 ## Train / Validation
+
+Current family mapping used by the code:
+
+- `y` -> gamma / photon series
+- `p` -> proton series without an explicit beam-position marker
+- `p_peak` -> proton series in peak (`in_peak`, `в_пике`)
+- `p_through` -> proton series in shoot-through / pass-through (`прострел`)
+- `n` -> neutron series
+- `e` -> electron series
+- `c` -> carbon-ion C-12 series (`c` or Cyrillic `с` in the file name)
+
+Examples:
+- `22.10.2025_p40_in_peak.xlsx` -> `p_peak`
+- `08.10.2021_p_32_прострел.xlsx` -> `p_through`
+- `05.12.2018_c_12.xlsx` -> `c`
 
 Режимы можно делить на:
 
@@ -179,6 +248,8 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_u
 
 CSV содержит:
 - `sf_mode`
+- `response_mode`
+- `model_kind`
 - `family`
 - `status`
 - `total_count`
@@ -216,6 +287,27 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_u
   --family y ^
   --sf absolute ^
   --sf absindex:1
+```
+
+Full-curve fit:
+
+```bash
+python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
+  --files *.xlsx ^
+  --family y ^
+  --response-mode curve ^
+  --model-kind classic_lq
+```
+
+Сравнение моделей на одном train-наборе:
+
+```bash
+python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
+  --files *.xlsx ^
+  --family y ^
+  --response-mode curve ^
+  --repair-half-time-hours 1.0 ^
+  --compare-models
 ```
 
 Batch по всем family + CSV:
@@ -276,6 +368,13 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_g
 Важно: в CLI поведение по умолчанию осталось прежним. Если передать несколько control-файлов напрямую в `fit_alpha_beta_using_processor.py`, они будут усреднены в одну общую control-кривую.
 
 ## Что сильнее всего улучшает точность alpha/beta
+
+GUI inventory mode:
+
+- `Scan inventory` inspects the loaded folder before fitting
+- the `Inventory` tab shows file-by-file `family`, `kind`, `fractions`, `schedule`, `control`, `fit ready`, and `notes`
+- proton files are now separated into `p_peak` and `p_through`
+- carbon-ion C-12 files are tracked as family `c`
 
 На практике самый большой прирост точности дают не косметические изменения fit, а следующие шаги:
 

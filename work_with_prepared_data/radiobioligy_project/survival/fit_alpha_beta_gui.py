@@ -41,6 +41,7 @@ from PyQt6.QtWidgets import (
 from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor import (
     AnalysisRunResult,
     Fitter,
+    InventoryReport,
     TumorExperiment,
     analyze_files,
     format_fractions,
@@ -58,6 +59,8 @@ UNASSIGNED_CONTROL = "__unassigned_control__"
 
 SUMMARY_HEADERS = [
     "SF mode",
+    "Response",
+    "Model",
     "Family",
     "Status",
     "Total",
@@ -114,6 +117,18 @@ ASSIGNMENT_HEADERS = [
     "Control",
 ]
 
+INVENTORY_HEADERS = [
+    "File",
+    "Role",
+    "Family",
+    "Kind",
+    "Fractions",
+    "Schedule",
+    "Control",
+    "Fit ready",
+    "Notes",
+]
+
 
 class FileDropListWidget(QListWidget):
     """List widget that accepts dropped local files."""
@@ -156,6 +171,7 @@ class FitAlphaBetaWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.run_results: List[AnalysisRunResult] = []
+        self.inventory_report: Optional[InventoryReport] = None
         self.growth_predictor_window: Optional[TumorGrowthPredictorWindow] = None
         self.setWindowTitle("Survival LQ fitter")
         self.resize(1400, 900)
@@ -172,6 +188,10 @@ class FitAlphaBetaWindow(QMainWindow):
         self.run_button = QPushButton("Run fit")
         self.run_button.clicked.connect(self.run_analysis)
         action_row.addWidget(self.run_button)
+
+        self.inventory_button = QPushButton("Scan inventory")
+        self.inventory_button.clicked.connect(self.scan_inventory)
+        action_row.addWidget(self.inventory_button)
 
         self.predictor_button = QPushButton("Open growth predictor")
         self.predictor_button.clicked.connect(self.open_growth_predictor)
@@ -253,7 +273,7 @@ class FitAlphaBetaWindow(QMainWindow):
         layout.addWidget(QLabel("Family"), 0, 2)
         self.family_combo = QComboBox(self)
         self.family_combo.addItem("all", None)
-        for family in ("y", "p", "n", "e"):
+        for family in ("y", "p", "p_peak", "p_through", "n", "e", "c"):
             self.family_combo.addItem(family, family)
         layout.addWidget(self.family_combo, 0, 3)
 
@@ -295,29 +315,53 @@ class FitAlphaBetaWindow(QMainWindow):
         self.min_sf_spin.setValue(1.0)
         layout.addWidget(self.min_sf_spin, 2, 5)
 
+        layout.addWidget(QLabel("Response mode"), 3, 0)
+        self.response_mode_combo = QComboBox(self)
+        self.response_mode_combo.addItem("scalar", "scalar")
+        self.response_mode_combo.addItem("curve", "curve")
+        self.response_mode_combo.setToolTip(
+            "Scalar fits one SF per regimen. Curve uses the full normalized tumor-volume response."
+        )
+        layout.addWidget(self.response_mode_combo, 3, 1)
+
+        layout.addWidget(QLabel("Model"), 3, 2)
+        self.model_kind_combo = QComboBox(self)
+        self.model_kind_combo.addItem("auto", "auto")
+        self.model_kind_combo.addItem("classic_lq", "classic_lq")
+        self.model_kind_combo.addItem("repair_lq", "repair_lq")
+        self.model_kind_combo.addItem("lq_l", "lq_l")
+        self.model_kind_combo.addItem("linear", "linear")
+        layout.addWidget(self.model_kind_combo, 3, 3)
+
+        self.compare_models_check = QCheckBox("Compare models", self)
+        self.compare_models_check.setToolTip(
+            "Run classic LQ, repair-aware LQ, LQ-L and linear candidates, then rank them by fit error."
+        )
+        layout.addWidget(self.compare_models_check, 3, 4, 1, 2)
+
         self.fix_alpha_check = QCheckBox("Fix alpha", self)
         self.fix_alpha_check.toggled.connect(self._update_alpha_enabled)
-        layout.addWidget(self.fix_alpha_check, 3, 0)
+        layout.addWidget(self.fix_alpha_check, 4, 0)
 
         self.alpha_spin = QDoubleSpinBox(self)
         self.alpha_spin.setRange(0.0, 10.0)
         self.alpha_spin.setDecimals(6)
         self.alpha_spin.setSingleStep(0.001)
         self.alpha_spin.setEnabled(False)
-        layout.addWidget(self.alpha_spin, 3, 1)
+        layout.addWidget(self.alpha_spin, 4, 1)
 
-        layout.addWidget(QLabel("Bootstrap"), 3, 2)
+        layout.addWidget(QLabel("Bootstrap"), 4, 2)
         self.bootstrap_spin = QSpinBox(self)
         self.bootstrap_spin.setRange(0, 100000)
         self.bootstrap_spin.setValue(0)
-        layout.addWidget(self.bootstrap_spin, 3, 3)
+        layout.addWidget(self.bootstrap_spin, 4, 3)
 
-        layout.addWidget(QLabel("Bootstrap seed"), 3, 4)
+        layout.addWidget(QLabel("Bootstrap seed"), 4, 4)
         self.bootstrap_seed_edit = QLineEdit(self)
         self.bootstrap_seed_edit.setPlaceholderText("optional")
-        layout.addWidget(self.bootstrap_seed_edit, 3, 5)
+        layout.addWidget(self.bootstrap_seed_edit, 4, 5)
 
-        layout.addWidget(QLabel("Repair T1/2 (h)"), 4, 0)
+        layout.addWidget(QLabel("Repair T1/2 (h)"), 5, 0)
         self.repair_half_time_spin = QDoubleSpinBox(self)
         self.repair_half_time_spin.setRange(0.0, 240.0)
         self.repair_half_time_spin.setDecimals(3)
@@ -327,25 +371,25 @@ class FitAlphaBetaWindow(QMainWindow):
             "0 keeps the classic schedule-free LQ model. Positive values enable "
             "time-aware repair for fractionated regimens with t= intervals."
         )
-        layout.addWidget(self.repair_half_time_spin, 4, 1)
+        layout.addWidget(self.repair_half_time_spin, 5, 1)
 
         self.aggregate_check = QCheckBox("Aggregate repeated regimens", self)
-        layout.addWidget(self.aggregate_check, 4, 2, 1, 2)
+        layout.addWidget(self.aggregate_check, 5, 2, 1, 2)
 
         self.dedupe_check = QCheckBox("Deduplicate regimens", self)
-        layout.addWidget(self.dedupe_check, 4, 4, 1, 2)
+        layout.addWidget(self.dedupe_check, 5, 4, 1, 2)
 
         self.verbose_check = QCheckBox("Verbose CLI logging in terminal", self)
-        layout.addWidget(self.verbose_check, 5, 0, 1, 3)
+        layout.addWidget(self.verbose_check, 6, 0, 1, 3)
 
-        layout.addWidget(QLabel("Summary CSV"), 6, 0)
+        layout.addWidget(QLabel("Summary CSV"), 7, 0)
         self.summary_csv_edit = QLineEdit(self)
         self.summary_csv_edit.setPlaceholderText("optional path for summary csv")
-        layout.addWidget(self.summary_csv_edit, 6, 1, 1, 4)
+        layout.addWidget(self.summary_csv_edit, 7, 1, 1, 4)
 
         summary_browse_button = QPushButton("Browse")
         summary_browse_button.clicked.connect(self.choose_summary_csv)
-        layout.addWidget(summary_browse_button, 6, 5)
+        layout.addWidget(summary_browse_button, 7, 5)
 
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(3, 1)
@@ -383,6 +427,16 @@ class FitAlphaBetaWindow(QMainWindow):
 
         self.bootstrap_table = self._create_table(BOOTSTRAP_HEADERS)
         self.detail_tabs.addTab(self.bootstrap_table, "Bootstrap")
+
+        inventory_panel = QWidget(self)
+        inventory_layout = QVBoxLayout(inventory_panel)
+        self.inventory_table = self._create_table(INVENTORY_HEADERS)
+        inventory_layout.addWidget(self.inventory_table, 1)
+        self.inventory_text = QPlainTextEdit(self)
+        self.inventory_text.setReadOnly(True)
+        self.inventory_text.setMaximumHeight(180)
+        inventory_layout.addWidget(self.inventory_text)
+        self.detail_tabs.addTab(inventory_panel, "Inventory")
 
         self.details_text = QPlainTextEdit(self)
         self.details_text.setReadOnly(True)
@@ -453,6 +507,7 @@ class FitAlphaBetaWindow(QMainWindow):
         else:
             self.statusBar().showMessage("No new .xlsx files were added.")
         self.refresh_control_selector()
+        self.scan_inventory()
 
     def _add_single_path(self, path: Path, known_paths: set[Path]) -> int:
         if path.suffix.lower() != ".xlsx":
@@ -474,11 +529,13 @@ class FitAlphaBetaWindow(QMainWindow):
             row = self.file_list.row(item)
             self.file_list.takeItem(row)
         self.refresh_control_selector()
+        self.scan_inventory()
         self.statusBar().showMessage(f"Removed {len(selected)} file(s).")
 
     def clear_files(self) -> None:
         self.file_list.clear()
         self.refresh_control_selector()
+        self.clear_inventory()
         self.clear_results()
         self.statusBar().showMessage("File list cleared.")
 
@@ -606,6 +663,7 @@ class FitAlphaBetaWindow(QMainWindow):
                 selected_value=selected_value,
                 allow_average=len(controls) > 1,
             )
+            combo.currentIndexChanged.connect(lambda *_args: self.scan_inventory())
 
             self.assignment_table.setItem(row_index, 0, experiment_item)
             self.assignment_table.setItem(row_index, 1, family_item)
@@ -629,6 +687,7 @@ class FitAlphaBetaWindow(QMainWindow):
                 if combo.itemData(combo_index) == selected_value:
                     combo.setCurrentIndex(combo_index)
                     break
+        self.scan_inventory()
 
     def run_analysis(self) -> None:
         loaded_paths = self.loaded_paths()
@@ -706,6 +765,9 @@ class FitAlphaBetaWindow(QMainWindow):
                 by_family=self.by_family_check.isChecked(),
                 aggregate_regimens=self.aggregate_check.isChecked(),
                 dedupe_regimens=self.dedupe_check.isChecked(),
+                response_mode=self.response_mode_combo.currentData(),
+                requested_model_kind=self.model_kind_combo.currentData(),
+                compare_models=self.compare_models_check.isChecked(),
                 bootstrap=self.bootstrap_spin.value(),
                 bootstrap_seed=bootstrap_seed,
                 verbose=self.verbose_check.isChecked(),
@@ -744,6 +806,8 @@ class FitAlphaBetaWindow(QMainWindow):
             summary = run.summary
             values = [
                 summary.sf_mode,
+                summary.response_mode,
+                summary.model_kind,
                 summary.family_label,
                 summary.status,
                 str(summary.total_count),
@@ -781,6 +845,74 @@ class FitAlphaBetaWindow(QMainWindow):
         self.validation_table.setRowCount(0)
         self.bootstrap_table.setRowCount(0)
         self.details_text.clear()
+
+    def clear_inventory(self) -> None:
+        self.inventory_report = None
+        self.inventory_table.setRowCount(0)
+        self.inventory_text.clear()
+
+    def scan_inventory(self) -> None:
+        loaded_paths = self.loaded_paths()
+        if not loaded_paths:
+            self.clear_inventory()
+            return
+
+        control_map = self.read_assignment_controls()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.inventory_report = Fitter.inspect_files(loaded_paths, control_map=control_map)
+        except Exception as exc:  # pragma: no cover - GUI exception path
+            self.clear_inventory()
+            self.inventory_text.setPlainText(traceback.format_exc())
+            QMessageBox.critical(self, "Inventory scan failed", str(exc))
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        self.populate_inventory_table(self.inventory_report)
+        self.inventory_text.setPlainText(self.build_inventory_summary_text(self.inventory_report))
+        self.statusBar().showMessage(
+            f"Inventory scanned: {self.inventory_report.experiment_count} experiment file(s), "
+            f"{self.inventory_report.control_count} control file(s)."
+        )
+
+    def populate_inventory_table(self, report: InventoryReport) -> None:
+        self.inventory_table.setRowCount(len(report.rows))
+        for row_index, row in enumerate(report.rows):
+            values = [
+                row.path.name,
+                row.role,
+                row.family or "-",
+                row.kind,
+                row.fractions_label,
+                row.schedule_label,
+                row.control_label,
+                "yes" if row.fit_ready else "no",
+                row.notes_label,
+            ]
+            self._fill_row(self.inventory_table, row_index, values)
+
+    @staticmethod
+    def build_inventory_summary_text(report: InventoryReport) -> str:
+        lines = [
+            f"Controls loaded: {report.control_count}",
+            f"Experimental files: {report.experiment_count}",
+        ]
+        if not report.family_summaries:
+            lines.append("No analyzable families detected yet.")
+            return "\n".join(lines)
+
+        lines.append("")
+        lines.append("Family summary:")
+        for summary in report.family_summaries:
+            note_text = f" | notes: {'; '.join(summary.notes)}" if summary.notes else ""
+            lines.append(
+                f"- {summary.family}: analyzable={summary.analyzable_count}, "
+                f"single={summary.single_count}, "
+                f"fractionated={summary.fractionated_count}, "
+                f"fit_ready={'yes' if summary.fit_ready else 'no'}{note_text}"
+            )
+        return "\n".join(lines)
 
     def _sync_run_selector_with_table(self, current_row: int, *_args: int) -> None:
         if 0 <= current_row < len(self.run_results):
@@ -822,6 +954,10 @@ class FitAlphaBetaWindow(QMainWindow):
         rows = []
         if run.validation_summary is not None:
             rows = list(run.validation_summary.rows)
+
+        if run.validation_summary is not None and run.validation_summary.response_mode == "curve":
+            self.validation_table.setRowCount(0)
+            return
 
         self.validation_table.setRowCount(len(run.validation))
         for row_index, experiment in enumerate(run.validation):
@@ -902,6 +1038,8 @@ class FitAlphaBetaWindow(QMainWindow):
                 f"train={summary.train_count}, "
                 f"validation={summary.validation_count}"
             ),
+            f"Response mode: {summary.response_mode}",
+            f"Model: {summary.model_kind}",
         ]
 
         if control_to_experiments:
@@ -921,7 +1059,17 @@ class FitAlphaBetaWindow(QMainWindow):
                     f"alpha/beta = {ratio} Gy",
                 ]
             )
-            if (
+            if run.fit_result.curve_clearance_rate is not None:
+                lines.append(
+                    f"curve_clearance_rate = {run.fit_result.curve_clearance_rate:.6f} per day"
+                )
+            if run.fit_result.transition_dose is not None:
+                lines.append(f"transition_dose = {run.fit_result.transition_dose:.6f} Gy")
+            if run.fit_result.model_kind == "linear":
+                lines.append("repair_half_time = n/a for linear model")
+            elif run.fit_result.model_kind == "lq_l":
+                lines.append("repair_half_time = not used by LQ-L")
+            elif (
                 run.fit_result.repair_half_time_hours is not None
                 and run.fit_result.repair_half_time_hours > 0.0
             ):
@@ -930,6 +1078,17 @@ class FitAlphaBetaWindow(QMainWindow):
                 )
             else:
                 lines.append("repair_half_time = disabled (classic LQ)")
+
+        if run.training_metrics is not None:
+            lines.append(
+                "Training metrics: "
+                f"points={run.training_metrics.point_count}, "
+                f"MAE={run.training_metrics.mae:.6f}, "
+                f"RMSE={run.training_metrics.rmse:.6f}, "
+                f"mean_abs_log_error={run.training_metrics.mean_abs_log_error:.6f}"
+            )
+            if run.training_metrics.aic is not None:
+                lines.append(f"Training AIC = {run.training_metrics.aic:.4f}")
 
         diagnostics = run.timing_diagnostics
         if diagnostics is not None and diagnostics.repair_model_enabled:
@@ -961,7 +1120,8 @@ class FitAlphaBetaWindow(QMainWindow):
             lines.extend(
                 [
                     (
-                        "Validation metrics: "
+                        f"Validation metrics ({run.validation_summary.response_mode}): "
+                        f"points={run.validation_summary.point_count}, "
                         f"MAE={run.validation_summary.mae:.6f}, "
                         f"RMSE={run.validation_summary.rmse:.6f}, "
                         f"mean_abs_log_error={run.validation_summary.mean_abs_log_error:.6f}"
@@ -986,6 +1146,26 @@ class FitAlphaBetaWindow(QMainWindow):
             ):
                 lines.append(
                     "alpha/beta is unstable in bootstrap because beta approaches zero."
+                )
+
+        if run.model_comparison:
+            lines.append("")
+            lines.append("Model comparison:")
+            for row in run.model_comparison:
+                metrics_text = ""
+                if row.metrics is not None:
+                    metrics_text = (
+                        f" | points={row.metrics.point_count}"
+                        f" | RMSE={row.metrics.rmse:.6f}"
+                        f" | MAE={row.metrics.mae:.6f}"
+                    )
+                    if row.metrics.aic is not None:
+                        metrics_text += f" | AIC={row.metrics.aic:.4f}"
+                if row.transition_dose is not None:
+                    metrics_text += f" | transition_dose={row.transition_dose:.6f}"
+                note_text = f" | {row.reason}" if row.reason else ""
+                lines.append(
+                    f"- {row.model_kind}: status={row.status}{metrics_text}{note_text}"
                 )
 
         if run.train:
