@@ -40,8 +40,16 @@ from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_pro
 RegimenKind = Literal["all", "single", "fractionated"]
 ValidationKind = Literal["none", "all", "single", "fractionated"]
 ResponseMode = Literal["scalar", "curve"]
-RequestedModelKind = Literal["auto", "classic_lq", "repair_lq", "linear", "lq_l", "lq_repop"]
-ModelKind = Literal["classic_lq", "repair_lq", "linear", "lq_l", "lq_repop"]
+RequestedModelKind = Literal[
+    "auto",
+    "classic_lq",
+    "repair_lq",
+    "linear",
+    "lq_l",
+    "lq_repop",
+    "repair_repop",
+]
+ModelKind = Literal["classic_lq", "repair_lq", "linear", "lq_l", "lq_repop", "repair_repop"]
 
 # ---------------------- INLINE CONFIG -----------------
 # Set USE_INLINE_PARAMS = True to run the script without CLI arguments.
@@ -555,6 +563,17 @@ class LQFitResult:
                 experiment.sf_time_day - self.lag_days,
                 0.0,
             )
+        elif self.model_kind == "repair_repop":
+            if self.lag_days is None or self.repopulation_rate is None:
+                raise ValueError(
+                    "Repair-aware LQ + repopulation prediction requires lag_days and repopulation_rate."
+                )
+            quadratic_term = experiment.quadratic_term(self.repair_rate_per_day)
+            base_exponent = self.alpha * experiment.dose_sum + self.beta * quadratic_term
+            exponent = base_exponent - self.repopulation_rate * max(
+                experiment.sf_time_day - self.lag_days,
+                0.0,
+            )
         elif self.model_kind == "repair_lq":
             quadratic_term = experiment.quadratic_term(self.repair_rate_per_day)
             exponent = self.alpha * experiment.dose_sum + self.beta * quadratic_term
@@ -571,6 +590,15 @@ class LQFitResult:
 
         if self.model_kind == "lq_repop":
             sf = float(np.exp(-(self.alpha * experiment.dose_sum + self.beta * experiment.dose2_sum)))
+        elif self.model_kind == "repair_repop":
+            sf = float(
+                np.exp(
+                    -(
+                        self.alpha * experiment.dose_sum
+                        + self.beta * experiment.quadratic_term(self.repair_rate_per_day)
+                    )
+                )
+            )
         else:
             sf = self.predict_sf(experiment)
         time_days = np.asarray(experiment.time_days[: len(experiment.curve_response)], dtype=float)
@@ -581,7 +609,7 @@ class LQFitResult:
         )
         control_relative = np.clip(control_relative, 1.0e-8, None)
         response = sf + (1.0 - sf) * np.exp(-self.curve_clearance_rate * time_days) / control_relative
-        if self.model_kind == "lq_repop":
+        if self.model_kind in ("lq_repop", "repair_repop"):
             if self.lag_days is None or self.repopulation_rate is None:
                 raise ValueError("LQ + repopulation curve prediction requires lag_days and repopulation_rate.")
             response = response * np.exp(
@@ -1651,6 +1679,27 @@ class Fitter:
         return np.asarray(predicted, dtype=float)
 
     @staticmethod
+    def _repair_repop_scalar_model(
+        experiment_index: np.ndarray,
+        alpha: float,
+        beta: float,
+        lag_days: float,
+        repopulation_rate: float,
+        experiments: Sequence[TumorExperiment],
+        repair_rate_per_day: float,
+    ) -> np.ndarray:
+        predicted = []
+        for index in np.asarray(experiment_index, dtype=int):
+            experiment = experiments[index]
+            exponent = (
+                alpha * experiment.dose_sum
+                + beta * experiment.quadratic_term(repair_rate_per_day)
+                - repopulation_rate * max(experiment.sf_time_day - lag_days, 0.0)
+            )
+            predicted.append(math.exp(-exponent))
+        return np.asarray(predicted, dtype=float)
+
+    @staticmethod
     def _curve_response_model_with_repop(
         xdata: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
         alpha: float,
@@ -1794,7 +1843,7 @@ class Fitter:
         Optional[float],
     ]:
         repair_rate = None
-        if model_kind == "repair_lq":
+        if model_kind in ("repair_lq", "repair_repop"):
             repair_rate = self.repair_rate_per_day
             if repair_rate is None:
                 raise RuntimeError("repair_half_time_hours must be set for the repair-aware model.")
@@ -1916,6 +1965,54 @@ class Fitter:
             )
             return float(params[0]), float(params[1]), None, None, float(params[2]), float(params[3])
 
+        if model_kind == "repair_repop":
+            experiment_index = np.arange(len(experiments), dtype=float)
+            initial_lag = self._initial_lag_days(experiments)
+            max_time = max(experiment.sf_time_day for experiment in experiments) if experiments else 1.0
+            lag_upper = max(max_time * 1.5, initial_lag + 1.0, 1.0)
+            repop_upper = 2.0
+
+            if self.alpha_fixed is not None:
+                params, _ = self._safe_curve_fit(
+                    lambda index, beta, lag_days, repopulation_rate: self._repair_repop_scalar_model(
+                        index,
+                        self.alpha_fixed,
+                        beta,
+                        lag_days,
+                        repopulation_rate,
+                        experiments,
+                        repair_rate,
+                    ),
+                    experiment_index,
+                    sf,
+                    p0=(0.01, initial_lag, 0.05),
+                    bounds=((0.0, 0.0, 0.0), (np.inf, lag_upper, repop_upper)),
+                    sigma=np.clip(sigma_sf, 1.0e-8, None),
+                    absolute_sigma=False,
+                    maxfev=30000,
+                )
+                return self.alpha_fixed, float(params[0]), None, None, float(params[1]), float(params[2])
+
+            params, _ = self._safe_curve_fit(
+                lambda index, alpha, beta, lag_days, repopulation_rate: self._repair_repop_scalar_model(
+                    index,
+                    alpha,
+                    beta,
+                    lag_days,
+                    repopulation_rate,
+                    experiments,
+                    repair_rate,
+                ),
+                experiment_index,
+                sf,
+                p0=(0.05, 0.01, initial_lag, 0.05),
+                bounds=((0.0, 0.0, 0.0, 0.0), (np.inf, np.inf, lag_upper, repop_upper)),
+                sigma=np.clip(sigma_sf, 1.0e-8, None),
+                absolute_sigma=False,
+                maxfev=30000,
+            )
+            return float(params[0]), float(params[1]), None, None, float(params[2]), float(params[3])
+
         if self.alpha_fixed is not None:
             beta = self._fit_beta_for_fixed_alpha(
                 dose_sum=dose_sum,
@@ -2012,6 +2109,74 @@ class Fitter:
                 control_relative,
                 observed_curve,
             ) = self._to_curve_arrays(experiments, model_kind="classic_lq")
+            initial_alpha, initial_beta, _, _, initial_lag, initial_repopulation = self._fit_scalar_parameters(
+                experiments,
+                model_kind,
+            )
+            if initial_lag is None:
+                initial_lag = self._initial_lag_days(experiments)
+            if initial_repopulation is None:
+                initial_repopulation = 0.05
+            max_time = float(np.max(time_days)) if len(time_days) else 1.0
+            lag_upper = max(max_time * 1.25, initial_lag + 1.0, 1.0)
+            repop_upper = 2.0
+
+            if self.alpha_fixed is not None:
+                params, _ = self._safe_curve_fit(
+                    lambda xdata, beta, clearance_rate, lag_days, repopulation_rate: self._curve_response_model_with_repop(
+                        xdata,
+                        self.alpha_fixed,
+                        beta,
+                        clearance_rate,
+                        lag_days,
+                        repopulation_rate,
+                    ),
+                    (dose_sum, quadratic_term, time_days, control_relative),
+                    observed_curve,
+                    p0=(max(initial_beta, 1.0e-8), 0.10, initial_lag, initial_repopulation),
+                    bounds=((0.0, 0.0, 0.0, 0.0), (np.inf, np.inf, lag_upper, repop_upper)),
+                    maxfev=30000,
+                )
+                return (
+                    self.alpha_fixed,
+                    float(params[0]),
+                    float(params[1]),
+                    None,
+                    float(params[2]),
+                    float(params[3]),
+                )
+
+            params, _ = self._safe_curve_fit(
+                self._curve_response_model_with_repop,
+                (dose_sum, quadratic_term, time_days, control_relative),
+                observed_curve,
+                p0=(
+                    max(initial_alpha, 1.0e-8),
+                    max(initial_beta, 1.0e-8),
+                    0.10,
+                    initial_lag,
+                    initial_repopulation,
+                ),
+                bounds=((0.0, 0.0, 0.0, 0.0, 0.0), (np.inf, np.inf, np.inf, lag_upper, repop_upper)),
+                maxfev=30000,
+            )
+            return (
+                float(params[0]),
+                float(params[1]),
+                float(params[2]),
+                None,
+                float(params[3]),
+                float(params[4]),
+            )
+
+        if model_kind == "repair_repop":
+            (
+                dose_sum,
+                quadratic_term,
+                time_days,
+                control_relative,
+                observed_curve,
+            ) = self._to_curve_arrays(experiments, model_kind="repair_lq")
             initial_alpha, initial_beta, _, _, initial_lag, initial_repopulation = self._fit_scalar_parameters(
                 experiments,
                 model_kind,
@@ -2217,7 +2382,7 @@ class Fitter:
             parameter_count -= 1
         if result.model_kind == "lq_l":
             parameter_count += 1
-        if result.model_kind == "lq_repop":
+        if result.model_kind in ("lq_repop", "repair_repop"):
             parameter_count += 2
         if result.response_mode == "curve":
             parameter_count += 1
@@ -2283,6 +2448,7 @@ class Fitter:
         candidates: List[ModelKind] = ["classic_lq", "lq_l", "lq_repop", "linear"]
         if self.repair_rate_per_day is not None:
             candidates.insert(1, "repair_lq")
+            candidates.insert(2, "repair_repop")
 
         rows: List[ModelComparisonRow] = []
         for model_kind in candidates:
@@ -2595,6 +2761,11 @@ class Fitter:
             print("model=lq-l")
         elif result.model_kind == "lq_repop":
             print("model=lq-repopulation")
+        elif result.model_kind == "repair_repop":
+            print(
+                "model=repair-aware-lq-repopulation "
+                f"repair_half_time_hours={result.repair_half_time_hours:.3f}"
+            )
         elif result.repair_half_time_hours is not None and result.repair_half_time_hours > 0.0:
             print(
                 "model=time-aware-lq "
@@ -3140,7 +3311,7 @@ def parse_cli() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model-kind",
-        choices=("auto", "classic_lq", "repair_lq", "linear", "lq_l", "lq_repop"),
+        choices=("auto", "classic_lq", "repair_lq", "linear", "lq_l", "lq_repop", "repair_repop"),
         default="auto",
         help="Model family to fit (default: auto)",
     )

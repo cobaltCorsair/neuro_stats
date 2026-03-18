@@ -81,6 +81,7 @@ CLI:
 - `--model-kind auto`
 - `--model-kind classic_lq`
 - `--model-kind repair_lq`
+- `--model-kind repair_repop`
 - `--model-kind lq_l`
 - `--model-kind lq_repop`
 - `--model-kind linear`
@@ -91,6 +92,9 @@ CLI:
   - `SF = exp(-alpha * D - beta * sum(d_i^2))`
 - `repair_lq`
   - тот же LQ, но с учетом `t=` интервалов и репарации через `--repair-half-time-hours`
+- `repair_repop`
+  - repair-aware LQ plus delayed repopulation;
+  - fitter использует `t=` интервалы, `lag_days` и `repopulation_rate`
 - `lq_l`
   - LQ-L with transition dose;
   - до переходной дозы используется обычный квадратичный член, а выше включается линейный хвост
@@ -112,6 +116,7 @@ CLI:
 
 - `transition_dose` для `LQ-L`
 - `lag_days` и `repopulation_rate` для `LQ + repopulation`
+- `lag_days` и `repopulation_rate` для `repair + repopulation`
 
 ## Family
 

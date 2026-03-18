@@ -329,6 +329,7 @@ class FitAlphaBetaWindow(QMainWindow):
         self.model_kind_combo.addItem("auto", "auto")
         self.model_kind_combo.addItem("classic_lq", "classic_lq")
         self.model_kind_combo.addItem("repair_lq", "repair_lq")
+        self.model_kind_combo.addItem("repair_repop", "repair_repop")
         self.model_kind_combo.addItem("lq_l", "lq_l")
         self.model_kind_combo.addItem("lq_repop", "lq_repop")
         self.model_kind_combo.addItem("linear", "linear")
@@ -336,7 +337,7 @@ class FitAlphaBetaWindow(QMainWindow):
 
         self.compare_models_check = QCheckBox("Compare models", self)
         self.compare_models_check.setToolTip(
-            "Run classic LQ, repair-aware LQ, LQ-L, LQ + repopulation and linear candidates, then rank them by fit error."
+            "Run classic LQ, repair-aware LQ, repair + repopulation, LQ-L, LQ + repopulation and linear candidates, then rank them by fit error."
         )
         layout.addWidget(self.compare_models_check, 3, 4, 1, 2)
 
@@ -1078,6 +1079,10 @@ class FitAlphaBetaWindow(QMainWindow):
                 lines.append("repair_half_time = not used by LQ-L")
             elif run.fit_result.model_kind == "lq_repop":
                 lines.append("repair_half_time = not used by LQ + repopulation")
+            elif run.fit_result.model_kind == "repair_repop":
+                lines.append(
+                    f"repair_half_time = {run.fit_result.repair_half_time_hours:.3f} h"
+                )
             elif (
                 run.fit_result.repair_half_time_hours is not None
                 and run.fit_result.repair_half_time_hours > 0.0

@@ -693,6 +693,131 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertEqual(comparison[0].status, "ok")
         self.assertEqual(comparison[0].reason, "rank=1")
 
+    def test_fit_repair_repop_model_recovers_lag_and_repopulation(self) -> None:
+        expected_alpha = 0.03
+        expected_beta = 0.001
+        expected_lag_days = 3.0
+        expected_repopulation_rate = 0.06
+        repair_half_time_hours = 1.0
+        repair_rate_per_day = math.log(2.0) * 24.0 / repair_half_time_hours
+        templates = (
+            ("single10_t1.xlsx", (10.0,), (), 1.0),
+            ("single12_t2.xlsx", (12.0,), (), 2.0),
+            ("split5_5_short_t4.xlsx", (5.0, 5.0), (0.0, 1.0 / 24.0), 4.0),
+            ("split5_5_long_t4.xlsx", (5.0, 5.0), (0.0, 1.0), 4.0),
+            ("split6_6_short_t6.xlsx", (6.0, 6.0), (0.0, 1.0 / 24.0), 6.0),
+            ("split6_6_long_t6.xlsx", (6.0, 6.0), (0.0, 1.0), 6.0),
+        )
+        experiments = []
+        for name, fractions, schedule_days, sf_time_day in templates:
+            template = TumorExperiment(
+                path=Path(name),
+                fractions=fractions,
+                sf=1.0,
+                family="y",
+                sf_time_day=sf_time_day,
+                schedule_days=schedule_days,
+                has_explicit_timing=bool(schedule_days),
+            )
+            exponent = (
+                expected_alpha * template.dose_sum
+                + expected_beta * template.quadratic_term(repair_rate_per_day)
+                - expected_repopulation_rate * max(sf_time_day - expected_lag_days, 0.0)
+            )
+            experiments.append(
+                TumorExperiment(
+                    path=template.path,
+                    fractions=template.fractions,
+                    sf=math.exp(-exponent),
+                    family="y",
+                    sf_time_day=sf_time_day,
+                    schedule_days=schedule_days,
+                    has_explicit_timing=bool(schedule_days),
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+            repair_half_time_hours=repair_half_time_hours,
+        )
+        result = fitter.fit(experiments=experiments, model_kind="repair_repop")
+
+        self.assertAlmostEqual(result.alpha, expected_alpha, places=3)
+        self.assertAlmostEqual(result.beta, expected_beta, places=4)
+        self.assertIsNotNone(result.lag_days)
+        self.assertIsNotNone(result.repopulation_rate)
+        self.assertAlmostEqual(result.lag_days or 0.0, expected_lag_days, places=2)
+        self.assertAlmostEqual(
+            result.repopulation_rate or 0.0,
+            expected_repopulation_rate,
+            places=2,
+        )
+
+    def test_compare_models_ranks_repair_repop_first_on_repair_repop_data(self) -> None:
+        expected_alpha = 0.03
+        expected_beta = 0.001
+        expected_lag_days = 3.0
+        expected_repopulation_rate = 0.06
+        repair_half_time_hours = 1.0
+        repair_rate_per_day = math.log(2.0) * 24.0 / repair_half_time_hours
+        templates = (
+            ("single10_t1.xlsx", (10.0,), (), 1.0),
+            ("single12_t2.xlsx", (12.0,), (), 2.0),
+            ("split5_5_short_t4.xlsx", (5.0, 5.0), (0.0, 1.0 / 24.0), 4.0),
+            ("split5_5_long_t4.xlsx", (5.0, 5.0), (0.0, 1.0), 4.0),
+            ("split6_6_short_t6.xlsx", (6.0, 6.0), (0.0, 1.0 / 24.0), 6.0),
+            ("split6_6_long_t6.xlsx", (6.0, 6.0), (0.0, 1.0), 6.0),
+        )
+        experiments = []
+        for name, fractions, schedule_days, sf_time_day in templates:
+            template = TumorExperiment(
+                path=Path(name),
+                fractions=fractions,
+                sf=1.0,
+                family="y",
+                sf_time_day=sf_time_day,
+                schedule_days=schedule_days,
+                has_explicit_timing=bool(schedule_days),
+            )
+            exponent = (
+                expected_alpha * template.dose_sum
+                + expected_beta * template.quadratic_term(repair_rate_per_day)
+                - expected_repopulation_rate * max(sf_time_day - expected_lag_days, 0.0)
+            )
+            experiments.append(
+                TumorExperiment(
+                    path=template.path,
+                    fractions=template.fractions,
+                    sf=math.exp(-exponent),
+                    family="y",
+                    sf_time_day=sf_time_day,
+                    schedule_days=schedule_days,
+                    has_explicit_timing=bool(schedule_days),
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+            repair_half_time_hours=repair_half_time_hours,
+        )
+        comparison = fitter.compare_models(
+            experiments=experiments,
+            response_mode="scalar",
+            family="y",
+            sf_mode="absolute",
+        )
+
+        self.assertGreaterEqual(len(comparison), 5)
+        self.assertEqual(comparison[0].model_kind, "repair_repop")
+        self.assertEqual(comparison[0].status, "ok")
+        self.assertEqual(comparison[0].reason, "rank=1")
+
     def test_compute_timing_diagnostics_warns_for_weak_repair_dataset(self) -> None:
         fitter = Fitter(
             sf_mode="absolute",
