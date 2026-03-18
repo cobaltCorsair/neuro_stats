@@ -390,6 +390,8 @@ GUI inventory mode:
 
 - `Scan inventory` inspects the loaded folder before fitting
 - the `Inventory` tab shows file-by-file `family`, `kind`, `fractions`, `schedule`, `control`, `fit ready`, and `notes`
+- the family summary now also reports `recommended` and `possible` model targets for `classic_lq`, `repair_lq`, `lq_l`, `glq`, `lq_repop`, and `repair_repop`
+- these model recommendations are heuristic: they look at dose contrast, explicit `t=` timing, high-dose coverage, and follow-up curve length
 - proton files are now separated into `p_peak` and `p_through`
 - carbon-ion C-12 files are tracked as family `c`
 

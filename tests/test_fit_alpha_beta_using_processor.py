@@ -1167,6 +1167,60 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertFalse(row.fit_ready)
         self.assertIn("multiple control files loaded; assign one explicitly", row.notes_label)
 
+    def test_inspect_files_reports_model_suitability_by_family(self) -> None:
+        control = Path("control.xlsx").resolve()
+        single_10 = Path("02.06.2025_y_10.xlsx").resolve()
+        single_20 = Path("02.06.2025_y_20.xlsx").resolve()
+        single_30 = Path("02.06.2025_y_30.xlsx").resolve()
+        fast_split = Path("11.04.2025_y4_y4_y32_fast.xlsx").resolve()
+        slow_split = Path("11.04.2025_y4_y4_y32_slow.xlsx").resolve()
+
+        def fake_processor(path_str: str):
+            path = Path(path_str).resolve()
+            if path == single_10:
+                return ["y = 10 Gy"], ["0", "3", "7", "14", "21"], [], np.ones((2, 5), dtype=float)
+            if path == single_20:
+                return ["y = 20 Gy"], ["0", "3", "7", "14", "21"], [], np.ones((2, 5), dtype=float)
+            if path == single_30:
+                return ["y = 30 Gy"], ["0", "3", "7", "14", "21"], [], np.ones((2, 5), dtype=float)
+            if path == fast_split:
+                return (
+                    ["y = 4 Gy", "t = 1 hr", "y = 4 Gy", "t = 1 hr", "y = 32 Gy"],
+                    ["0", "3", "7", "14", "21"],
+                    [],
+                    np.ones((2, 5), dtype=float),
+                )
+            if path == slow_split:
+                return (
+                    ["y = 4 Gy", "t = 24 hr", "y = 4 Gy", "t = 24 hr", "y = 32 Gy"],
+                    ["0", "3", "7", "14", "21"],
+                    [],
+                    np.ones((2, 5), dtype=float),
+                )
+            raise AssertionError(f"Unexpected path {path}")
+
+        with patch(
+            "work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor.process_tumor_data_excel",
+            side_effect=fake_processor,
+        ):
+            report = Fitter.inspect_files(
+                [control, single_10, single_20, single_30, fast_split, slow_split]
+            )
+
+        summary = {item.family: item for item in report.family_summaries}["y"]
+        statuses = {item.model_kind: item.status for item in summary.model_suitability}
+        self.assertEqual(summary.parsed_count, 5)
+        self.assertEqual(summary.analyzable_count, 5)
+        self.assertEqual(summary.distinct_regimen_count, 5)
+        self.assertEqual(statuses["classic_lq"], "recommended")
+        self.assertEqual(statuses["repair_lq"], "recommended")
+        self.assertEqual(statuses["lq_l"], "recommended")
+        self.assertEqual(statuses["glq"], "recommended")
+        self.assertEqual(statuses["lq_repop"], "recommended")
+        self.assertEqual(statuses["repair_repop"], "recommended")
+        self.assertIn("classic_lq", summary.recommended_models)
+        self.assertIn("repair_repop", summary.recommended_models)
+
     def test_is_control_file_uses_file_name(self) -> None:
         self.assertTrue(is_control_file(Path("control_2016.xlsx")))
         self.assertTrue(is_control_file(Path("gamma_CONTROL_series.xlsx")))

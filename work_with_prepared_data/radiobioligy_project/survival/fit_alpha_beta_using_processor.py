@@ -811,6 +811,8 @@ class InventoryRow:
     fractions: Tuple[float, ...] = ()
     schedule_days: Tuple[float, ...] = ()
     has_explicit_timing: bool = False
+    time_point_count: int = 0
+    time_span_days: float = 0.0
     control_path: Optional[Path] = None
     fit_ready: bool = False
     notes: Tuple[str, ...] = ()
@@ -849,15 +851,37 @@ class InventoryRow:
 
 
 @dataclass(frozen=True)
+class InventoryModelSuitability:
+    """Heuristic recommendation for which fitter model matches a dataset family."""
+
+    model_kind: str
+    status: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class InventoryFamilySummary:
     """Fit-readiness summary for one inferred family."""
 
     family: str
+    parsed_count: int
     analyzable_count: int
+    distinct_regimen_count: int
     single_count: int
     fractionated_count: int
     fit_ready: bool
     notes: Tuple[str, ...] = ()
+    model_suitability: Tuple[InventoryModelSuitability, ...] = ()
+
+    @property
+    def recommended_models(self) -> Tuple[str, ...]:
+        return tuple(
+            item.model_kind for item in self.model_suitability if item.status == "recommended"
+        )
+
+    @property
+    def possible_models(self) -> Tuple[str, ...]:
+        return tuple(item.model_kind for item in self.model_suitability if item.status == "possible")
 
 
 @dataclass(frozen=True)
@@ -1126,6 +1150,223 @@ class Fitter:
         return normalized
 
     @staticmethod
+    def _inventory_regimen_key(row: InventoryRow) -> Tuple[str, Tuple[float, ...], Tuple[float, ...]]:
+        return (
+            row.family or "",
+            tuple(round(dose, 8) for dose in row.fractions),
+            tuple(round(day, 8) for day in row.schedule_days),
+        )
+
+    @staticmethod
+    def _inventory_design_key(row: InventoryRow) -> Tuple[float, float]:
+        return (
+            round(sum(row.fractions), 8),
+            round(sum(dose * dose for dose in row.fractions), 8),
+        )
+
+    @staticmethod
+    def _build_inventory_model_suitability(
+        family_rows: Sequence[InventoryRow],
+    ) -> Tuple[InventoryModelSuitability, ...]:
+        if not family_rows:
+            return ()
+
+        classic_designs = {Fitter._inventory_design_key(row) for row in family_rows}
+        fractionated_rows = [row for row in family_rows if row.kind == "fractionated"]
+        explicit_fractionated_rows = [
+            row for row in fractionated_rows if row.has_explicit_timing and len(row.schedule_days) > 1
+        ]
+        schedules_by_fraction: Dict[Tuple[float, ...], set[Tuple[float, ...]]] = {}
+        has_subday_interval = False
+        for row in explicit_fractionated_rows:
+            fraction_key = tuple(round(dose, 8) for dose in row.fractions)
+            schedule_key = tuple(round(day, 8) for day in row.schedule_days)
+            schedules_by_fraction.setdefault(fraction_key, set()).add(schedule_key)
+            if any(
+                (row.schedule_days[index] - row.schedule_days[index - 1]) < 1.0
+                for index in range(1, len(row.schedule_days))
+            ):
+                has_subday_interval = True
+        matched_timing_patterns = sum(
+            1 for schedule_keys in schedules_by_fraction.values() if len(schedule_keys) >= 2
+        )
+
+        max_fraction_dose = max(
+            (max(row.fractions) for row in family_rows if row.fractions),
+            default=0.0,
+        )
+        high_dose_designs = {
+            Fitter._inventory_design_key(row)
+            for row in family_rows
+            if row.fractions and max(row.fractions) >= 10.0
+        }
+        ablative_designs = {
+            Fitter._inventory_design_key(row)
+            for row in family_rows
+            if row.fractions and max(row.fractions) >= 15.0
+        }
+
+        rich_curve_rows = [
+            row for row in family_rows if row.time_point_count >= 5 and row.time_span_days >= 10.0
+        ]
+        medium_curve_rows = [
+            row for row in family_rows if row.time_point_count >= 4 and row.time_span_days >= 7.0
+        ]
+
+        assessments: List[InventoryModelSuitability] = []
+
+        if len(classic_designs) >= 3:
+            assessments.append(
+                InventoryModelSuitability(
+                    model_kind="classic_lq",
+                    status="recommended",
+                    reason=f"{len(classic_designs)} distinct (D, Σd²) regimens",
+                )
+            )
+        elif len(classic_designs) >= 2:
+            assessments.append(
+                InventoryModelSuitability(
+                    model_kind="classic_lq",
+                    status="possible",
+                    reason=f"{len(classic_designs)} distinct dose-response regimens",
+                )
+            )
+        else:
+            assessments.append(
+                InventoryModelSuitability(
+                    model_kind="classic_lq",
+                    status="not_ready",
+                    reason="need at least 2 distinct (D, Σd²) regimens",
+                )
+            )
+
+        repair_reason = "need timed fractionated regimens"
+        repair_status = "not_ready"
+        if matched_timing_patterns >= 1:
+            interval_text = " with sub-day intervals" if has_subday_interval else ""
+            repair_status = "recommended"
+            repair_reason = (
+                f"{matched_timing_patterns} matched fractionation pattern(s) with different timing{interval_text}"
+            )
+        elif len(explicit_fractionated_rows) >= 3:
+            repair_status = "possible"
+            repair_reason = (
+                f"{len(explicit_fractionated_rows)} timed fractionated regimens, but no matched dose pattern"
+            )
+        elif fractionated_rows and not explicit_fractionated_rows:
+            repair_reason = "fractionated regimens exist, but t= timing metadata is missing"
+        elif explicit_fractionated_rows:
+            repair_status = "possible" if len(explicit_fractionated_rows) >= 2 else "not_ready"
+            repair_reason = (
+                f"{len(explicit_fractionated_rows)} timed fractionated regimen(s); interval contrast is limited"
+            )
+        assessments.append(
+            InventoryModelSuitability(
+                model_kind="repair_lq",
+                status=repair_status,
+                reason=repair_reason,
+            )
+        )
+
+        if len(classic_designs) >= 3 and len(high_dose_designs) >= 2:
+            assessments.append(
+                InventoryModelSuitability(
+                    model_kind="lq_l",
+                    status="recommended",
+                    reason=(
+                        f"{len(high_dose_designs)} high-dose regimens; "
+                        f"max fraction {max_fraction_dose:g} Gy"
+                    ),
+                )
+            )
+        elif len(classic_designs) >= 2 and len(high_dose_designs) >= 1:
+            assessments.append(
+                InventoryModelSuitability(
+                    model_kind="lq_l",
+                    status="possible",
+                    reason=f"high-dose coverage is present, but limited to {len(high_dose_designs)} regimen(s)",
+                )
+            )
+        else:
+            assessments.append(
+                InventoryModelSuitability(
+                    model_kind="lq_l",
+                    status="not_ready",
+                    reason="need multiple high-dose regimens (max fraction >= 10 Gy)",
+                )
+            )
+
+        if len(high_dose_designs) >= 3 and len(ablative_designs) >= 2:
+            assessments.append(
+                InventoryModelSuitability(
+                    model_kind="glq",
+                    status="recommended",
+                    reason=(
+                        f"broad high-dose coverage up to {max_fraction_dose:g} Gy "
+                        f"across {len(high_dose_designs)} regimens"
+                    ),
+                )
+            )
+        elif len(high_dose_designs) >= 2:
+            assessments.append(
+                InventoryModelSuitability(
+                    model_kind="glq",
+                    status="possible",
+                    reason=f"{len(high_dose_designs)} high-dose regimens, but ablative range is limited",
+                )
+            )
+        else:
+            assessments.append(
+                InventoryModelSuitability(
+                    model_kind="glq",
+                    status="not_ready",
+                    reason="need a broader high-dose range to probe quadratic saturation",
+                )
+            )
+
+        repop_status = "not_ready"
+        repop_reason = "need longer multi-point follow-up curves"
+        if len(rich_curve_rows) >= 3:
+            repop_status = "recommended"
+            repop_reason = (
+                f"{len(rich_curve_rows)} curves with >=5 time points across >=10 days"
+            )
+        elif len(medium_curve_rows) >= 2:
+            repop_status = "possible"
+            repop_reason = (
+                f"{len(medium_curve_rows)} multi-day curves; lag/repopulation may be weakly constrained"
+            )
+        assessments.append(
+            InventoryModelSuitability(
+                model_kind="lq_repop",
+                status=repop_status,
+                reason=repop_reason,
+            )
+        )
+
+        repair_repop_status = "not_ready"
+        repair_repop_reason = "need both timed fractionation contrast and long follow-up curves"
+        if repair_status == "recommended" and repop_status == "recommended":
+            repair_repop_status = "recommended"
+            repair_repop_reason = "timed fractionation contrast and long follow-up are both present"
+        elif repair_status != "not_ready" and repop_status != "not_ready":
+            repair_repop_status = "possible"
+            repair_repop_reason = "partial timing contrast and delayed follow-up are both available"
+        elif repair_status == "not_ready" and repop_status != "not_ready":
+            repair_repop_reason = f"repair signal is weak: {repair_reason}"
+        elif repair_status != "not_ready" and repop_status == "not_ready":
+            repair_repop_reason = f"repopulation signal is weak: {repop_reason}"
+        assessments.append(
+            InventoryModelSuitability(
+                model_kind="repair_repop",
+                status=repair_repop_status,
+                reason=repair_repop_reason,
+            )
+        )
+
+        return tuple(assessments)
+
+    @staticmethod
     def inspect_files(
         files: Sequence[Path],
         control_map: Optional[Mapping[object, Optional[object]]] = None,
@@ -1139,6 +1380,7 @@ class Fitter:
 
         rows: List[InventoryRow] = []
         base_ready_by_path: Dict[Path, bool] = {}
+        parsed_ready_by_path: Dict[Path, bool] = {}
 
         for path in resolved_files:
             if path in control_set:
@@ -1156,13 +1398,19 @@ class Fitter:
             fractions: Tuple[float, ...] = ()
             schedule_days: Tuple[float, ...] = ()
             has_explicit_timing = False
+            time_point_count = 0
+            time_span_days = 0.0
             role = "experiment"
 
             try:
-                params, _, _, _ = process_tumor_data_excel(str(path))
+                params, time_data, _, _ = process_tumor_data_excel(str(path))
                 fractions = tuple(parse_fractions(params))
                 if fractions:
                     schedule_days, has_explicit_timing = parse_schedule_days(params, fractions)
+                time_days = parse_time_days(time_data)
+                time_point_count = len(time_days)
+                if time_days:
+                    time_span_days = float(max(time_days) - min(time_days))
                 else:
                     notes.append("dose fractions were not parsed")
             except Exception as exc:
@@ -1204,6 +1452,7 @@ class Fitter:
                 and control_path is not None
                 and control_path in control_set
             )
+            parsed_ready = role == "experiment" and family is not None and bool(fractions)
 
             rows.append(
                 InventoryRow(
@@ -1213,48 +1462,64 @@ class Fitter:
                     fractions=fractions,
                     schedule_days=schedule_days,
                     has_explicit_timing=has_explicit_timing,
+                    time_point_count=time_point_count,
+                    time_span_days=time_span_days,
                     control_path=control_path if control_path in control_set else None,
                     fit_ready=False,
                     notes=tuple(notes),
                 )
             )
             base_ready_by_path[path] = base_ready
+            parsed_ready_by_path[path] = parsed_ready
 
         family_rows: Dict[str, List[InventoryRow]] = {}
+        analyzable_counts: Dict[str, int] = {}
         regimen_counts: Dict[Tuple[str, Tuple[float, ...], Tuple[float, ...]], int] = {}
         for row in rows:
-            if row.family is None or not base_ready_by_path.get(row.path, False):
+            if row.family is None or not parsed_ready_by_path.get(row.path, False):
                 continue
             family_rows.setdefault(row.family, []).append(row)
-            regimen_key = (
-                row.family,
-                tuple(round(dose, 8) for dose in row.fractions),
-                tuple(round(day, 8) for day in row.schedule_days),
-            )
+            regimen_key = Fitter._inventory_regimen_key(row)
             regimen_counts[regimen_key] = regimen_counts.get(regimen_key, 0) + 1
+            if base_ready_by_path.get(row.path, False):
+                analyzable_counts[row.family] = analyzable_counts.get(row.family, 0) + 1
 
         family_summaries: List[InventoryFamilySummary] = []
         updated_rows: List[InventoryRow] = []
         family_summary_map: Dict[str, InventoryFamilySummary] = {}
         for family, family_items in sorted(family_rows.items()):
+            analyzable_count = analyzable_counts.get(family, 0)
             single_count = sum(1 for row in family_items if row.kind == "single")
             fractionated_count = sum(1 for row in family_items if row.kind == "fractionated")
+            distinct_regimen_count = len(
+                {Fitter._inventory_regimen_key(row) for row in family_items}
+            )
             notes: List[str] = []
             if len(family_items) < 2:
+                notes.append("fewer than 2 parsed experiments")
+            if analyzable_count < 2:
                 notes.append("fewer than 2 analyzable experiments")
+            if analyzable_count < len(family_items):
+                notes.append(
+                    f"controls unresolved for {len(family_items) - analyzable_count} parsed experiment(s)"
+                )
             if single_count == 0:
                 notes.append("no single-dose experiments")
             if fractionated_count == 0:
                 notes.append("no fractionated experiments")
             if family == "p":
                 notes.append("generic proton family; peak/through is not encoded")
+            model_suitability = Fitter._build_inventory_model_suitability(family_items)
             summary = InventoryFamilySummary(
                 family=family,
-                analyzable_count=len(family_items),
+                parsed_count=len(family_items),
+                analyzable_count=analyzable_count,
+                distinct_regimen_count=distinct_regimen_count,
                 single_count=single_count,
                 fractionated_count=fractionated_count,
-                fit_ready=len(family_items) >= 2,
+                fit_ready=analyzable_count >= 2,
                 notes=tuple(notes),
+                model_suitability=model_suitability,
             )
             family_summaries.append(summary)
             family_summary_map[family] = summary
@@ -1265,11 +1530,7 @@ class Fitter:
             fit_ready = False
             if base_ready_by_path.get(row.path, False) and summary is not None:
                 fit_ready = summary.fit_ready
-                regimen_key = (
-                    row.family or "",
-                    tuple(round(dose, 8) for dose in row.fractions),
-                    tuple(round(day, 8) for day in row.schedule_days),
-                )
+                regimen_key = Fitter._inventory_regimen_key(row)
                 repeat_count = regimen_counts.get(regimen_key, 1)
                 if repeat_count > 1:
                     notes.append(f"repeat regimen detected ({repeat_count} files)")
@@ -1285,6 +1546,8 @@ class Fitter:
                     fractions=row.fractions,
                     schedule_days=row.schedule_days,
                     has_explicit_timing=row.has_explicit_timing,
+                    time_point_count=row.time_point_count,
+                    time_span_days=row.time_span_days,
                     control_path=row.control_path,
                     fit_ready=fit_ready,
                     notes=tuple(notes),

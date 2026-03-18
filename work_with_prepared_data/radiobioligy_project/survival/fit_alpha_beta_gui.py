@@ -908,13 +908,29 @@ class FitAlphaBetaWindow(QMainWindow):
         lines.append("")
         lines.append("Family summary:")
         for summary in report.family_summaries:
+            recommended_text = (
+                f" | recommended: {', '.join(summary.recommended_models)}"
+                if summary.recommended_models
+                else ""
+            )
+            possible_text = (
+                f" | possible: {', '.join(summary.possible_models)}"
+                if summary.possible_models
+                else ""
+            )
             note_text = f" | notes: {'; '.join(summary.notes)}" if summary.notes else ""
             lines.append(
-                f"- {summary.family}: analyzable={summary.analyzable_count}, "
+                f"- {summary.family}: parsed={summary.parsed_count}, "
+                f"analyzable={summary.analyzable_count}, "
+                f"distinct_regimens={summary.distinct_regimen_count}, "
                 f"single={summary.single_count}, "
                 f"fractionated={summary.fractionated_count}, "
-                f"fit_ready={'yes' if summary.fit_ready else 'no'}{note_text}"
+                f"fit_ready={'yes' if summary.fit_ready else 'no'}"
+                f"{recommended_text}{possible_text}{note_text}"
             )
+            lines.append("  model guidance:")
+            for item in summary.model_suitability:
+                lines.append(f"  - {item.model_kind}: {item.status} | {item.reason}")
         return "\n".join(lines)
 
     def _sync_run_selector_with_table(self, current_row: int, *_args: int) -> None:
