@@ -330,12 +330,13 @@ class FitAlphaBetaWindow(QMainWindow):
         self.model_kind_combo.addItem("classic_lq", "classic_lq")
         self.model_kind_combo.addItem("repair_lq", "repair_lq")
         self.model_kind_combo.addItem("lq_l", "lq_l")
+        self.model_kind_combo.addItem("lq_repop", "lq_repop")
         self.model_kind_combo.addItem("linear", "linear")
         layout.addWidget(self.model_kind_combo, 3, 3)
 
         self.compare_models_check = QCheckBox("Compare models", self)
         self.compare_models_check.setToolTip(
-            "Run classic LQ, repair-aware LQ, LQ-L and linear candidates, then rank them by fit error."
+            "Run classic LQ, repair-aware LQ, LQ-L, LQ + repopulation and linear candidates, then rank them by fit error."
         )
         layout.addWidget(self.compare_models_check, 3, 4, 1, 2)
 
@@ -1065,10 +1066,18 @@ class FitAlphaBetaWindow(QMainWindow):
                 )
             if run.fit_result.transition_dose is not None:
                 lines.append(f"transition_dose = {run.fit_result.transition_dose:.6f} Gy")
+            if run.fit_result.lag_days is not None:
+                lines.append(f"lag_days = {run.fit_result.lag_days:.6f}")
+            if run.fit_result.repopulation_rate is not None:
+                lines.append(
+                    f"repopulation_rate = {run.fit_result.repopulation_rate:.6f} per day"
+                )
             if run.fit_result.model_kind == "linear":
                 lines.append("repair_half_time = n/a for linear model")
             elif run.fit_result.model_kind == "lq_l":
                 lines.append("repair_half_time = not used by LQ-L")
+            elif run.fit_result.model_kind == "lq_repop":
+                lines.append("repair_half_time = not used by LQ + repopulation")
             elif (
                 run.fit_result.repair_half_time_hours is not None
                 and run.fit_result.repair_half_time_hours > 0.0
@@ -1163,6 +1172,10 @@ class FitAlphaBetaWindow(QMainWindow):
                         metrics_text += f" | AIC={row.metrics.aic:.4f}"
                 if row.transition_dose is not None:
                     metrics_text += f" | transition_dose={row.transition_dose:.6f}"
+                if row.lag_days is not None:
+                    metrics_text += f" | lag_days={row.lag_days:.6f}"
+                if row.repopulation_rate is not None:
+                    metrics_text += f" | repop={row.repopulation_rate:.6f}"
                 note_text = f" | {row.reason}" if row.reason else ""
                 lines.append(
                     f"- {row.model_kind}: status={row.status}{metrics_text}{note_text}"

@@ -592,6 +592,107 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertEqual(comparison[0].status, "ok")
         self.assertEqual(comparison[0].reason, "rank=1")
 
+    def test_fit_lq_repop_model_recovers_lag_and_repopulation(self) -> None:
+        expected_alpha = 0.08
+        expected_beta = 0.012
+        expected_lag_days = 3.0
+        expected_repopulation_rate = 0.08
+        templates = (
+            ("dose4_t1.xlsx", (4.0,), 1.0),
+            ("dose6_t2.xlsx", (6.0,), 2.0),
+            ("dose8_t4.xlsx", (8.0,), 4.0),
+            ("dose10_t5.xlsx", (10.0,), 5.0),
+            ("split5_5_t6.xlsx", (5.0, 5.0), 6.0),
+            ("split6_6_t7.xlsx", (6.0, 6.0), 7.0),
+        )
+        experiments = []
+        for name, fractions, sf_time_day in templates:
+            dose_sum = sum(fractions)
+            dose2_sum = sum(dose * dose for dose in fractions)
+            exponent = (
+                expected_alpha * dose_sum
+                + expected_beta * dose2_sum
+                - expected_repopulation_rate * max(sf_time_day - expected_lag_days, 0.0)
+            )
+            experiments.append(
+                TumorExperiment(
+                    path=Path(name),
+                    fractions=fractions,
+                    sf=math.exp(-exponent),
+                    family="y",
+                    sf_time_day=sf_time_day,
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+        )
+        result = fitter.fit(experiments=experiments, model_kind="lq_repop")
+
+        self.assertAlmostEqual(result.alpha, expected_alpha, places=4)
+        self.assertAlmostEqual(result.beta, expected_beta, places=4)
+        self.assertIsNotNone(result.lag_days)
+        self.assertIsNotNone(result.repopulation_rate)
+        self.assertAlmostEqual(result.lag_days or 0.0, expected_lag_days, places=3)
+        self.assertAlmostEqual(
+            result.repopulation_rate or 0.0,
+            expected_repopulation_rate,
+            places=3,
+        )
+
+    def test_compare_models_ranks_lq_repop_first_on_lq_repop_data(self) -> None:
+        expected_alpha = 0.08
+        expected_beta = 0.012
+        expected_lag_days = 3.0
+        expected_repopulation_rate = 0.08
+        templates = (
+            ("dose4_t1.xlsx", (4.0,), 1.0),
+            ("dose6_t2.xlsx", (6.0,), 2.0),
+            ("dose8_t4.xlsx", (8.0,), 4.0),
+            ("dose10_t5.xlsx", (10.0,), 5.0),
+            ("split5_5_t6.xlsx", (5.0, 5.0), 6.0),
+            ("split6_6_t7.xlsx", (6.0, 6.0), 7.0),
+        )
+        experiments = []
+        for name, fractions, sf_time_day in templates:
+            dose_sum = sum(fractions)
+            dose2_sum = sum(dose * dose for dose in fractions)
+            exponent = (
+                expected_alpha * dose_sum
+                + expected_beta * dose2_sum
+                - expected_repopulation_rate * max(sf_time_day - expected_lag_days, 0.0)
+            )
+            experiments.append(
+                TumorExperiment(
+                    path=Path(name),
+                    fractions=fractions,
+                    sf=math.exp(-exponent),
+                    family="y",
+                    sf_time_day=sf_time_day,
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+        )
+        comparison = fitter.compare_models(
+            experiments=experiments,
+            response_mode="scalar",
+            family="y",
+            sf_mode="absolute",
+        )
+
+        self.assertGreaterEqual(len(comparison), 4)
+        self.assertEqual(comparison[0].model_kind, "lq_repop")
+        self.assertEqual(comparison[0].status, "ok")
+        self.assertEqual(comparison[0].reason, "rank=1")
+
     def test_compute_timing_diagnostics_warns_for_weak_repair_dataset(self) -> None:
         fitter = Fitter(
             sf_mode="absolute",

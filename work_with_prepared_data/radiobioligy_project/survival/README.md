@@ -82,6 +82,7 @@ CLI:
 - `--model-kind classic_lq`
 - `--model-kind repair_lq`
 - `--model-kind lq_l`
+- `--model-kind lq_repop`
 - `--model-kind linear`
 
 Смысл:
@@ -93,6 +94,9 @@ CLI:
 - `lq_l`
   - LQ-L with transition dose;
   - до переходной дозы используется обычный квадратичный член, а выше включается линейный хвост
+- `lq_repop`
+  - классический LQ с задержкой и репопуляцией;
+  - fitter оценивает `lag_days` и `repopulation_rate`
 - `linear`
   - частный случай без квадратичного члена, то есть `beta = 0`
 
@@ -104,7 +108,10 @@ CLI:
 
 В этом режиме fitter считает несколько кандидатов и ранжирует их по ошибке на train-наборе (`MAE`, `RMSE`, `mean_abs_log_error`, `AIC`).
 
-Для `LQ-L` в результате дополнительно выводится `transition_dose`.
+Для расширенных моделей fitter дополнительно выводит:
+
+- `transition_dose` для `LQ-L`
+- `lag_days` и `repopulation_rate` для `LQ + repopulation`
 
 ## Family
 
