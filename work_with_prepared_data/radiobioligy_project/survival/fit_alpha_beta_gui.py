@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import math
 import sys
 import traceback
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Mapping, Optional, Sequence
 
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
@@ -28,6 +31,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -42,12 +46,23 @@ from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_
     AnalysisRunResult,
     Fitter,
     InventoryReport,
+    LQFitResult,
     TumorExperiment,
     analyze_files,
     format_fractions,
     infer_radiation_family,
     is_control_file,
     parse_sf_modes,
+)
+from work_with_prepared_data.radiobioligy_project.survival.gui_csv_export import (
+    related_csv_path,
+    write_csv_rows,
+)
+from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis import (
+    RBEPoint,
+    SFMetricComparisonRow,
+    build_rbe_series,
+    compare_sf_metric_sensitivity,
 )
 from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predictor_gui import (
     TumorGrowthPredictorWindow,
@@ -129,6 +144,146 @@ INVENTORY_HEADERS = [
     "Notes",
 ]
 
+RBE_HEADERS = [
+    "Reference",
+    "Test family",
+    "Test dose",
+    "Reference dose",
+    "RBE",
+    "Test alpha/beta",
+    "Model",
+]
+
+SF_METRIC_HEADERS = [
+    "Family",
+    "Response",
+    "Model",
+    "SF mode",
+    "Alpha",
+    "Beta",
+    "Alpha/Beta",
+    "Delta alpha %",
+    "Delta beta %",
+    "Delta ratio %",
+]
+
+
+def parse_positive_float_csv(text: str, default: Sequence[float] = (2.0, 10.0)) -> List[float]:
+    """Parse a comma-separated positive float list for GUI analysis controls."""
+    raw = text.strip()
+    if not raw:
+        return [float(value) for value in default]
+
+    values: List[float] = []
+    for chunk in raw.split(","):
+        value = float(chunk.strip().replace(",", "."))
+        if value <= 0.0:
+            raise ValueError("Dose values must be positive.")
+        values.append(value)
+    return values or [float(value) for value in default]
+
+
+def _format_export_float(value: Optional[float], digits: int) -> str:
+    if value is None or not math.isfinite(float(value)):
+        return ""
+    return f"{float(value):.{digits}f}"
+
+
+def build_rbe_table_rows(rows: Sequence[RBEPoint]) -> List[List[str]]:
+    ordered_rows = sorted(rows, key=lambda row: (row.test_family, row.test_dose))
+    return [
+        [
+            row.reference_family,
+            row.test_family,
+            f"{row.test_dose:.3f}",
+            f"{row.reference_dose:.6f}",
+            f"{row.rbe:.6f}",
+            _format_export_float(row.test_alpha_beta_ratio, digits=3),
+            row.test_model_kind,
+        ]
+        for row in ordered_rows
+    ]
+
+
+def build_sf_metric_table_rows(rows: Sequence[SFMetricComparisonRow]) -> List[List[str]]:
+    ordered_rows = sorted(
+        rows,
+        key=lambda row: (row.family, row.response_mode, row.model_kind, row.sf_mode),
+    )
+    return [
+        [
+            row.family,
+            row.response_mode,
+            row.model_kind,
+            row.sf_mode,
+            _format_export_float(row.alpha, digits=6),
+            _format_export_float(row.beta, digits=6),
+            _format_export_float(row.alpha_beta_ratio, digits=3),
+            _format_export_float(row.delta_alpha_pct, digits=2),
+            _format_export_float(row.delta_beta_pct, digits=2),
+            _format_export_float(row.delta_ratio_pct, digits=2),
+        ]
+        for row in ordered_rows
+    ]
+
+
+def select_rbe_run_context(
+    run_results: Sequence[AnalysisRunResult],
+    selected_index: int,
+    reference_family: str,
+) -> tuple[LQFitResult, dict[str, LQFitResult], str]:
+    """Select a coherent RBE comparison context from fitted GUI runs."""
+    if selected_index < 0 or selected_index >= len(run_results):
+        raise ValueError("Choose a fitted run first.")
+
+    selected_run = run_results[selected_index]
+    if selected_run.fit_result is None:
+        raise ValueError("Selected run does not contain fitted alpha/beta values.")
+
+    response_mode = selected_run.summary.response_mode
+    model_kind = selected_run.summary.model_kind
+    sf_mode = selected_run.summary.sf_mode
+    reference_family = reference_family.strip().lower()
+
+    matching_runs = [
+        run
+        for run in run_results
+        if run.fit_result is not None
+        and run.summary.status == "ok"
+        and run.summary.response_mode == response_mode
+        and run.summary.model_kind == model_kind
+        and run.summary.sf_mode == sf_mode
+    ]
+    if not matching_runs:
+        raise ValueError("No comparable fitted runs are available for RBE analysis.")
+
+    reference_run = next(
+        (run for run in matching_runs if (run.summary.family or "").lower() == reference_family),
+        None,
+    )
+    if reference_run is None or reference_run.fit_result is None:
+        raise ValueError(
+            "No fitted reference run matches the selected response/model/SF context "
+            f"for family '{reference_family}'."
+        )
+
+    comparison_results: dict[str, LQFitResult] = {}
+    for run in matching_runs:
+        family = (run.summary.family or "").lower()
+        if not family or family == reference_family or run.fit_result is None:
+            continue
+        comparison_results[family] = run.fit_result
+
+    if not comparison_results:
+        raise ValueError(
+            "No other fitted families are available in the same response/model/SF context."
+        )
+
+    context_label = (
+        f"sf={sf_mode} | response={response_mode} | model={model_kind} | reference={reference_family}"
+    )
+    return reference_run.fit_result, comparison_results, context_label
+
 
 class FileDropListWidget(QListWidget):
     """List widget that accepts dropped local files."""
@@ -173,43 +328,88 @@ class FitAlphaBetaWindow(QMainWindow):
         self.run_results: List[AnalysisRunResult] = []
         self.inventory_report: Optional[InventoryReport] = None
         self.growth_predictor_window: Optional[TumorGrowthPredictorWindow] = None
+        self.rbe_points: List[RBEPoint] = []
+        self.sf_metric_rows: List[SFMetricComparisonRow] = []
         self.setWindowTitle("Survival LQ fitter")
-        self.resize(1400, 900)
+        self.resize(1260, 780)
+        self.setMinimumSize(1080, 680)
         self._build_ui()
+        self._apply_window_style()
+        self.statusBar().showMessage("Drop .xlsx files here or add them with the buttons.")
 
     def _build_ui(self) -> None:
         central = QWidget(self)
-        root_layout = QVBoxLayout(central)
+        root_layout = QHBoxLayout(central)
+        root_layout.setContentsMargins(10, 10, 10, 10)
+        root_layout.setSpacing(10)
 
-        root_layout.addWidget(self._build_file_group())
-        root_layout.addWidget(self._build_options_group())
+        main_splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        main_splitter.setChildrenCollapsible(False)
+        main_splitter.addWidget(self._build_sidebar_panel())
 
-        action_row = QHBoxLayout()
-        self.run_button = QPushButton("Run fit")
-        self.run_button.clicked.connect(self.run_analysis)
-        action_row.addWidget(self.run_button)
+        results_splitter = QSplitter(Qt.Orientation.Vertical, self)
+        results_splitter.setChildrenCollapsible(False)
+        results_splitter.addWidget(self._build_summary_panel())
+        results_splitter.addWidget(self._build_detail_panel())
+        results_splitter.setStretchFactor(0, 1)
+        results_splitter.setStretchFactor(1, 3)
+        results_splitter.setSizes([250, 520])
 
-        self.inventory_button = QPushButton("Scan inventory")
-        self.inventory_button.clicked.connect(self.scan_inventory)
-        action_row.addWidget(self.inventory_button)
-
-        self.predictor_button = QPushButton("Open growth predictor")
-        self.predictor_button.clicked.connect(self.open_growth_predictor)
-        action_row.addWidget(self.predictor_button)
-        action_row.addStretch(1)
-        root_layout.addLayout(action_row)
-
-        splitter = QSplitter(Qt.Orientation.Vertical, self)
-        splitter.addWidget(self._build_summary_panel())
-        splitter.addWidget(self._build_detail_panel())
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 4)
-        root_layout.addWidget(splitter, 1)
+        main_splitter.addWidget(results_splitter)
+        main_splitter.setStretchFactor(0, 0)
+        main_splitter.setStretchFactor(1, 1)
+        main_splitter.setSizes([430, 900])
+        root_layout.addWidget(main_splitter, 1)
 
         self.setCentralWidget(central)
         self.setStatusBar(QStatusBar(self))
         self.statusBar().showMessage("Drop .xlsx files сюда или добавьте их кнопками.")
         self.refresh_control_selector()
+
+    def _build_sidebar_panel(self) -> QWidget:
+        panel = QWidget(self)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+
+        self.run_button = QPushButton("Run fit")
+        self.run_button.setObjectName("PrimaryAction")
+        self.run_button.clicked.connect(self.run_analysis)
+        action_row.addWidget(self.run_button)
+
+        self.inventory_button = QPushButton("Inventory")
+        self.inventory_button.clicked.connect(self.scan_inventory)
+        action_row.addWidget(self.inventory_button)
+        layout.addLayout(action_row)
+
+        self.predictor_button = QPushButton("Growth predictor")
+        self.predictor_button.clicked.connect(self.open_growth_predictor)
+        layout.addWidget(self.predictor_button)
+
+        tabs = QTabWidget(self)
+
+        files_page = QWidget(self)
+        files_layout = QVBoxLayout(files_page)
+        files_layout.setContentsMargins(0, 0, 0, 0)
+        files_layout.addWidget(self._build_file_group())
+        tabs.addTab(files_page, "Files")
+
+        options_container = QWidget(self)
+        options_layout = QVBoxLayout(options_container)
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        options_layout.addWidget(self._build_options_group())
+        options_layout.addStretch(1)
+
+        options_scroll = QScrollArea(self)
+        options_scroll.setWidgetResizable(True)
+        options_scroll.setWidget(options_container)
+        tabs.addTab(options_scroll, "Fit setup")
+
+        layout.addWidget(tabs, 1)
+        return panel
 
     def open_growth_predictor(self) -> None:
         if self.growth_predictor_window is None:
@@ -222,19 +422,22 @@ class FitAlphaBetaWindow(QMainWindow):
         self.growth_predictor_window.activateWindow()
 
     def _build_file_group(self) -> QGroupBox:
-        group = QGroupBox("Input files", self)
+        group = QGroupBox("Files and controls", self)
         layout = QVBoxLayout(group)
+        layout.setContentsMargins(10, 14, 10, 10)
+        layout.setSpacing(8)
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(6)
         add_files_button = QPushButton("Add files")
         add_files_button.clicked.connect(self.add_files_dialog)
         button_row.addWidget(add_files_button)
 
-        add_folder_button = QPushButton("Add folder")
+        add_folder_button = QPushButton("Folder")
         add_folder_button.clicked.connect(self.add_folder_dialog)
         button_row.addWidget(add_folder_button)
 
-        remove_button = QPushButton("Remove selected")
+        remove_button = QPushButton("Remove")
         remove_button.clicked.connect(self.remove_selected_files)
         button_row.addWidget(remove_button)
 
@@ -248,7 +451,7 @@ class FitAlphaBetaWindow(QMainWindow):
         self.file_list = FileDropListWidget(self)
         self.file_list.files_dropped.connect(self.add_paths)
         self.file_list.setAlternatingRowColors(True)
-        self.file_list.setMinimumHeight(180)
+        self.file_list.setMinimumHeight(140)
         self.file_list.setToolTip(
             "Можно перетаскивать .xlsx файлы или целые папки. "
             "Файлы с 'control' в имени будут использованы как контроль."
@@ -257,13 +460,15 @@ class FitAlphaBetaWindow(QMainWindow):
 
         layout.addWidget(QLabel("Experiment to control mapping"))
         self.assignment_table = self._create_table(ASSIGNMENT_HEADERS)
-        self.assignment_table.setMinimumHeight(180)
+        self.assignment_table.setMinimumHeight(150)
         layout.addWidget(self.assignment_table)
         return group
 
     def _build_options_group(self) -> QGroupBox:
-        group = QGroupBox("Options", self)
+        group = QGroupBox("Fit options", self)
         layout = QGridLayout(group)
+        layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(6)
 
         layout.addWidget(QLabel("SF modes"), 0, 0)
         self.sf_modes_edit = QLineEdit("absolute", self)
@@ -277,7 +482,7 @@ class FitAlphaBetaWindow(QMainWindow):
             self.family_combo.addItem(family, family)
         layout.addWidget(self.family_combo, 0, 3)
 
-        self.by_family_check = QCheckBox("Analyze by family", self)
+        self.by_family_check = QCheckBox("By family", self)
         layout.addWidget(self.by_family_check, 0, 4)
 
         layout.addWidget(QLabel("Default control"), 1, 0)
@@ -288,7 +493,7 @@ class FitAlphaBetaWindow(QMainWindow):
         )
         layout.addWidget(self.control_combo, 1, 1, 1, 4)
 
-        self.apply_default_control_button = QPushButton("Apply to all experiments")
+        self.apply_default_control_button = QPushButton("Apply to all")
         self.apply_default_control_button.clicked.connect(self.apply_default_control_to_all)
         layout.addWidget(self.apply_default_control_button, 1, 5)
 
@@ -376,13 +581,13 @@ class FitAlphaBetaWindow(QMainWindow):
         )
         layout.addWidget(self.repair_half_time_spin, 5, 1)
 
-        self.aggregate_check = QCheckBox("Aggregate repeated regimens", self)
+        self.aggregate_check = QCheckBox("Aggregate repeats", self)
         layout.addWidget(self.aggregate_check, 5, 2, 1, 2)
 
-        self.dedupe_check = QCheckBox("Deduplicate regimens", self)
+        self.dedupe_check = QCheckBox("Deduplicate", self)
         layout.addWidget(self.dedupe_check, 5, 4, 1, 2)
 
-        self.verbose_check = QCheckBox("Verbose CLI logging in terminal", self)
+        self.verbose_check = QCheckBox("Verbose terminal log", self)
         layout.addWidget(self.verbose_check, 6, 0, 1, 3)
 
         layout.addWidget(QLabel("Summary CSV"), 7, 0)
@@ -402,23 +607,32 @@ class FitAlphaBetaWindow(QMainWindow):
     def _build_summary_panel(self) -> QWidget:
         panel = QWidget(self)
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
-        layout.addWidget(QLabel("Run summary"))
+        header_row = QHBoxLayout()
+        header_row.addWidget(QLabel("Run summary"))
+        header_row.addStretch(1)
+        header_row.addWidget(QLabel("Selected run"))
+        self.run_selector = QComboBox(self)
+        self.run_selector.setMinimumWidth(360)
+        self.run_selector.setMaxVisibleItems(14)
+        self.run_selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContentsOnFirstShow)
+        self.run_selector.currentIndexChanged.connect(self.display_run)
+        header_row.addWidget(self.run_selector)
+        layout.addLayout(header_row)
+
         self.summary_table = self._create_table(SUMMARY_HEADERS)
         self.summary_table.currentCellChanged.connect(self._sync_run_selector_with_table)
+        self.summary_table.setMinimumHeight(220)
         layout.addWidget(self.summary_table)
         return panel
 
     def _build_detail_panel(self) -> QWidget:
         panel = QWidget(self)
         layout = QVBoxLayout(panel)
-
-        header_row = QHBoxLayout()
-        header_row.addWidget(QLabel("Selected run"))
-        self.run_selector = QComboBox(self)
-        self.run_selector.currentIndexChanged.connect(self.display_run)
-        header_row.addWidget(self.run_selector, 1)
-        layout.addLayout(header_row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         self.detail_tabs = QTabWidget(self)
 
@@ -437,7 +651,7 @@ class FitAlphaBetaWindow(QMainWindow):
         inventory_layout.addWidget(self.inventory_table, 1)
         self.inventory_text = QPlainTextEdit(self)
         self.inventory_text.setReadOnly(True)
-        self.inventory_text.setMaximumHeight(180)
+        self.inventory_text.setMaximumHeight(150)
         inventory_layout.addWidget(self.inventory_text)
         self.detail_tabs.addTab(inventory_panel, "Inventory")
 
@@ -445,7 +659,74 @@ class FitAlphaBetaWindow(QMainWindow):
         self.details_text.setReadOnly(True)
         self.detail_tabs.addTab(self.details_text, "Summary text")
 
+        self.detail_tabs.addTab(self._build_analysis_panel(), "Analysis")
+
         layout.addWidget(self.detail_tabs, 1)
+        return panel
+
+    def _build_analysis_panel(self) -> QWidget:
+        panel = QWidget(self)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        controls_group = QGroupBox("Radiobiology analysis", self)
+        controls_layout = QGridLayout(controls_group)
+        controls_layout.setHorizontalSpacing(8)
+        controls_layout.setVerticalSpacing(6)
+
+        controls_layout.addWidget(QLabel("Reference family"), 0, 0)
+        self.rbe_reference_combo = QComboBox(self)
+        for family in ("y", "p", "p_peak", "p_through", "n", "e", "c"):
+            self.rbe_reference_combo.addItem(family, family)
+        self.rbe_reference_combo.setCurrentText("y")
+        self.rbe_reference_combo.currentIndexChanged.connect(self.refresh_analysis_views)
+        controls_layout.addWidget(self.rbe_reference_combo, 0, 1)
+
+        controls_layout.addWidget(QLabel("RBE doses (Gy)"), 0, 2)
+        self.rbe_doses_edit = QLineEdit("2, 10", self)
+        self.rbe_doses_edit.setPlaceholderText("2, 10")
+        controls_layout.addWidget(self.rbe_doses_edit, 0, 3)
+
+        self.rbe_button = QPushButton("Build RBE")
+        self.rbe_button.clicked.connect(self.refresh_analysis_views)
+        controls_layout.addWidget(self.rbe_button, 1, 0, 1, 2)
+
+        self.sf_metric_button = QPushButton("Compare SF modes")
+        self.sf_metric_button.clicked.connect(self.refresh_analysis_views)
+        controls_layout.addWidget(self.sf_metric_button, 1, 2, 1, 2)
+
+        self.export_analysis_button = QPushButton("Export CSV")
+        self.export_analysis_button.clicked.connect(self.export_analysis_csv)
+        controls_layout.addWidget(self.export_analysis_button, 1, 4, 1, 2)
+
+        controls_layout.setColumnStretch(3, 1)
+        layout.addWidget(controls_group)
+
+        self.analysis_figure = Figure(figsize=(8, 4.8))
+        self.analysis_canvas = FigureCanvasQTAgg(self.analysis_figure)
+        self.analysis_canvas.setMinimumHeight(220)
+        layout.addWidget(self.analysis_canvas)
+
+        analysis_tables = QSplitter(Qt.Orientation.Vertical, self)
+        analysis_tables.setChildrenCollapsible(False)
+
+        self.rbe_table = self._create_table(RBE_HEADERS)
+        self.rbe_table.setMinimumHeight(140)
+        analysis_tables.addWidget(self.rbe_table)
+
+        self.sf_metric_table = self._create_table(SF_METRIC_HEADERS)
+        self.sf_metric_table.setMinimumHeight(140)
+        analysis_tables.addWidget(self.sf_metric_table)
+        analysis_tables.setStretchFactor(0, 1)
+        analysis_tables.setStretchFactor(1, 1)
+        analysis_tables.setSizes([180, 180])
+        layout.addWidget(analysis_tables, 1)
+
+        self.analysis_text = QPlainTextEdit(self)
+        self.analysis_text.setReadOnly(True)
+        self.analysis_text.setMaximumHeight(140)
+        layout.addWidget(self.analysis_text)
         return panel
 
     @staticmethod
@@ -456,10 +737,106 @@ class FitAlphaBetaWindow(QMainWindow):
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         table.setAlternatingRowColors(True)
+        table.setWordWrap(False)
+        table.verticalHeader().setVisible(False)
         header = table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(True)
         return table
+
+    def _apply_window_style(self) -> None:
+        self.setStyleSheet(
+            """
+            QWidget {
+                font-size: 12px;
+                color: #1f2937;
+            }
+            QMainWindow {
+                background: #f3f5f9;
+            }
+            QGroupBox {
+                background: #f8fafc;
+                border: 1px solid #d7dde8;
+                border-radius: 10px;
+                margin-top: 14px;
+                font-weight: 600;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 4px;
+            }
+            QTabWidget::pane {
+                border: 1px solid #d7dde8;
+                border-radius: 10px;
+                background: #ffffff;
+                top: -1px;
+            }
+            QTabBar::tab {
+                background: #e9eef6;
+                border: 1px solid #d7dde8;
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                padding: 6px 10px;
+                margin-right: 4px;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+            }
+            QPushButton {
+                background: #ffffff;
+                border: 1px solid #cfd7e4;
+                border-radius: 8px;
+                padding: 6px 10px;
+                min-height: 28px;
+            }
+            QPushButton:hover {
+                background: #f4f8ff;
+                border-color: #b8c7dd;
+            }
+            QPushButton#PrimaryAction {
+                background: #dcecff;
+                border-color: #9cbde7;
+                font-weight: 600;
+            }
+            QPushButton#PrimaryAction:hover {
+                background: #cfe4ff;
+            }
+            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+                background: #ffffff;
+                border: 1px solid #cfd7e4;
+                border-radius: 7px;
+                padding: 4px 6px;
+                min-height: 24px;
+            }
+            QComboBox QAbstractItemView {
+                background: #ffffff;
+                color: #1f2937;
+                border: 1px solid #cfd7e4;
+                selection-background-color: #dcecff;
+                selection-color: #1f2937;
+                outline: 0;
+            }
+            QTableWidget, QListWidget, QPlainTextEdit, QScrollArea {
+                background: #ffffff;
+                border: 1px solid #d7dde8;
+                border-radius: 8px;
+                alternate-background-color: #f7f9fc;
+            }
+            QHeaderView::section {
+                background: #eef3f8;
+                border: none;
+                border-right: 1px solid #d7dde8;
+                border-bottom: 1px solid #d7dde8;
+                padding: 5px 6px;
+                font-weight: 600;
+            }
+            QSplitter::handle {
+                background: #e3e8f0;
+            }
+            """
+        )
 
     def _update_alpha_enabled(self, enabled: bool) -> None:
         self.alpha_spin.setEnabled(enabled)
@@ -489,6 +866,39 @@ class FitAlphaBetaWindow(QMainWindow):
         )
         if path:
             self.summary_csv_edit.setText(path)
+
+    def export_analysis_csv(self) -> None:
+        if not self.rbe_points and not self.sf_metric_rows:
+            QMessageBox.information(
+                self,
+                "Nothing to export",
+                "Build RBE or SF metric comparisons first.",
+            )
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export radiobiology analysis",
+            str(Path.cwd() / "radiobiology_analysis.csv"),
+            "CSV files (*.csv)",
+        )
+        if not path:
+            return
+
+        written_paths: List[Path] = []
+        base_path = Path(path)
+        if self.rbe_points:
+            rbe_path = related_csv_path(base_path, "rbe")
+            write_csv_rows(rbe_path, RBE_HEADERS, build_rbe_table_rows(self.rbe_points))
+            written_paths.append(rbe_path)
+        if self.sf_metric_rows:
+            sf_path = related_csv_path(base_path, "sf_metrics")
+            write_csv_rows(sf_path, SF_METRIC_HEADERS, build_sf_metric_table_rows(self.sf_metric_rows))
+            written_paths.append(sf_path)
+
+        self.statusBar().showMessage(
+            "Analysis CSV export complete: " + ", ".join(str(path) for path in written_paths)
+        )
 
     def add_paths(self, paths: Sequence[str]) -> None:
         known_paths = {
@@ -825,6 +1235,11 @@ class FitAlphaBetaWindow(QMainWindow):
             ]
             self._fill_row(self.summary_table, row_index, values)
             self.run_selector.addItem(run.label)
+            self.run_selector.setItemData(
+                row_index,
+                run.label,
+                Qt.ItemDataRole.ToolTipRole,
+            )
 
         self.run_selector.blockSignals(False)
 
@@ -848,6 +1263,180 @@ class FitAlphaBetaWindow(QMainWindow):
         self.validation_table.setRowCount(0)
         self.bootstrap_table.setRowCount(0)
         self.details_text.clear()
+        self.rbe_points = []
+        self.sf_metric_rows = []
+        self.rbe_table.setRowCount(0)
+        self.sf_metric_table.setRowCount(0)
+        self.analysis_text.clear()
+        self.refresh_analysis_plot()
+
+    def refresh_analysis_views(self, *_args: object) -> None:
+        self.rbe_points = []
+        self.sf_metric_rows = []
+        rbe_error: Optional[str] = None
+        sf_error: Optional[str] = None
+        context_label: Optional[str] = None
+
+        if self.run_results:
+            selected_index = self.run_selector.currentIndex()
+            try:
+                doses = parse_positive_float_csv(self.rbe_doses_edit.text())
+                reference_fit, comparison_results, context_label = select_rbe_run_context(
+                    self.run_results,
+                    selected_index,
+                    str(self.rbe_reference_combo.currentData() or "y"),
+                )
+                self.rbe_points = list(
+                    build_rbe_series(reference_fit, comparison_results, doses=doses)
+                )
+            except Exception as exc:
+                rbe_error = str(exc)
+
+            try:
+                selected_run = self.run_results[selected_index]
+                sf_rows = compare_sf_metric_sensitivity(self.run_results)
+                self.sf_metric_rows = [
+                    row
+                    for row in sf_rows
+                    if row.response_mode == selected_run.summary.response_mode
+                    and row.model_kind == selected_run.summary.model_kind
+                ]
+            except Exception as exc:
+                sf_error = str(exc)
+
+        self.populate_rbe_table(self.rbe_points)
+        self.populate_sf_metric_table(self.sf_metric_rows)
+        self.refresh_analysis_plot()
+        self.analysis_text.setPlainText(
+            self.build_analysis_summary_text(context_label, rbe_error, sf_error)
+        )
+
+    def populate_rbe_table(self, rows: Sequence[RBEPoint]) -> None:
+        table_rows = build_rbe_table_rows(rows)
+        self.rbe_table.setRowCount(len(table_rows))
+        for row_index, values in enumerate(table_rows):
+            self._fill_row(self.rbe_table, row_index, values)
+
+    def populate_sf_metric_table(self, rows: Sequence[SFMetricComparisonRow]) -> None:
+        table_rows = build_sf_metric_table_rows(rows)
+        self.sf_metric_table.setRowCount(len(table_rows))
+        for row_index, values in enumerate(table_rows):
+            self._fill_row(self.sf_metric_table, row_index, values)
+
+    def refresh_analysis_plot(self) -> None:
+        self.analysis_figure.clear()
+        if not self.rbe_points:
+            axis = self.analysis_figure.add_subplot(111)
+            axis.axis("off")
+            axis.text(
+                0.5,
+                0.5,
+                "No RBE points yet",
+                ha="center",
+                va="center",
+                fontsize=11,
+                color="#5f6b7a",
+            )
+            self.analysis_canvas.draw_idle()
+            return
+
+        dose_axis, ratio_axis = self.analysis_figure.subplots(1, 2)
+        families = sorted({row.test_family for row in self.rbe_points})
+        for family in families:
+            family_rows = sorted(
+                (row for row in self.rbe_points if row.test_family == family),
+                key=lambda row: row.test_dose,
+            )
+            dose_axis.plot(
+                [row.test_dose for row in family_rows],
+                [row.rbe for row in family_rows],
+                marker="o",
+                linewidth=1.8,
+                label=family,
+            )
+
+            ratio_rows = [
+                row for row in family_rows if row.test_alpha_beta_ratio is not None
+            ]
+            if ratio_rows:
+                ratio_axis.scatter(
+                    [float(row.test_alpha_beta_ratio) for row in ratio_rows],
+                    [row.rbe for row in ratio_rows],
+                    label=family,
+                    s=34,
+                )
+                for row in ratio_rows:
+                    ratio_axis.annotate(
+                        f"{family}@{row.test_dose:g}",
+                        (float(row.test_alpha_beta_ratio), row.rbe),
+                        textcoords="offset points",
+                        xytext=(4, 4),
+                        fontsize=8,
+                        alpha=0.8,
+                    )
+
+        dose_axis.set_title("RBE vs dose")
+        dose_axis.set_xlabel("Test dose (Gy)")
+        dose_axis.set_ylabel("RBE")
+        dose_axis.grid(True, alpha=0.25)
+        dose_axis.legend(loc="best")
+
+        ratio_axis.set_title("RBE vs alpha/beta")
+        ratio_axis.set_xlabel("Test alpha/beta (Gy)")
+        ratio_axis.set_ylabel("RBE")
+        ratio_axis.grid(True, alpha=0.25)
+        if any(row.test_alpha_beta_ratio is not None for row in self.rbe_points):
+            ratio_axis.legend(loc="best")
+        else:
+            ratio_axis.text(
+                0.5,
+                0.5,
+                "No alpha/beta ratios available",
+                ha="center",
+                va="center",
+                transform=ratio_axis.transAxes,
+                fontsize=10,
+                color="#5f6b7a",
+            )
+
+        self.analysis_figure.tight_layout(pad=1.1)
+        self.analysis_canvas.draw_idle()
+
+    def build_analysis_summary_text(
+        self,
+        context_label: Optional[str],
+        rbe_error: Optional[str],
+        sf_error: Optional[str],
+    ) -> str:
+        lines: List[str] = []
+        if context_label is not None:
+            lines.append(f"RBE context: {context_label}")
+        if self.rbe_points:
+            lines.append(f"RBE points: {len(self.rbe_points)}")
+            family_names = sorted({row.test_family for row in self.rbe_points})
+            lines.append(f"Compared families: {', '.join(family_names)}")
+        elif rbe_error:
+            lines.append(f"RBE: {rbe_error}")
+        else:
+            lines.append("RBE: no comparable fitted families yet.")
+
+        lines.append("")
+        if self.sf_metric_rows:
+            lines.append(f"SF metric rows: {len(self.sf_metric_rows)}")
+            lines.append(
+                "Rows are filtered to the selected response/model context."
+            )
+        elif sf_error:
+            lines.append(f"SF metric comparison: {sf_error}")
+        else:
+            lines.append("SF metric comparison: not enough fitted runs yet.")
+
+        lines.append("")
+        lines.append(
+            "Predictor-based parameter and interval sensitivity are implemented in the backend "
+            "module and can be surfaced in the predictor window next."
+        )
+        return "\n".join(lines)
 
     def clear_inventory(self) -> None:
         self.inventory_report = None
@@ -950,6 +1539,7 @@ class FitAlphaBetaWindow(QMainWindow):
         self.populate_validation_table(run)
         self.populate_bootstrap_table(run)
         self.details_text.setPlainText(self.build_run_summary_text(run))
+        self.refresh_analysis_views()
 
     def populate_train_table(self, experiments: Sequence[TumorExperiment]) -> None:
         self.train_table.setRowCount(len(experiments))

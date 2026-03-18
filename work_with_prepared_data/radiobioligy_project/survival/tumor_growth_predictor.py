@@ -6,7 +6,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -20,6 +20,7 @@ class TreatmentFraction:
 
     day: float
     dose: float
+    family: str | None = None
 
 
 @dataclass(frozen=True)
@@ -223,11 +224,62 @@ def build_schedule_from_intervals(
 def sanitize_schedule(schedule: Iterable[TreatmentFraction]) -> list[TreatmentFraction]:
     """Sort and filter irradiation events."""
     cleaned = [
-        TreatmentFraction(day=float(item.day), dose=float(item.dose))
+        TreatmentFraction(
+            day=float(item.day),
+            dose=float(item.dose),
+            family=(None if item.family is None else str(item.family).strip().lower() or None),
+        )
         for item in schedule
         if np.isfinite(item.day) and np.isfinite(item.dose) and item.dose > 0.0
     ]
-    return sorted(cleaned, key=lambda item: (item.day, item.dose))
+    return sorted(cleaned, key=lambda item: (item.day, item.dose, item.family or ""))
+
+
+def _fraction_parameter_key(fraction: TreatmentFraction) -> str:
+    return fraction.family or "__default__"
+
+
+def _resolve_fraction_parameters(
+    fraction: TreatmentFraction,
+    default_parameters: GrowthModelParameters,
+    family_parameters: Mapping[str, GrowthModelParameters] | None,
+) -> GrowthModelParameters:
+    if fraction.family is None:
+        return default_parameters
+    if family_parameters is None:
+        return default_parameters
+    family_key = str(fraction.family).strip().lower()
+    if family_key not in family_parameters:
+        return default_parameters
+    return family_parameters[family_key]
+
+
+def _decay_unrepaired_dose_map(
+    unrepaired_dose_by_family: dict[str, float],
+    dt_days: float,
+    default_parameters: GrowthModelParameters,
+    family_parameters: Mapping[str, GrowthModelParameters] | None,
+) -> dict[str, float]:
+    if dt_days <= 0.0 or not unrepaired_dose_by_family:
+        return dict(unrepaired_dose_by_family)
+
+    decayed: dict[str, float] = {}
+    for family_key, unrepaired_dose in unrepaired_dose_by_family.items():
+        if family_key == "__default__":
+            parameters = default_parameters
+        else:
+            if family_parameters is None or family_key not in family_parameters:
+                parameters = default_parameters
+            else:
+                parameters = family_parameters[family_key]
+        value = advance_unrepaired_dose(
+            unrepaired_dose,
+            dt_days,
+            parameters.repair_rate_per_day,
+        )
+        if value > 1.0e-12:
+            decayed[family_key] = value
+    return decayed
 
 
 def default_geometry_scaling(reference: GeometryReference) -> GeometryScalingModel:
@@ -324,6 +376,7 @@ def simulate_growth(
     reference: GeometryReference,
     schedule: Sequence[TreatmentFraction],
     scaling_model: GeometryScalingModel | None = None,
+    family_parameters: Mapping[str, GrowthModelParameters] | None = None,
 ) -> GrowthSimulationResult:
     """Simulate tumor dynamics with Gompertz growth, LQ kill, and delayed clearance."""
     times = np.asarray(sample_times, dtype=float)
@@ -341,7 +394,14 @@ def simulate_growth(
     schedule = sanitize_schedule(schedule)
     live = float(reference.volume)
     dead = 0.0
-    unrepaired_dose = 0.0
+    normalized_family_parameters = None
+    if family_parameters is not None:
+        normalized_family_parameters = {
+            str(key).strip().lower(): value
+            for key, value in family_parameters.items()
+        }
+
+    unrepaired_dose_by_family: dict[str, float] = {}
     current_time = float(times[0])
     if current_time < 0.0:
         raise ValueError("sample_times must start at zero or later.")
@@ -349,34 +409,51 @@ def simulate_growth(
     live_values = np.empty_like(times)
     dead_values = np.empty_like(times)
     schedule_index = 0
-    repair_rate = parameters.repair_rate_per_day
-
     for time_index, target_time in enumerate(times):
         while schedule_index < len(schedule) and schedule[schedule_index].day <= target_time + 1.0e-12:
             event = schedule[schedule_index]
+            event_parameters = _resolve_fraction_parameters(
+                event,
+                parameters,
+                normalized_family_parameters,
+            )
             dt_event = max(event.day - current_time, 0.0)
             live = gompertz_step(live, dt_event, parameters.growth_rate, parameters.carrying_capacity)
             dead = dead_volume_step(dead, dt_event, parameters.clearance_rate)
-            unrepaired_dose = advance_unrepaired_dose(unrepaired_dose, dt_event, repair_rate)
+            unrepaired_dose_by_family = _decay_unrepaired_dose_map(
+                unrepaired_dose_by_family,
+                dt_event,
+                parameters,
+                normalized_family_parameters,
+            )
             current_time = max(current_time, event.day)
 
             sf = surviving_fraction(
-                parameters.alpha,
-                parameters.beta,
+                event_parameters.alpha,
+                event_parameters.beta,
                 event.dose,
-                prior_unrepaired_dose=unrepaired_dose,
+                prior_unrepaired_dose=sum(unrepaired_dose_by_family.values()),
             )
             killed = live * (1.0 - sf)
             live *= sf
             dead += killed
+            repair_rate = event_parameters.repair_rate_per_day
             if repair_rate is not None and repair_rate > 0.0:
-                unrepaired_dose += event.dose
+                family_key = _fraction_parameter_key(event)
+                unrepaired_dose_by_family[family_key] = (
+                    unrepaired_dose_by_family.get(family_key, 0.0) + event.dose
+                )
             schedule_index += 1
 
         dt_target = max(float(target_time) - current_time, 0.0)
         live = gompertz_step(live, dt_target, parameters.growth_rate, parameters.carrying_capacity)
         dead = dead_volume_step(dead, dt_target, parameters.clearance_rate)
-        unrepaired_dose = advance_unrepaired_dose(unrepaired_dose, dt_target, repair_rate)
+        unrepaired_dose_by_family = _decay_unrepaired_dose_map(
+            unrepaired_dose_by_family,
+            dt_target,
+            parameters,
+            normalized_family_parameters,
+        )
         current_time = float(target_time)
         live_values[time_index] = live
         dead_values[time_index] = dead

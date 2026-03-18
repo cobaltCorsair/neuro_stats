@@ -1,173 +1,174 @@
 # `fit_alpha_beta_using_processor.py`
 
-Скрипт подбирает параметры `alpha` и `beta` линейно-квадратичной модели по in vivo данным роста опухолей из Excel-файлов.
+This module fits effective radiobiological parameters from in vivo tumor-volume Excel files.
+It is intended for series where:
 
-Он рассчитан на серии, где:
-- есть `control`-файлы для нормировки;
-- дозовые фракции можно извлечь из параметров эксперимента;
-- отклик оценивается через динамику объёма опухоли, а не через clonogenic assay.
+- control curves are available for normalization;
+- dose fractions can be parsed from experiment metadata;
+- response is measured through tumor-volume dynamics rather than a clonogenic assay.
 
-## Что умеет
+The fitter supports both CLI and GUI workflows.
 
-- читать `.xlsx` с опухолевыми объёмами;
-- строить усреднённую control-кривую;
-- нормировать экспериментальные кривые на контроль;
-- считать `SF` несколькими способами;
-- фитить `alpha` и `beta` по LQ-модели;
-- анализировать семейства излучения `y`, `p`, `n`, `e` по отдельности;
-- разделять `single` и `fractionated` режимы на train и holdout;
-- делать bootstrap по животным и control-группам;
-- агрегировать повторные режимы `(family, D, D2)` в один weighted regimen;
-- сохранять batch-summary в CSV;
-- отдавать структурированные результаты в GUI и тесты.
+## What It Does
 
-## Модель
+- reads `.xlsx` tumor-volume files;
+- builds pooled or explicitly assigned control curves;
+- normalizes treated curves to control;
+- computes scalar `SF` endpoints or uses the full normalized response curve;
+- fits multiple model families:
+  - `classic_lq`
+  - `repair_lq`
+  - `lq_l`
+  - `glq`
+  - `lq_repop`
+  - `repair_repop`
+  - `linear`
+- supports train/validation splits by regimen kind;
+- supports bootstrap over treated and control animals;
+- supports repeated-regimen aggregation and deduplication;
+- exports batch summaries to CSV;
+- exposes structured results for the GUI and tests.
 
-Используется модель:
+## Response Definition
 
-```text
-SF = exp(-alpha * D - beta * D2)
-```
-
-где:
-- `D = sum(d_i)` — суммарная доза;
-- `D2 = sum(d_i^2)` — сумма квадратов фракций;
-- `SF` — effective surviving fraction, полученный из нормированных кривых роста.
-
-Если задан `--alpha`, `alpha` фиксируется, а фитится только `beta`.
-
-## Как формируется `SF`
-
-Поддерживаются две основные метрики:
+Supported scalar `SF` modes:
 
 - `absolute`
   - `SF = min(mean_norm[1:]) / mean_norm[0]`
 - `absindex:N`
   - `SF = mean_norm[N] / mean_norm[0]`
 
-Можно передавать несколько режимов сразу:
+Multiple scalar endpoints can be evaluated in one run:
 
 ```bash
 python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
-  --sf absolute --sf absindex:1 --sf absindex:2
+  --files *.xlsx ^
+  --sf absolute ^
+  --sf absindex:1 ^
+  --sf absindex:2
 ```
 
-## Response modes
+## Response Modes
 
-Теперь fitter поддерживает два режима отклика:
+Two response modes are available:
 
 - `scalar`
-  - старый режим;
-  - для каждого режима облучения строится один `SF`, и fit идет по набору точек `SF(D)`.
+  - fits one `SF` value per regimen.
 - `curve`
-  - новый режим;
-  - вместо одного `SF` используется вся нормированная кривая ответа опухоли;
-  - fitter дополнительно оценивает `curve_clearance_rate`, чтобы описать возврат от раннего ответа к более поздней динамике.
+  - fits the full normalized tumor-response curve;
+  - additionally estimates `curve_clearance_rate` to describe late-time recovery.
 
-CLI:
+CLI examples:
 
 ```bash
 --response-mode scalar
 --response-mode curve
 ```
 
-Замечание:
-- при `curve` fitter использует только первый `--sf`, потому что остальные `SF`-метрики относятся к scalar-постановке.
+Note:
+- in `curve` mode only the first `--sf` entry is used, because the remaining `SF` modes belong to the scalar setup.
 
-## Model selection and comparison
+## Model Families
 
-Доступные семейства моделей:
+Available model selections:
 
 - `--model-kind auto`
 - `--model-kind classic_lq`
 - `--model-kind repair_lq`
-- `--model-kind glq`
-- `--model-kind repair_repop`
 - `--model-kind lq_l`
+- `--model-kind glq`
 - `--model-kind lq_repop`
+- `--model-kind repair_repop`
 - `--model-kind linear`
 
-Смысл:
+Model meaning:
 
 - `classic_lq`
   - `SF = exp(-alpha * D - beta * sum(d_i^2))`
 - `repair_lq`
-  - тот же LQ, но с учетом `t=` интервалов и репарации через `--repair-half-time-hours`
-- `glq`
-  - generalized high-dose LQ variant with saturating quadratic term;
-  - fitter оценивает `saturation_dose`
-- `repair_repop`
-  - repair-aware LQ plus delayed repopulation;
-  - fitter использует `t=` интервалы, `lag_days` и `repopulation_rate`
+  - classic LQ with explicit `t=` timing metadata and repair via `--repair-half-time-hours`
 - `lq_l`
-  - LQ-L with transition dose;
-  - до переходной дозы используется обычный квадратичный член, а выше включается линейный хвост
+  - LQ-L model with a fitted `transition_dose`
+- `glq`
+  - generalized high-dose LQ variant with fitted `saturation_dose`
 - `lq_repop`
-  - классический LQ с задержкой и репопуляцией;
-  - fitter оценивает `lag_days` и `repopulation_rate`
+  - LQ plus delayed repopulation with fitted `lag_days` and `repopulation_rate`
+- `repair_repop`
+  - repair-aware LQ plus delayed repopulation
 - `linear`
-  - частный случай без квадратичного члена, то есть `beta = 0`
+  - no quadratic term, effectively `beta = 0`
 
-Для явного сравнения моделей:
+To compare models on the same train set:
 
 ```bash
---compare-models
+python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
+  --files *.xlsx ^
+  --family y ^
+  --response-mode curve ^
+  --repair-half-time-hours 1.0 ^
+  --compare-models
 ```
 
-В этом режиме fitter считает несколько кандидатов и ранжирует их по ошибке на train-наборе (`MAE`, `RMSE`, `mean_abs_log_error`, `AIC`).
+Model comparison ranks candidates by train-set quality using:
 
-Для расширенных моделей fitter дополнительно выводит:
+- `AIC`
+- `RMSE`
+- `mean_abs_log_error`
+- `MAE`
 
-- `saturation_dose` для `gLQ`
-- `transition_dose` для `LQ-L`
-- `lag_days` и `repopulation_rate` для `LQ + repopulation`
-- `lag_days` и `repopulation_rate` для `repair + repopulation`
+## Timing And Repair
 
-## Family
-
-Скрипт пытается автоматически определить family по имени файла:
-
-- `y` — гамма / фотонные серии в текущем naming convention;
-- `p` — протоны;
-- `n` — нейтроны;
-- `e` — электроны.
-
-Примеры:
-- `19.03.2025_y_40.xlsx` -> `y`
-- `22.10.2025_p40_in_peak.xlsx` -> `p`
-- `02.02.2023_n_12.xlsx` -> `n`
-- `15.01.2026_e_18.xlsx` -> `e`
-
-Разные family не стоит смешивать в одном fit без отдельного радиобиологического обоснования.
-
-## Train / Validation
-
-Current family mapping used by the code:
-
-- `y` -> gamma / photon series
-- `p` -> proton series without an explicit beam-position marker
-- `p_peak` -> proton series in peak (`in_peak`, `в_пике`)
-- `p_through` -> proton series in shoot-through / pass-through (`прострел`)
-- `n` -> neutron series
-- `e` -> electron series
-- `c` -> carbon-ion C-12 series (`c` or Cyrillic `с` in the file name)
+If experiment metadata contains `t=...`, the fitter can recover real inter-fraction timing in hours, half-hours, days, and similar intervals.
 
 Examples:
+
+- `t = 30 min`
+- `t = 1 hr`
+- `t = 2.5 hr`
+- `t = 1 day`
+
+Repair-aware fitting is enabled by:
+
+```bash
+--repair-half-time-hours 1.0
+```
+
+If no explicit timing metadata is available, the fitter falls back to schedule-free behavior.
+
+## Family Detection
+
+Current family mapping:
+
+- `y` -> gamma / photon series
+- `p` -> proton series without explicit beam-position context
+- `p_peak` -> proton peak series (`in_peak`, corresponding peak markers in file names)
+- `p_through` -> proton shoot-through / pass-through series
+- `n` -> neutron series
+- `e` -> electron series
+- `c` -> carbon-ion C-12 series
+
+Examples:
+
 - `22.10.2025_p40_in_peak.xlsx` -> `p_peak`
-- `08.10.2021_p_32_прострел.xlsx` -> `p_through`
+- `08.10.2021_p_32_...xlsx` -> `p_through`
 - `05.12.2018_c_12.xlsx` -> `c`
 
-Режимы можно делить на:
+Different families should not be mixed into one fit unless you have a clear radiobiological justification.
+
+## Train / Validation Splits
+
+Supported regimen kinds:
 
 - `all`
 - `single`
 - `fractionated`
 
-Типовой сценарий:
-- обучить модель на `single`;
-- проверить предсказание на `fractionated`.
+Typical workflow:
 
-Пример:
+1. fit on `single`;
+2. validate on `fractionated`.
+
+Example:
 
 ```bash
 python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
@@ -180,19 +181,25 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_u
 
 ## Bootstrap
 
-Включается через `--bootstrap N`.
+Enable bootstrap with:
 
-Ресэмплируются:
-- животные внутри experimental groups;
-- животные внутри control groups.
+```bash
+--bootstrap N
+```
 
-На выходе:
-- mean;
-- std;
-- median;
-- `95%` bootstrap interval.
+The bootstrap resamples:
 
-Пример:
+- animals inside treated groups;
+- animals inside control groups.
+
+Output includes:
+
+- mean
+- std
+- median
+- `95%` interval
+
+Example:
 
 ```bash
 python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
@@ -203,46 +210,33 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_u
   --bootstrap-seed 7
 ```
 
-Если bootstrap часто уводит `beta` к нулю, интерпретация `alpha/beta` становится неустойчивой.
+## Repeated Regimens
 
-## Повторы режимов
+If one family contains multiple files with the same regimen, two tools are available.
 
-Если в одной family есть несколько файлов с одинаковым `(D, D2)`, доступны два режима работы.
-
-### Агрегация повторов
+Aggregate repeated regimens:
 
 ```bash
 --aggregate-regimens
 ```
 
-Повторы сворачиваются в один режим со:
-- средним `SF`;
-- числом повторов `repeats`;
-- разбросом `sf_std`.
+This collapses repeats into one weighted regimen with:
 
-При fit используется variance-aware weighting:
-- если для агрегированного режима есть `sf_std`, fitter использует стандартную ошибку среднего `sf_std / sqrt(repeats)`;
-- если разброс неизвестен или равен нулю, fitter использует мягкий fallback, совместимый с прежней логикой weighting по `repeats`.
+- mean `SF`
+- repeat count
+- `sf_std`
 
-### Удаление дублей
+Deduplicate repeated regimens:
 
 ```bash
 --dedupe-regimens
 ```
 
-Оставляет только один файл на `(family, D, D2)`.
+This keeps only one file per `(family, fractions, schedule)` key.
 
-## Batch-режим
+## Batch Mode
 
-Флаг:
-
-```bash
---by-family
-```
-
-Скрипт проходит по каждому найденному family отдельно и строит summary по каждой паре `(sf_mode, family)`.
-
-Пример:
+To analyze all detected families separately:
 
 ```bash
 python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
@@ -257,13 +251,14 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_u
 
 ## Summary CSV
 
-Для экспорта summary:
+To export a batch summary:
 
 ```bash
 --summary-csv C:\dev\neuro_stats\family_summary.csv
 ```
 
-CSV содержит:
+The CSV contains:
+
 - `sf_mode`
 - `response_mode`
 - `model_kind`
@@ -279,31 +274,147 @@ CSV содержит:
 - `alpha_beta_ratio`
 - `reason`
 
-## Основные примеры CLI
+## Secondary Analyses
 
-Простой fit по `.xlsx` в текущей папке:
+The module [radiobiology_analysis.py](/C:/dev/neuro_stats/work_with_prepared_data/radiobioligy_project/survival/radiobiology_analysis.py) adds higher-level radiobiological analyses on top of fitted runs and predictor trajectories.
+
+Current capabilities:
+
+- `RBE` estimation relative to a reference family such as `y`
+- iso-effect dose conversion for single-fraction comparisons
+- batch `RBE` series for `2 Gy`, `10 Gy`, or any custom dose grid
+- one-at-a-time sensitivity analysis for:
+  - `alpha`
+  - `beta`
+  - `growth_rate`
+  - `carrying_capacity`
+  - `clearance_rate`
+  - physical dose
+- interval sensitivity for fraction gaps such as `0.5 h`, `1 h`, `2.5 h`, `24 h`
+- cross-comparison of scalar `SF` definitions like `absolute`, `absindex:1`, `absindex:2`
+
+Typical imports:
+
+```python
+from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis import (
+    analyze_interval_sensitivity,
+    analyze_parameter_sensitivity,
+    build_rbe_series,
+    compare_sf_metric_sensitivity,
+    compute_rbe,
+)
+```
+
+`RBE` is defined as:
+
+```text
+RBE = D_ref / D_test
+```
+
+for the same predicted biological effect, with `y` usually used as the reference family.
+
+Important interpretation notes:
+
+- `RBE` here is derived from the fitted effective `alpha/beta` response, not from a separate microdosimetric transport model.
+- sensitivity analysis uses predictor `total-volume RMSE` as the score.
+- interval sensitivity is most informative when timing can actually change the predicted curve, for example via repair, clearance, growth, or sub-day observations.
+
+## GUI
+
+Launch:
+
+```bash
+python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_gui
+```
+
+### Current Layout
+
+The fitter window now uses a compact two-column layout:
+
+- left sidebar
+  - action buttons
+  - `Files` tab
+  - `Fit setup` tab
+- right result area
+  - top `Run summary`
+  - bottom detail tabs
+
+This layout is meant to fit better on a normal laptop screen than the older long vertical window.
+
+### What The GUI Supports
+
+- drag-and-drop `.xlsx` files;
+- adding files or a whole folder;
+- explicit `experiment -> control` mapping when several control files are loaded;
+- `Default control` plus `Apply to all`;
+- setup of `SF modes`, `family`, split strategy, response mode, model kind, repair half-time, bootstrap, and CSV export;
+- inventory scan before fitting;
+- run summary table plus per-run detail tabs;
+- `Analysis` tab with:
+  - `RBE vs dose`
+  - `RBE vs alpha/beta`
+  - `SF`-metric drift table for the current response/model context;
+  - `Export CSV`, which writes paired analysis files such as `..._rbe.csv` and `..._sf_metrics.csv`;
+- launch of the tumor growth predictor window.
+
+### Inventory Mode
+
+The `Inventory` tab shows file-by-file:
+
+- `family`
+- `kind`
+- `fractions`
+- `schedule`
+- `control`
+- `fit ready`
+- `notes`
+
+The family summary also reports heuristic model targets:
+
+- `recommended`
+- `possible`
+
+for:
+
+- `classic_lq`
+- `repair_lq`
+- `lq_l`
+- `glq`
+- `lq_repop`
+- `repair_repop`
+
+These heuristics look at:
+
+- dose contrast;
+- explicit `t=` timing;
+- high-dose coverage;
+- follow-up curve length.
+
+### Typical GUI Workflow
+
+1. Load control and treated `.xlsx` files.
+2. If several controls are loaded, fill the experiment-to-control mapping.
+3. Choose family and response mode.
+4. If needed, set `fit-kind = single` and `validate-kind = fractionated`.
+5. If timing matters, provide a positive `Repair T1/2 (h)`.
+6. Run the fit.
+7. Review the summary table and the selected run details.
+
+## Main CLI Examples
+
+Simple fit in the current folder:
 
 ```bash
 python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor
 ```
 
-Fit только для одной family:
+Family-specific fit:
 
 ```bash
 python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
   --files *.xlsx ^
   --family y ^
   --sf absolute
-```
-
-Несколько `SF`-метрик за один запуск:
-
-```bash
-python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
-  --files *.xlsx ^
-  --family y ^
-  --sf absolute ^
-  --sf absindex:1
 ```
 
 Full-curve fit:
@@ -316,108 +427,26 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_u
   --model-kind classic_lq
 ```
 
-Сравнение моделей на одном train-наборе:
+Repair-aware comparison:
 
 ```bash
 python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
   --files *.xlsx ^
   --family y ^
-  --response-mode curve ^
+  --response-mode scalar ^
   --repair-half-time-hours 1.0 ^
   --compare-models
 ```
 
-Batch по всем family + CSV:
+## Current Limitations
 
-```bash
-python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
-  --files *.xlsx ^
-  --by-family ^
-  --fit-kind single ^
-  --validate-kind fractionated ^
-  --sf absolute ^
-  --aggregate-regimens ^
-  --summary-csv C:\dev\neuro_stats\family_summary.csv
-```
+- these are effective in vivo parameters derived from tumor-volume dynamics, not clonogenic `alpha/beta`;
+- repair-aware fitting requires explicit `t=` timing metadata in the Excel file;
+- control assignment in the GUI is explicit, but CLI still pools controls unless a control map is passed through the API;
+- high-dose model comparison becomes meaningful only when the dataset truly covers a broad high-dose range;
+- sparse datasets can fit mathematically but still be weak biologically.
 
-## GUI
-
-Для fitter есть отдельный простой интерфейс на `PyQt6`.
-
-Запуск:
-
-```bash
-python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_gui
-```
-
-Что умеет GUI:
-- перетаскивать `.xlsx` файлы мышью;
-- добавлять отдельные файлы или целую папку;
-- задавать явное сопоставление `experiment -> control`, если загружено несколько control-серий;
-- настраивать `SF modes`, `family`, `fit-kind`, `validate-kind`, `bootstrap`;
-- фиксировать `alpha` при необходимости;
-- включать `aggregate-regimens` и `dedupe-regimens`;
-- сохранять summary в CSV;
-- показывать таблицу summary по всем run;
-- показывать отдельные таблицы train, validation и bootstrap;
-- выводить текстовую сводку по выбранному run.
-
-Типовой сценарий:
-
-1. Добавить `control` и экспериментальные `.xlsx`.
-2. Оставить `SF modes = absolute`.
-3. Если загружено несколько control-файлов, заполнить таблицу `Experiment to control mapping`.
-4. Выбрать `family`, например `y`.
-5. При необходимости включить `fit-kind = single` и `validate-kind = fractionated`.
-6. Нажать `Run fit`.
-7. Посмотреть summary-таблицу и детали выбранного run.
-
-### Выбор control в GUI
-
-Если в окне загружено несколько файлов с `control` в имени:
-- GUI показывает отдельную таблицу `Experiment to control mapping`;
-- для каждого экспериментального файла можно выбрать свой control-файл;
-- есть `Default control` и кнопка `Apply to all experiments`, чтобы быстро заполнить таблицу;
-- опция `Use all controls (average)` оставлена как явный осознанный режим, а не поведение по умолчанию.
-
-Это сделано потому, что control-файлы из разных серий не должны автоматически смешиваться.
-
-Важно: в CLI поведение по умолчанию осталось прежним. Если передать несколько control-файлов напрямую в `fit_alpha_beta_using_processor.py`, они будут усреднены в одну общую control-кривую.
-
-## Что сильнее всего улучшает точность alpha/beta
-
-GUI inventory mode:
-
-- `Scan inventory` inspects the loaded folder before fitting
-- the `Inventory` tab shows file-by-file `family`, `kind`, `fractions`, `schedule`, `control`, `fit ready`, and `notes`
-- the family summary now also reports `recommended` and `possible` model targets for `classic_lq`, `repair_lq`, `lq_l`, `glq`, `lq_repop`, and `repair_repop`
-- these model recommendations are heuristic: they look at dose contrast, explicit `t=` timing, high-dose coverage, and follow-up curve length
-- proton files are now separated into `p_peak` and `p_through`
-- carbon-ion C-12 files are tracked as family `c`
-
-На практике самый большой прирост точности дают не косметические изменения fit, а следующие шаги:
-
-1. Учить модель на однократных дозах одного типа излучения и проверять на фракционированных режимах того же family.
-2. Не смешивать разные family и разные control-серии в одном fit.
-3. Добавлять больше режимов с одинаковой `D`, но разной `D2`, потому что именно они лучше всего идентифицируют `beta`.
-4. Использовать bootstrap и смотреть не только точечные `alpha/beta`, но и интервалы неопределённости.
-5. Сравнивать несколько определений `SF`, чтобы проверять устойчивость параметров к выбору endpoint.
-6. По возможности держать отдельный holdout-набор, а не фитить все режимы сразу.
-
-Если нужен следующий уровень улучшения модели, самые полезные направления такие:
-- учёт внутри-режимной дисперсии в самом fit, а не только через веса повторов;
-- вариант модели с временным фактором репарации, если интервалы между фракциями различаются;
-- сравнение `LQ` с альтернативами для очень больших разовых доз.
-
-## Ограничения
-
-- интервалы между фракциями пока явно не входят в модель;
-- внутри-режимная дисперсия пока не моделируется отдельно, кроме weighting по числу повторов;
-- в GUI доступна привязка `experiment -> control`, но в CLI поведение по умолчанию всё ещё усредняет все переданные control-файлы, если не передавать явную карту соответствий через API;
-- для очень больших разовых доз интерпретация LQ-параметров должна быть осторожной;
-- `SF` здесь effective in vivo metric, а не классический clonogenic endpoint.
-
-## Быстрая проверка опций CLI
+## Quick CLI Help
 
 ```bash
 python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor --help

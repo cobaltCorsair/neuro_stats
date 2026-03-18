@@ -170,6 +170,49 @@ class TumorGrowthPredictorTests(unittest.TestCase):
         self.assertAlmostEqual(short_gap.live_volume[-1], long_gap.live_volume[-1], places=8)
         self.assertAlmostEqual(short_gap.dead_volume[-1], long_gap.dead_volume[-1], places=8)
 
+    def test_mixed_family_schedule_uses_family_specific_alpha_beta(self) -> None:
+        reference = GeometryReference(axis_a=2.0, axis_b=4.0, axis_c=6.0, volume=12.0)
+        default_parameters = GrowthModelParameters(
+            alpha=0.05,
+            beta=0.0,
+            growth_rate=0.0,
+            carrying_capacity=50.0,
+            clearance_rate=0.0,
+        )
+        family_parameters = {
+            "p_peak": GrowthModelParameters(
+                alpha=0.20,
+                beta=0.0,
+                growth_rate=0.0,
+                carrying_capacity=50.0,
+                clearance_rate=0.0,
+            ),
+        }
+
+        mixed = simulate_growth(
+            sample_times=[0.0, 1.0],
+            parameters=default_parameters,
+            reference=reference,
+            schedule=[
+                TreatmentFraction(day=0.0, dose=2.0, family="y"),
+                TreatmentFraction(day=0.0, dose=2.0, family="p_peak"),
+            ],
+            family_parameters=family_parameters,
+        )
+        uniform = simulate_growth(
+            sample_times=[0.0, 1.0],
+            parameters=default_parameters,
+            reference=reference,
+            schedule=[
+                TreatmentFraction(day=0.0, dose=2.0, family="y"),
+                TreatmentFraction(day=0.0, dose=2.0, family="y"),
+            ],
+            family_parameters=family_parameters,
+        )
+
+        self.assertLess(mixed.live_volume[-1], uniform.live_volume[-1])
+        self.assertGreater(mixed.dead_volume[-1], uniform.dead_volume[-1])
+
 
 if __name__ == "__main__":
     unittest.main()

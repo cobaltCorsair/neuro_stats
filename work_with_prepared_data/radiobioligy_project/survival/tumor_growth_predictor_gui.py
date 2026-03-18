@@ -7,7 +7,7 @@ import math
 import sys
 import traceback
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSplitter,
     QStatusBar,
@@ -43,7 +44,20 @@ from work_with_prepared_data.radiobioligy_project.data_processing.tumor_geometry
 )
 from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor import (
     AnalysisRunResult,
+    infer_radiation_family,
     parse_fractions,
+)
+from work_with_prepared_data.radiobioligy_project.survival.gui_csv_export import (
+    related_csv_path,
+    write_csv_rows,
+)
+from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis import (
+    IntervalSensitivityReport,
+    ParameterSensitivityReport,
+    ScenarioComparisonReport,
+    analyze_interval_sensitivity,
+    analyze_parameter_sensitivity,
+    compare_treatment_scenarios,
 )
 from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predictor import (
     GeometryReference,
@@ -60,6 +74,39 @@ from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predicto
 )
 
 PLAYBACK_INTERVAL_MS = 60
+PARAMETER_SENSITIVITY_HEADERS = [
+    "Parameter",
+    "Delta %",
+    "Baseline",
+    "Varied",
+    "RMSE",
+    "Delta RMSE",
+    "RMSE ratio",
+    "Status",
+    "Reason",
+]
+INFLUENCE_HEADERS = [
+    "Parameter",
+    "Max |Delta RMSE|",
+    "Mean |Delta RMSE|",
+    "Cases",
+]
+INTERVAL_SENSITIVITY_HEADERS = [
+    "Interval (h)",
+    "RMSE",
+    "Delta RMSE",
+    "RMSE ratio",
+    "Schedule (days)",
+]
+COMPARISON_HEADERS = [
+    "Scenario",
+    "Total dose",
+    "Families",
+    "Min volume",
+    "Nadir day",
+    "Final volume",
+    "AUC",
+]
 
 
 def _parse_numeric_day_labels(labels: Sequence[str]) -> np.ndarray:
@@ -78,6 +125,164 @@ def _format_time_days(value: float) -> str:
     if abs(value) < 1.0:
         return f"{value:.4f} d ({value * 24.0:.2f} h)"
     return f"{value:.2f} d"
+
+
+def _format_optional_float(value: float | None, digits: int = 6) -> str:
+    if value is None or not np.isfinite(value):
+        return "-"
+    return f"{float(value):.{digits}f}"
+
+
+def _format_optional_ratio(value: float | None) -> str:
+    if value is None or not np.isfinite(value):
+        return "-"
+    return f"{float(value):.3f}"
+
+
+def parse_positive_float_list(text: str, default: Sequence[float]) -> list[float]:
+    """Parse a comma-separated list of positive floats for analysis controls."""
+    raw = text.strip()
+    if not raw:
+        return [float(item) for item in default]
+
+    values: list[float] = []
+    for chunk in raw.split(","):
+        value = float(chunk.strip().replace(",", "."))
+        if value <= 0.0:
+            raise ValueError("Values must be positive.")
+        values.append(value)
+    return values or [float(item) for item in default]
+
+
+def parse_percentage_list(text: str, default: Sequence[float]) -> list[float]:
+    """Parse percentages like ``10, 20, 30`` into fractions ``0.1, 0.2, 0.3``."""
+    return [value / 100.0 for value in parse_positive_float_list(text, default)]
+
+
+def _normalize_family_label(value: str | None) -> str | None:
+    if value is None:
+        return None
+    family = str(value).strip().lower()
+    return family or None
+
+
+def build_family_parameter_overrides(
+    run_results: Sequence[AnalysisRunResult],
+    base_parameters: GrowthModelParameters,
+    schedule: Sequence[TreatmentFraction],
+    *,
+    default_family: str | None = None,
+) -> tuple[dict[str, GrowthModelParameters], tuple[str, ...]]:
+    """Build per-family predictor overrides from fitter results for mixed schedules."""
+    needed_families = {
+        family
+        for family in (_normalize_family_label(item.family) for item in schedule)
+        if family is not None
+    }
+    default_family = _normalize_family_label(default_family)
+    if not needed_families:
+        return {}, ()
+
+    overrides: dict[str, GrowthModelParameters] = {}
+    missing: list[str] = []
+    for family in sorted(needed_families):
+        if family == default_family:
+            overrides[family] = base_parameters
+            continue
+
+        matched_run = next(
+            (
+                run
+                for run in reversed(tuple(run_results))
+                if run.fit_result is not None and _normalize_family_label(run.summary.family) == family
+            ),
+            None,
+        )
+        if matched_run is None or matched_run.fit_result is None:
+            missing.append(family)
+            continue
+
+        fit = matched_run.fit_result
+        repair_half_time_hours = getattr(fit, "repair_half_time_hours", None)
+        overrides[family] = GrowthModelParameters(
+            alpha=fit.alpha,
+            beta=fit.beta,
+            growth_rate=base_parameters.growth_rate,
+            carrying_capacity=base_parameters.carrying_capacity,
+            clearance_rate=base_parameters.clearance_rate,
+            repair_half_time_hours=(
+                float(repair_half_time_hours)
+                if repair_half_time_hours is not None and repair_half_time_hours > 0.0
+                else base_parameters.repair_half_time_hours
+            ),
+        )
+
+    return overrides, tuple(missing)
+
+
+def build_parameter_sensitivity_table_rows(
+    report: Optional[ParameterSensitivityReport],
+) -> list[list[str]]:
+    rows = list(report.rows) if report is not None else []
+    return [
+        [
+            row.parameter,
+            f"{row.perturbation_fraction * 100.0:+.1f}",
+            _format_optional_float(row.baseline_value, digits=6),
+            _format_optional_float(row.varied_value, digits=6),
+            _format_optional_float(row.rmse, digits=6),
+            _format_optional_float(row.delta_rmse, digits=6),
+            _format_optional_ratio(row.rmse_ratio),
+            row.status,
+            row.reason,
+        ]
+        for row in rows
+    ]
+
+
+def build_influence_table_rows(report: Optional[ParameterSensitivityReport]) -> list[list[str]]:
+    rows = list(report.influence) if report is not None else []
+    return [
+        [
+            row.parameter,
+            _format_optional_float(row.max_abs_delta_rmse, digits=6),
+            _format_optional_float(row.mean_abs_delta_rmse, digits=6),
+            str(row.tested_cases),
+        ]
+        for row in rows
+    ]
+
+
+def build_interval_sensitivity_table_rows(
+    report: Optional[IntervalSensitivityReport],
+) -> list[list[str]]:
+    rows = list(report.rows) if report is not None else []
+    return [
+        [
+            _format_optional_float(row.interval_hours, digits=3),
+            _format_optional_float(row.rmse, digits=6),
+            _format_optional_float(row.delta_rmse, digits=6),
+            _format_optional_ratio(row.rmse_ratio),
+            ", ".join(f"{day:.4g}" for day in row.schedule_days),
+        ]
+        for row in rows
+    ]
+
+
+def build_comparison_table_rows(report: Optional[ScenarioComparisonReport]) -> list[list[str]]:
+    rows = list(report.rows) if report is not None else []
+    return [
+        [
+            row.scenario,
+            _format_optional_float(row.total_physical_dose, digits=3),
+            TumorGrowthPredictorWindow.format_family_sequence(row.family_sequence),
+            _format_optional_float(row.min_total_volume, digits=6),
+            _format_optional_float(row.min_total_volume_day, digits=4),
+            _format_optional_float(row.final_total_volume, digits=6),
+            _format_optional_float(row.auc_total_volume, digits=6),
+        ]
+        for row in rows
+    ]
 
 
 class TumorGrowthPredictorWindow(QMainWindow):
@@ -99,28 +304,37 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.reference_geometry: Optional[GeometryReference] = None
         self.geometry_scaling_model: Optional[GeometryScalingModel] = None
         self.display_frame_times: Optional[np.ndarray] = None
+        self.active_family_overrides: dict[str, GrowthModelParameters] = {}
+        self.missing_schedule_families: tuple[str, ...] = ()
+        self.parameter_sensitivity_report: Optional[ParameterSensitivityReport] = None
+        self.interval_sensitivity_report: Optional[IntervalSensitivityReport] = None
+        self.scenario_comparison_report: Optional[ScenarioComparisonReport] = None
+        self.comparison_curves: dict[str, np.ndarray] = {}
 
         self.timer = QTimer(self)
         self.timer.setInterval(PLAYBACK_INTERVAL_MS)
         self.timer.timeout.connect(self.advance_prediction_frame)
 
         self.setWindowTitle("Tumor growth predictor")
-        self.resize(1600, 980)
+        self.resize(1360, 840)
+        self.setMinimumSize(1120, 720)
         self._build_ui()
+        self._apply_window_style()
         self.populate_fit_results()
 
     def _build_ui(self) -> None:
         central = QWidget(self)
         root_layout = QHBoxLayout(central)
-        root_layout.setContentsMargins(6, 6, 6, 6)
-        root_layout.setSpacing(6)
+        root_layout.setContentsMargins(10, 10, 10, 10)
+        root_layout.setSpacing(10)
 
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        splitter.setChildrenCollapsible(False)
         splitter.addWidget(self._build_controls_panel())
         splitter.addWidget(self._build_results_panel())
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([430, 1170])
+        splitter.setSizes([390, 970])
         root_layout.addWidget(splitter)
 
         self.setCentralWidget(central)
@@ -133,38 +347,71 @@ class TumorGrowthPredictorWindow(QMainWindow):
 
     def _build_controls_panel(self) -> QWidget:
         panel = QWidget(self)
-        panel.setMinimumWidth(390)
-        panel.setMaximumWidth(520)
+        panel.setMinimumWidth(340)
+        panel.setMaximumWidth(460)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        layout.addWidget(self._build_file_group())
-        layout.addWidget(self._build_parameter_group())
-        layout.addWidget(self._build_schedule_group(), 1)
+        layout.setSpacing(8)
 
         self.simulate_button = QPushButton("Simulate")
+        self.simulate_button.setObjectName("PrimaryAction")
         self.simulate_button.clicked.connect(self.run_simulation)
         layout.addWidget(self.simulate_button)
-        layout.addStretch(1)
+
+        tabs = QTabWidget(self)
+
+        files_page = QWidget(self)
+        files_layout = QVBoxLayout(files_page)
+        files_layout.setContentsMargins(0, 0, 0, 0)
+        files_layout.addWidget(self._build_file_group())
+        tabs.addTab(files_page, "Files")
+
+        model_container = QWidget(self)
+        model_layout = QVBoxLayout(model_container)
+        model_layout.setContentsMargins(0, 0, 0, 0)
+        model_layout.addWidget(self._build_parameter_group())
+        model_layout.addStretch(1)
+
+        model_scroll = QScrollArea(self)
+        model_scroll.setWidgetResizable(True)
+        model_scroll.setWidget(model_container)
+        tabs.addTab(model_scroll, "Model")
+
+        schedule_container = QWidget(self)
+        schedule_layout = QVBoxLayout(schedule_container)
+        schedule_layout.setContentsMargins(0, 0, 0, 0)
+        schedule_layout.addWidget(self._build_schedule_group())
+        schedule_layout.addStretch(1)
+
+        schedule_scroll = QScrollArea(self)
+        schedule_scroll.setWidgetResizable(True)
+        schedule_scroll.setWidget(schedule_container)
+        tabs.addTab(schedule_scroll, "Schedule")
+
+        layout.addWidget(tabs, 1)
         return panel
 
     def _build_results_panel(self) -> QWidget:
         panel = QWidget(self)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(8)
 
         self.results_tabs = QTabWidget(self)
         self.results_tabs.addTab(self._build_plot_panel(), "Curves")
+        self.results_tabs.addTab(self._build_sensitivity_panel(), "Sensitivity")
+        self.results_tabs.addTab(self._build_comparison_panel(), "Comparison")
         self.results_tabs.addTab(self._build_3d_panel(), "3D")
         layout.addWidget(self.results_tabs, 1)
         return panel
 
     def _build_file_group(self) -> QGroupBox:
-        group = QGroupBox("Files and selection", self)
+        group = QGroupBox("Files and series", self)
         layout = QGridLayout(group)
+        layout.setContentsMargins(10, 14, 10, 10)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 0)
         layout.setHorizontalSpacing(8)
         layout.setVerticalSpacing(6)
 
@@ -175,35 +422,39 @@ class TumorGrowthPredictorWindow(QMainWindow):
         geometry_button.clicked.connect(self.open_geometry_file)
         layout.addWidget(QLabel("Treated tumor"), 0, 0)
         layout.addWidget(self.geometry_label, 0, 1)
-        layout.addWidget(geometry_button, 1, 1)
+        layout.addWidget(geometry_button, 0, 2)
 
         self.control_label = QLabel("No control file loaded", self)
         self.control_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         control_button = QPushButton("Open control file", self)
         control_button.setToolTip("Load control tumor file for untreated growth fitting.")
         control_button.clicked.connect(self.open_control_file)
-        layout.addWidget(QLabel("Control"), 2, 0)
-        layout.addWidget(self.control_label, 2, 1)
-        layout.addWidget(control_button, 3, 1)
+        layout.addWidget(QLabel("Control"), 1, 0)
+        layout.addWidget(self.control_label, 1, 1)
+        layout.addWidget(control_button, 1, 2)
 
         self.selection_combo = QComboBox(self)
         self.selection_combo.currentIndexChanged.connect(self.on_selection_changed)
-        layout.addWidget(QLabel("Tumor"), 4, 0)
-        layout.addWidget(self.selection_combo, 4, 1)
+        layout.addWidget(QLabel("Tumor"), 2, 0)
+        layout.addWidget(self.selection_combo, 2, 1, 1, 2)
 
         self.fit_result_combo = QComboBox(self)
         self.fit_result_combo.currentIndexChanged.connect(self.apply_selected_fit_result)
-        layout.addWidget(QLabel("Alpha/Beta source"), 5, 0)
-        layout.addWidget(self.fit_result_combo, 5, 1)
+        layout.addWidget(QLabel("Alpha/Beta source"), 3, 0)
+        layout.addWidget(self.fit_result_combo, 3, 1, 1, 2)
 
-        fit_button = QPushButton("Fit Gompertz from control", self)
+        fit_button = QPushButton("Fit growth from control", self)
         fit_button.clicked.connect(self.fit_growth_from_control)
-        layout.addWidget(fit_button, 6, 0, 1, 2)
+        layout.addWidget(fit_button, 4, 0, 1, 3)
+        layout.setRowStretch(5, 1)
         return group
 
     def _build_parameter_group(self) -> QGroupBox:
         group = QGroupBox("Model parameters", self)
         layout = QGridLayout(group)
+        layout.setContentsMargins(10, 14, 10, 10)
+        layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(6)
 
         self.alpha_spin = self._create_float_spinbox(0.0, 10.0, 0.013, decimals=6, step=0.001)
         self.beta_spin = self._create_float_spinbox(0.0, 10.0, 0.0016, decimals=6, step=0.0001)
@@ -249,6 +500,8 @@ class TumorGrowthPredictorWindow(QMainWindow):
     def _build_schedule_group(self) -> QGroupBox:
         group = QGroupBox("Dose schedule", self)
         layout = QVBoxLayout(group)
+        layout.setContentsMargins(10, 14, 10, 10)
+        layout.setSpacing(8)
 
         button_grid = QGridLayout()
         button_grid.setHorizontalSpacing(6)
@@ -276,16 +529,19 @@ class TumorGrowthPredictorWindow(QMainWindow):
         layout.addLayout(button_grid)
 
         self.schedule_table = QTableWidget(self)
-        self.schedule_table.setColumnCount(2)
-        self.schedule_table.setHorizontalHeaderLabels(["Time (days)", "Dose (Gy)"])
+        self.schedule_table.setColumnCount(3)
+        self.schedule_table.setHorizontalHeaderLabels(["Time (days)", "Dose (Gy)", "Family"])
         self.schedule_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.schedule_table.setMinimumHeight(150)
+        self.schedule_table.verticalHeader().setVisible(False)
+        self.schedule_table.setMinimumHeight(120)
         layout.addWidget(self.schedule_table, 1)
         return group
 
     def _build_plot_panel(self) -> QWidget:
         panel = QWidget(self)
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         self.curve_figure = Figure(figsize=(9, 6))
         self.curve_canvas = FigureCanvasQTAgg(self.curve_figure)
@@ -294,11 +550,123 @@ class TumorGrowthPredictorWindow(QMainWindow):
         layout.addWidget(self.curve_canvas, 1)
         return panel
 
+    def _build_sensitivity_panel(self) -> QWidget:
+        panel = QWidget(self)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        controls_group = QGroupBox("Sensitivity setup", self)
+        controls_layout = QGridLayout(controls_group)
+        controls_layout.setContentsMargins(10, 14, 10, 10)
+        controls_layout.setHorizontalSpacing(8)
+        controls_layout.setVerticalSpacing(6)
+
+        controls_layout.addWidget(QLabel("Perturbations (%)"), 0, 0)
+        self.sensitivity_perturb_edit = QLineEdit("10, 20, 30", self)
+        self.sensitivity_perturb_edit.setPlaceholderText("10, 20, 30")
+        controls_layout.addWidget(self.sensitivity_perturb_edit, 0, 1)
+
+        controls_layout.addWidget(QLabel("Intervals (h)"), 0, 2)
+        self.interval_hours_edit = QLineEdit("0.5, 1, 2.5, 24", self)
+        self.interval_hours_edit.setPlaceholderText("0.5, 1, 2.5, 24")
+        controls_layout.addWidget(self.interval_hours_edit, 0, 3)
+
+        self.refresh_sensitivity_button = QPushButton("Run sensitivity", self)
+        self.refresh_sensitivity_button.clicked.connect(self.refresh_sensitivity_views)
+        controls_layout.addWidget(self.refresh_sensitivity_button, 0, 4)
+
+        self.export_sensitivity_button = QPushButton("Export CSV", self)
+        self.export_sensitivity_button.clicked.connect(self.export_sensitivity_csv)
+        controls_layout.addWidget(self.export_sensitivity_button, 0, 5)
+        controls_layout.setColumnStretch(1, 1)
+        controls_layout.setColumnStretch(3, 1)
+        layout.addWidget(controls_group)
+
+        self.sensitivity_figure = Figure(figsize=(8, 4.5))
+        self.sensitivity_canvas = FigureCanvasQTAgg(self.sensitivity_figure)
+        self.sensitivity_canvas.setMinimumHeight(220)
+        layout.addWidget(self.sensitivity_canvas)
+
+        detail_tabs = QTabWidget(self)
+        self.parameter_sensitivity_table = self._create_table(PARAMETER_SENSITIVITY_HEADERS)
+        detail_tabs.addTab(self.parameter_sensitivity_table, "Parameters")
+
+        self.influence_table = self._create_table(INFLUENCE_HEADERS)
+        detail_tabs.addTab(self.influence_table, "Influence")
+
+        self.interval_sensitivity_table = self._create_table(INTERVAL_SENSITIVITY_HEADERS)
+        detail_tabs.addTab(self.interval_sensitivity_table, "Intervals")
+        layout.addWidget(detail_tabs, 1)
+
+        self.sensitivity_text = QPlainTextEdit(self)
+        self.sensitivity_text.setReadOnly(True)
+        self.sensitivity_text.setMaximumHeight(130)
+        layout.addWidget(self.sensitivity_text)
+        return panel
+
+    def _build_comparison_panel(self) -> QWidget:
+        panel = QWidget(self)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        controls_group = QGroupBox("Scenario comparison", self)
+        controls_layout = QGridLayout(controls_group)
+        controls_layout.setContentsMargins(10, 14, 10, 10)
+        controls_layout.setHorizontalSpacing(8)
+        controls_layout.setVerticalSpacing(6)
+
+        controls_layout.addWidget(QLabel("Alternative name"), 0, 0)
+        self.comparison_name_edit = QLineEdit("Alternative", self)
+        self.comparison_name_edit.setPlaceholderText("Alternative")
+        controls_layout.addWidget(self.comparison_name_edit, 0, 1)
+
+        self.copy_schedule_button = QPushButton("Copy current schedule", self)
+        self.copy_schedule_button.clicked.connect(self.copy_current_schedule_to_comparison)
+        controls_layout.addWidget(self.copy_schedule_button, 0, 2)
+
+        self.clear_comparison_button = QPushButton("Clear alternative", self)
+        self.clear_comparison_button.clicked.connect(self.clear_comparison_schedule)
+        controls_layout.addWidget(self.clear_comparison_button, 0, 3)
+
+        self.compare_button = QPushButton("Compare scenarios", self)
+        self.compare_button.clicked.connect(self.refresh_comparison_view)
+        controls_layout.addWidget(self.compare_button, 0, 4)
+
+        self.export_comparison_button = QPushButton("Export CSV", self)
+        self.export_comparison_button.clicked.connect(self.export_comparison_csv)
+        controls_layout.addWidget(self.export_comparison_button, 0, 5)
+        controls_layout.setColumnStretch(1, 1)
+        layout.addWidget(controls_group)
+
+        self.comparison_schedule_table = self._create_table(["Time (days)", "Dose (Gy)", "Family"])
+        self.comparison_schedule_table.setMinimumHeight(150)
+        layout.addWidget(self.comparison_schedule_table)
+
+        self.comparison_figure = Figure(figsize=(8, 4.6))
+        self.comparison_canvas = FigureCanvasQTAgg(self.comparison_figure)
+        self.comparison_canvas.setMinimumHeight(220)
+        layout.addWidget(self.comparison_canvas)
+
+        self.comparison_table = self._create_table(COMPARISON_HEADERS)
+        self.comparison_table.setMinimumHeight(160)
+        layout.addWidget(self.comparison_table)
+
+        self.comparison_text = QPlainTextEdit(self)
+        self.comparison_text.setReadOnly(True)
+        self.comparison_text.setMaximumHeight(120)
+        layout.addWidget(self.comparison_text)
+        return panel
+
     def _build_3d_panel(self) -> QWidget:
         panel = QWidget(self)
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         controls = QHBoxLayout()
+        controls.setSpacing(8)
         self.play_button = QPushButton("Play", self)
         self.play_button.clicked.connect(self.toggle_playback)
         controls.addWidget(self.play_button)
@@ -347,7 +715,7 @@ class TumorGrowthPredictorWindow(QMainWindow):
         bottom_splitter.addWidget(self.summary_text)
         bottom_splitter.setStretchFactor(0, 3)
         bottom_splitter.setStretchFactor(1, 1)
-        bottom_splitter.setSizes([900, 280])
+        bottom_splitter.setSizes([940, 240])
         layout.addWidget(bottom_splitter, 1)
         return panel
 
@@ -366,6 +734,106 @@ class TumorGrowthPredictorWindow(QMainWindow):
         widget.setSingleStep(step)
         widget.setValue(value)
         return widget
+
+    @staticmethod
+    def _create_table(headers: Sequence[str]) -> QTableWidget:
+        table = QTableWidget(0, len(headers))
+        table.setHorizontalHeaderLabels(list(headers))
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.setAlternatingRowColors(True)
+        table.setWordWrap(False)
+        table.verticalHeader().setVisible(False)
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(True)
+        return table
+
+    def _apply_window_style(self) -> None:
+        self.setStyleSheet(
+            """
+            QWidget {
+                font-size: 12px;
+            }
+            QMainWindow {
+                background: #f3f5f9;
+            }
+            QGroupBox {
+                background: #f8fafc;
+                border: 1px solid #d7dde8;
+                border-radius: 10px;
+                margin-top: 14px;
+                font-weight: 600;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 4px;
+            }
+            QTabWidget::pane {
+                border: 1px solid #d7dde8;
+                border-radius: 10px;
+                background: #ffffff;
+                top: -1px;
+            }
+            QTabBar::tab {
+                background: #e9eef6;
+                border: 1px solid #d7dde8;
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                padding: 6px 10px;
+                margin-right: 4px;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+            }
+            QPushButton {
+                background: #ffffff;
+                border: 1px solid #cfd7e4;
+                border-radius: 8px;
+                padding: 6px 10px;
+                min-height: 28px;
+            }
+            QPushButton:hover {
+                background: #f4f8ff;
+                border-color: #b8c7dd;
+            }
+            QPushButton#PrimaryAction {
+                background: #dcecff;
+                border-color: #9cbde7;
+                font-weight: 600;
+            }
+            QPushButton#PrimaryAction:hover {
+                background: #cfe4ff;
+            }
+            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+                background: #ffffff;
+                border: 1px solid #cfd7e4;
+                border-radius: 7px;
+                padding: 4px 6px;
+                min-height: 24px;
+            }
+            QTableWidget, QPlainTextEdit, QScrollArea {
+                background: #ffffff;
+                border: 1px solid #d7dde8;
+                border-radius: 8px;
+                alternate-background-color: #f7f9fc;
+            }
+            QHeaderView::section {
+                background: #eef3f8;
+                border: none;
+                border-right: 1px solid #d7dde8;
+                border-bottom: 1px solid #d7dde8;
+                padding: 5px 6px;
+                font-weight: 600;
+            }
+            QSplitter::handle {
+                background: #e3e8f0;
+            }
+            """
+        )
 
     def populate_fit_results(self) -> None:
         self.fit_result_combo.blockSignals(True)
@@ -623,8 +1091,14 @@ class TumorGrowthPredictorWindow(QMainWindow):
             return
         fractions = parse_fractions(list(self.geometry_dataset.experiment_params))
         interval_days = parse_irradiation_intervals_days(self.geometry_dataset.experiment_params)
-        schedule = build_schedule_from_intervals(fractions, interval_days)
+        default_family = infer_radiation_family(self.geometry_dataset.path)
+        schedule = [
+            TreatmentFraction(day=item.day, dose=item.dose, family=default_family)
+            for item in build_schedule_from_intervals(fractions, interval_days)
+        ]
         self.populate_schedule_table(schedule)
+        if self.comparison_schedule_table.rowCount() == 0:
+            self.populate_comparison_schedule_table(schedule)
         if schedule:
             if interval_days:
                 interval_text = ", ".join(f"{gap * 24.0:g} h" for gap in interval_days)
@@ -639,12 +1113,17 @@ class TumorGrowthPredictorWindow(QMainWindow):
         for row_index, event in enumerate(schedule):
             self.schedule_table.setItem(row_index, 0, QTableWidgetItem(f"{event.day:.6g}"))
             self.schedule_table.setItem(row_index, 1, QTableWidgetItem(f"{event.dose:g}"))
+            self.schedule_table.setItem(row_index, 2, QTableWidgetItem(event.family or ""))
 
     def add_schedule_row(self) -> None:
         row_index = self.schedule_table.rowCount()
         self.schedule_table.insertRow(row_index)
+        default_family = ""
+        if self.geometry_dataset is not None:
+            default_family = infer_radiation_family(self.geometry_dataset.path) or ""
         self.schedule_table.setItem(row_index, 0, QTableWidgetItem("0"))
         self.schedule_table.setItem(row_index, 1, QTableWidgetItem("1"))
+        self.schedule_table.setItem(row_index, 2, QTableWidgetItem(default_family))
 
     def remove_selected_schedule_rows(self) -> None:
         rows = sorted({item.row() for item in self.schedule_table.selectedItems()}, reverse=True)
@@ -655,18 +1134,45 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.schedule_table.setRowCount(0)
 
     def schedule_from_table(self) -> list[TreatmentFraction]:
+        return self._schedule_from_widget(self.schedule_table, "schedule")
+
+    def populate_comparison_schedule_table(self, schedule: Sequence[TreatmentFraction]) -> None:
+        self.comparison_schedule_table.setRowCount(len(schedule))
+        for row_index, event in enumerate(schedule):
+            self.comparison_schedule_table.setItem(row_index, 0, QTableWidgetItem(f"{event.day:.6g}"))
+            self.comparison_schedule_table.setItem(row_index, 1, QTableWidgetItem(f"{event.dose:g}"))
+            self.comparison_schedule_table.setItem(row_index, 2, QTableWidgetItem(event.family or ""))
+
+    def clear_comparison_schedule(self) -> None:
+        self.comparison_schedule_table.setRowCount(0)
+        self.clear_comparison_outputs()
+
+    def copy_current_schedule_to_comparison(self) -> None:
+        self.populate_comparison_schedule_table(self.schedule_from_table())
+        self.refresh_comparison_view()
+
+    def comparison_schedule_from_table(self) -> list[TreatmentFraction]:
+        return self._schedule_from_widget(self.comparison_schedule_table, "alternative schedule")
+
+    def _schedule_from_widget(
+        self,
+        table: QTableWidget,
+        label: str,
+    ) -> list[TreatmentFraction]:
         schedule: list[TreatmentFraction] = []
-        for row_index in range(self.schedule_table.rowCount()):
-            day_item = self.schedule_table.item(row_index, 0)
-            dose_item = self.schedule_table.item(row_index, 1)
+        for row_index in range(table.rowCount()):
+            day_item = table.item(row_index, 0)
+            dose_item = table.item(row_index, 1)
+            family_item = table.item(row_index, 2)
             if day_item is None or dose_item is None:
                 continue
             try:
                 day = float(day_item.text().replace(",", "."))
                 dose = float(dose_item.text().replace(",", "."))
             except ValueError as exc:
-                raise ValueError(f"Invalid schedule row {row_index + 1}.") from exc
-            schedule.append(TreatmentFraction(day=day, dose=dose))
+                raise ValueError(f"Invalid {label} row {row_index + 1}.") from exc
+            family = None if family_item is None else _normalize_family_label(family_item.text())
+            schedule.append(TreatmentFraction(day=day, dose=dose, family=family))
         return schedule
 
     def build_sample_times(self, schedule: Sequence[TreatmentFraction]) -> np.ndarray:
@@ -691,6 +1197,477 @@ class TumorGrowthPredictorWindow(QMainWindow):
             extra_times.append(np.asarray([event.day for event in schedule], dtype=float))
         return np.unique(np.round(np.concatenate(extra_times), 6))
 
+    def current_parameters(self) -> GrowthModelParameters:
+        return GrowthModelParameters(
+            alpha=self.alpha_spin.value(),
+            beta=self.beta_spin.value(),
+            growth_rate=self.growth_rate_spin.value(),
+            carrying_capacity=self.carrying_capacity_spin.value(),
+            clearance_rate=self.clearance_rate_spin.value(),
+            repair_half_time_hours=self.repair_half_time_spin.value(),
+        )
+
+    def current_default_family(self) -> str | None:
+        if self.geometry_dataset is None:
+            return None
+        return infer_radiation_family(self.geometry_dataset.path)
+
+    def build_family_overrides_for_schedule(
+        self,
+        schedule: Sequence[TreatmentFraction],
+        parameters: GrowthModelParameters,
+    ) -> tuple[dict[str, GrowthModelParameters], tuple[str, ...]]:
+        return build_family_parameter_overrides(
+            self.run_results,
+            parameters,
+            schedule,
+            default_family=self.current_default_family(),
+        )
+
+    @staticmethod
+    def _fill_row(table: QTableWidget, row_index: int, values: Sequence[str]) -> None:
+        for column_index, value in enumerate(values):
+            item = QTableWidgetItem(value)
+            item.setToolTip(value)
+            table.setItem(row_index, column_index, item)
+
+    def refresh_sensitivity_views(self) -> None:
+        self.parameter_sensitivity_report = None
+        self.interval_sensitivity_report = None
+
+        if (
+            self.reference_geometry is None
+            or self.observed_days is None
+            or self.observed_volume is None
+        ):
+            self.clear_sensitivity_outputs("Load a treated tumor file and run a simulation first.")
+            return
+
+        try:
+            schedule = self.schedule_from_table()
+            if not schedule:
+                raise ValueError("Add at least one irradiation event to the dose schedule.")
+
+            perturbations = parse_percentage_list(
+                self.sensitivity_perturb_edit.text(),
+                default=(10.0, 20.0, 30.0),
+            )
+            interval_hours = parse_positive_float_list(
+                self.interval_hours_edit.text(),
+                default=(0.5, 1.0, 2.5, 24.0),
+            )
+            parameters = self.current_parameters()
+            family_overrides, missing_families = self.build_family_overrides_for_schedule(
+                schedule,
+                parameters,
+            )
+
+            self.parameter_sensitivity_report = analyze_parameter_sensitivity(
+                observed_days=self.observed_days,
+                observed_volume=self.observed_volume,
+                reference=self.reference_geometry,
+                parameters=parameters,
+                schedule=schedule,
+                scaling_model=self.geometry_scaling_model,
+                family_parameters=family_overrides or None,
+                perturbation_fractions=perturbations,
+                vary=(
+                    "alpha",
+                    "beta",
+                    "growth_rate",
+                    "carrying_capacity",
+                    "clearance_rate",
+                    "dose",
+                ),
+            )
+
+            if len(schedule) >= 2:
+                self.interval_sensitivity_report = analyze_interval_sensitivity(
+                    observed_days=self.observed_days,
+                    observed_volume=self.observed_volume,
+                    reference=self.reference_geometry,
+                    parameters=parameters,
+                    fractions=[event.dose for event in schedule],
+                    interval_hours=interval_hours,
+                    scaling_model=self.geometry_scaling_model,
+                    baseline_schedule=schedule,
+                    schedule_template=schedule,
+                    family_parameters=family_overrides or None,
+                )
+            else:
+                self.interval_sensitivity_report = None
+
+            self.populate_parameter_sensitivity_table()
+            self.populate_influence_table()
+            self.populate_interval_sensitivity_table()
+            self.refresh_sensitivity_plot()
+            self.sensitivity_text.setPlainText(
+                self.build_sensitivity_summary_text(missing_families)
+            )
+        except Exception as exc:  # pragma: no cover - GUI exception path
+            self.clear_sensitivity_outputs(traceback.format_exc())
+            QMessageBox.critical(self, "Sensitivity analysis failed", str(exc))
+
+    def clear_sensitivity_outputs(self, message: str = "") -> None:
+        self.parameter_sensitivity_table.setRowCount(0)
+        self.influence_table.setRowCount(0)
+        self.interval_sensitivity_table.setRowCount(0)
+        self.sensitivity_text.setPlainText(message)
+        self.refresh_sensitivity_plot()
+
+    def populate_parameter_sensitivity_table(self) -> None:
+        table_rows = build_parameter_sensitivity_table_rows(self.parameter_sensitivity_report)
+        self.parameter_sensitivity_table.setRowCount(len(table_rows))
+        for row_index, values in enumerate(table_rows):
+            self._fill_row(self.parameter_sensitivity_table, row_index, values)
+
+    def populate_influence_table(self) -> None:
+        table_rows = build_influence_table_rows(self.parameter_sensitivity_report)
+        self.influence_table.setRowCount(len(table_rows))
+        for row_index, values in enumerate(table_rows):
+            self._fill_row(self.influence_table, row_index, values)
+
+    def populate_interval_sensitivity_table(self) -> None:
+        table_rows = build_interval_sensitivity_table_rows(self.interval_sensitivity_report)
+        self.interval_sensitivity_table.setRowCount(len(table_rows))
+        for row_index, values in enumerate(table_rows):
+            self._fill_row(self.interval_sensitivity_table, row_index, values)
+
+    def export_sensitivity_csv(self) -> None:
+        has_parameter_rows = bool(build_parameter_sensitivity_table_rows(self.parameter_sensitivity_report))
+        has_interval_rows = bool(build_interval_sensitivity_table_rows(self.interval_sensitivity_report))
+        if not has_parameter_rows and not has_interval_rows:
+            QMessageBox.information(
+                self,
+                "Nothing to export",
+                "Run sensitivity analysis first.",
+            )
+            return
+
+        default_stem = self.treated_path.stem if self.treated_path is not None else "tumor_growth"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export sensitivity CSV",
+            str(Path.cwd() / f"{default_stem}_sensitivity.csv"),
+            "CSV files (*.csv)",
+        )
+        if not path:
+            return
+
+        written_paths: list[Path] = []
+        parameter_rows = build_parameter_sensitivity_table_rows(self.parameter_sensitivity_report)
+        if parameter_rows:
+            parameter_path = related_csv_path(path, "parameter_sensitivity")
+            write_csv_rows(parameter_path, PARAMETER_SENSITIVITY_HEADERS, parameter_rows)
+            written_paths.append(parameter_path)
+
+        influence_rows = build_influence_table_rows(self.parameter_sensitivity_report)
+        if influence_rows:
+            influence_path = related_csv_path(path, "parameter_influence")
+            write_csv_rows(influence_path, INFLUENCE_HEADERS, influence_rows)
+            written_paths.append(influence_path)
+
+        interval_rows = build_interval_sensitivity_table_rows(self.interval_sensitivity_report)
+        if interval_rows:
+            interval_path = related_csv_path(path, "interval_sensitivity")
+            write_csv_rows(interval_path, INTERVAL_SENSITIVITY_HEADERS, interval_rows)
+            written_paths.append(interval_path)
+
+        self.statusBar().showMessage(
+            "Sensitivity CSV export complete: " + ", ".join(str(item) for item in written_paths)
+        )
+
+    def refresh_sensitivity_plot(self) -> None:
+        self.sensitivity_figure.clear()
+        influence_rows = (
+            list(self.parameter_sensitivity_report.influence)
+            if self.parameter_sensitivity_report is not None
+            else []
+        )
+        interval_rows = (
+            list(self.interval_sensitivity_report.rows)
+            if self.interval_sensitivity_report is not None
+            else []
+        )
+        if not influence_rows and not interval_rows:
+            axis = self.sensitivity_figure.add_subplot(111)
+            axis.axis("off")
+            axis.text(
+                0.5,
+                0.5,
+                "No sensitivity results yet",
+                ha="center",
+                va="center",
+                fontsize=11,
+                color="#5f6b7a",
+            )
+            self.sensitivity_canvas.draw_idle()
+            return
+
+        left_axis, right_axis = self.sensitivity_figure.subplots(1, 2)
+
+        if influence_rows:
+            parameters = [row.parameter for row in influence_rows]
+            deltas = [row.max_abs_delta_rmse for row in influence_rows]
+            left_axis.barh(parameters, deltas, color="#457b9d")
+            left_axis.invert_yaxis()
+            left_axis.set_title("Parameter influence")
+            left_axis.set_xlabel("Max |Delta RMSE|")
+            left_axis.grid(True, axis="x", alpha=0.25)
+        else:
+            left_axis.axis("off")
+            left_axis.text(
+                0.5,
+                0.5,
+                "No parameter influence data",
+                ha="center",
+                va="center",
+                transform=left_axis.transAxes,
+                fontsize=10,
+                color="#5f6b7a",
+            )
+
+        if interval_rows:
+            interval_rows = sorted(interval_rows, key=lambda row: row.interval_hours)
+            right_axis.plot(
+                [row.interval_hours for row in interval_rows],
+                [row.rmse for row in interval_rows],
+                marker="o",
+                color="#e76f51",
+                linewidth=1.8,
+            )
+            right_axis.set_title("Interval sensitivity")
+            right_axis.set_xlabel("Interval (h)")
+            right_axis.set_ylabel("RMSE")
+            right_axis.grid(True, alpha=0.25)
+        else:
+            right_axis.axis("off")
+            right_axis.text(
+                0.5,
+                0.5,
+                "Need at least two fractions\nfor interval sensitivity",
+                ha="center",
+                va="center",
+                transform=right_axis.transAxes,
+                fontsize=10,
+                color="#5f6b7a",
+            )
+
+        self.sensitivity_figure.tight_layout(pad=1.1)
+        self.sensitivity_canvas.draw_idle()
+
+    def build_sensitivity_summary_text(
+        self,
+        missing_families: Sequence[str],
+    ) -> str:
+        lines: list[str] = []
+        parameter_report = self.parameter_sensitivity_report
+        interval_report = self.interval_sensitivity_report
+
+        if parameter_report is not None:
+            lines.append(f"Baseline RMSE = {parameter_report.baseline_rmse:.6f}")
+            if parameter_report.influence:
+                top = parameter_report.influence[0]
+                lines.append(
+                    f"Top parameter influence: {top.parameter} | max |Delta RMSE| = {top.max_abs_delta_rmse:.6f}"
+                )
+
+        if interval_report is not None and interval_report.rows:
+            best = interval_report.rows[0]
+            lines.append(
+                f"Best interval candidate: {best.interval_hours:.3f} h | RMSE = {best.rmse:.6f}"
+            )
+        elif interval_report is None:
+            lines.append("Interval sensitivity skipped: less than two fractions in the current schedule.")
+
+        if missing_families:
+            lines.append(
+                "Missing family-specific fits: "
+                + ", ".join(missing_families)
+                + " | default alpha/beta used."
+            )
+
+        lines.append(
+            "Sensitivity uses the currently selected tumor, current schedule, and current predictor parameters."
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def format_family_sequence(sequence: Sequence[str]) -> str:
+        return " -> ".join(sequence) if sequence else "-"
+
+    def refresh_comparison_view(self) -> None:
+        self.scenario_comparison_report = None
+        self.comparison_curves = {}
+
+        if self.reference_geometry is None:
+            self.clear_comparison_outputs("Load a treated tumor file and run a simulation first.")
+            return
+
+        try:
+            current_schedule = self.schedule_from_table()
+            alternative_schedule = self.comparison_schedule_from_table()
+            if not current_schedule:
+                raise ValueError("Current schedule is empty.")
+            if not alternative_schedule:
+                self.clear_comparison_outputs("Copy or enter an alternative schedule first.")
+                return
+
+            parameters = self.current_parameters()
+            combined_schedule = list(current_schedule) + list(alternative_schedule)
+            family_overrides, missing_families = self.build_family_overrides_for_schedule(
+                combined_schedule,
+                parameters,
+            )
+            sample_times = self.build_sample_times(combined_schedule)
+            alternative_name = self.comparison_name_edit.text().strip() or "Alternative"
+            scenarios = {
+                "Current": current_schedule,
+                alternative_name: alternative_schedule,
+            }
+            self.scenario_comparison_report = compare_treatment_scenarios(
+                sample_times=sample_times,
+                reference=self.reference_geometry,
+                parameters=parameters,
+                scenarios=scenarios,
+                scaling_model=self.geometry_scaling_model,
+                family_parameters=family_overrides or None,
+            )
+            self.comparison_curves = {}
+            for scenario_name, scenario_schedule in scenarios.items():
+                result = simulate_growth(
+                    sample_times=sample_times,
+                    parameters=parameters,
+                    reference=self.reference_geometry,
+                    schedule=scenario_schedule,
+                    scaling_model=self.geometry_scaling_model,
+                    family_parameters=family_overrides or None,
+                )
+                self.comparison_curves[scenario_name] = np.asarray(result.total_volume, dtype=float)
+
+            self.populate_comparison_table()
+            self.refresh_comparison_plot(sample_times)
+            self.comparison_text.setPlainText(
+                self.build_comparison_summary_text(missing_families, alternative_name)
+            )
+        except Exception as exc:  # pragma: no cover - GUI exception path
+            self.clear_comparison_outputs(traceback.format_exc())
+            QMessageBox.critical(self, "Scenario comparison failed", str(exc))
+
+    def clear_comparison_outputs(self, message: str = "") -> None:
+        self.scenario_comparison_report = None
+        self.comparison_curves = {}
+        self.comparison_table.setRowCount(0)
+        self.comparison_text.setPlainText(message)
+        self.refresh_comparison_plot(None)
+
+    def populate_comparison_table(self) -> None:
+        table_rows = build_comparison_table_rows(self.scenario_comparison_report)
+        self.comparison_table.setRowCount(len(table_rows))
+        for row_index, values in enumerate(table_rows):
+            self._fill_row(self.comparison_table, row_index, values)
+
+    def export_comparison_csv(self) -> None:
+        comparison_rows = build_comparison_table_rows(self.scenario_comparison_report)
+        if not comparison_rows:
+            QMessageBox.information(
+                self,
+                "Nothing to export",
+                "Run scenario comparison first.",
+            )
+            return
+
+        default_stem = self.treated_path.stem if self.treated_path is not None else "tumor_growth"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export scenario comparison CSV",
+            str(Path.cwd() / f"{default_stem}_comparison.csv"),
+            "CSV files (*.csv)",
+        )
+        if not path:
+            return
+
+        output_path = write_csv_rows(path, COMPARISON_HEADERS, comparison_rows)
+        self.statusBar().showMessage(f"Comparison CSV export complete: {output_path}")
+
+    def refresh_comparison_plot(self, sample_times: Optional[np.ndarray]) -> None:
+        self.comparison_figure.clear()
+        axis = self.comparison_figure.add_subplot(111)
+
+        if sample_times is None or not self.comparison_curves:
+            axis.axis("off")
+            axis.text(
+                0.5,
+                0.5,
+                "No scenario comparison yet",
+                ha="center",
+                va="center",
+                fontsize=11,
+                color="#5f6b7a",
+            )
+            self.comparison_canvas.draw_idle()
+            return
+
+        for scenario_name, values in self.comparison_curves.items():
+            axis.plot(sample_times, values, linewidth=2.0, label=scenario_name)
+
+        if self.observed_days is not None and self.observed_volume is not None:
+            valid = np.isfinite(self.observed_days) & np.isfinite(self.observed_volume) & (self.observed_volume > 0.0)
+            if np.any(valid):
+                axis.scatter(
+                    self.observed_days[valid],
+                    self.observed_volume[valid],
+                    color="#1d3557",
+                    label="Observed",
+                    zorder=3,
+                )
+
+        axis.set_title("Scenario comparison")
+        axis.set_xlabel("Time (days)")
+        axis.set_ylabel("Total volume")
+        axis.grid(True, alpha=0.25)
+        axis.legend(loc="best")
+        self.comparison_figure.tight_layout(pad=1.1)
+        self.comparison_canvas.draw_idle()
+
+    def build_comparison_summary_text(
+        self,
+        missing_families: Sequence[str],
+        alternative_name: str,
+    ) -> str:
+        if self.scenario_comparison_report is None or not self.scenario_comparison_report.rows:
+            return ""
+
+        rows = list(self.scenario_comparison_report.rows)
+        current_row = next((row for row in rows if row.scenario == "Current"), None)
+        alternative_row = next((row for row in rows if row.scenario == alternative_name), None)
+
+        lines: list[str] = []
+        if current_row is not None and alternative_row is not None:
+            same_dose = abs(current_row.total_physical_dose - alternative_row.total_physical_dose) <= 1.0e-9
+            lines.append(
+                "Physical dose match: "
+                + ("yes" if same_dose else f"no ({current_row.total_physical_dose:.3f} vs {alternative_row.total_physical_dose:.3f} Gy)")
+            )
+            lines.append(
+                f"Lower final volume: {rows[0].scenario} ({rows[0].final_total_volume:.6f})"
+            )
+            lines.append(
+                f"Lower AUC: {min(rows, key=lambda row: row.auc_total_volume).scenario}"
+            )
+
+        if missing_families:
+            lines.append(
+                "Missing family-specific fits: "
+                + ", ".join(missing_families)
+                + " | default alpha/beta used."
+            )
+
+        lines.append(
+            "Comparison uses the current predictor parameters and family-specific overrides where available."
+        )
+        return "\n".join(lines)
+
     def run_simulation(self) -> None:
         if self.geometry_dataset is None:
             QMessageBox.warning(self, "No treated tumor", "Load a treated tumor file first.")
@@ -706,20 +1683,23 @@ class TumorGrowthPredictorWindow(QMainWindow):
         try:
             schedule = self.schedule_from_table()
             sample_times = self.build_sample_times(schedule)
-            parameters = GrowthModelParameters(
-                alpha=self.alpha_spin.value(),
-                beta=self.beta_spin.value(),
-                growth_rate=self.growth_rate_spin.value(),
-                carrying_capacity=self.carrying_capacity_spin.value(),
-                clearance_rate=self.clearance_rate_spin.value(),
-                repair_half_time_hours=self.repair_half_time_spin.value(),
+            parameters = self.current_parameters()
+            default_family = self.current_default_family()
+            family_overrides, missing_families = build_family_parameter_overrides(
+                self.run_results,
+                parameters,
+                schedule,
+                default_family=default_family,
             )
+            self.active_family_overrides = family_overrides
+            self.missing_schedule_families = missing_families
             self.simulation_result = simulate_growth(
                 sample_times,
                 parameters,
                 self.reference_geometry,
                 schedule,
                 self.geometry_scaling_model,
+                family_overrides or None,
             )
         except Exception as exc:  # pragma: no cover - GUI exception path
             self.summary_text.setPlainText(traceback.format_exc())
@@ -728,8 +1708,20 @@ class TumorGrowthPredictorWindow(QMainWindow):
 
         self.refresh_display_frames(reset_slider=True)
         self.refresh_curves()
+        self.refresh_sensitivity_views()
+        self.refresh_comparison_view()
         self.refresh_3d_view()
-        self.statusBar().showMessage("Tumor-growth simulation complete.")
+        if self.missing_schedule_families:
+            self.statusBar().showMessage(
+                "Tumor-growth simulation complete. Missing family-specific fits: "
+                + ", ".join(self.missing_schedule_families)
+            )
+        elif self.active_family_overrides:
+            self.statusBar().showMessage(
+                "Tumor-growth simulation complete with family-specific alpha/beta overrides."
+            )
+        else:
+            self.statusBar().showMessage("Tumor-growth simulation complete.")
 
     def refresh_curves(self) -> None:
         self.curve_figure.clear()
@@ -1065,7 +2057,25 @@ class TumorGrowthPredictorWindow(QMainWindow):
             lines.append("")
             lines.append("Dose schedule:")
             for event in schedule:
-                lines.append(f"- t = {_format_time_days(event.day)}: {event.dose:g} Gy")
+                family_suffix = f" | family={event.family}" if event.family else ""
+                lines.append(f"- t = {_format_time_days(event.day)}: {event.dose:g} Gy{family_suffix}")
+        if self.active_family_overrides:
+            lines.append("")
+            lines.append("Family overrides:")
+            for family, parameters in sorted(self.active_family_overrides.items()):
+                lines.append(
+                    f"- {family}: alpha={parameters.alpha:.6f}, beta={parameters.beta:.6f}, "
+                    + (
+                        f"repair_half_time_hours={parameters.repair_half_time_hours:.3f}"
+                        if parameters.repair_half_time_hours > 0.0
+                        else "repair_half_time_hours=disabled"
+                    )
+                )
+        if self.missing_schedule_families:
+            lines.append("")
+            lines.append("Missing family-specific fits:")
+            for family in self.missing_schedule_families:
+                lines.append(f"- {family} -> using default alpha/beta")
         return "\n".join(lines)
 
     def clear_prediction_outputs(self) -> None:
@@ -1073,11 +2083,19 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.play_button.setText("Play")
         self.simulation_result = None
         self.display_frame_times = None
+        self.active_family_overrides = {}
+        self.missing_schedule_families = ()
+        self.parameter_sensitivity_report = None
+        self.interval_sensitivity_report = None
+        self.scenario_comparison_report = None
+        self.comparison_curves = {}
         self.frame_slider.blockSignals(True)
         self.frame_slider.setMaximum(0)
         self.frame_slider.setValue(0)
         self.frame_slider.blockSignals(False)
         self.refresh_curves()
+        self.clear_sensitivity_outputs()
+        self.clear_comparison_outputs()
         self.refresh_3d_view()
 
 

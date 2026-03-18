@@ -77,13 +77,21 @@ If you do not load a control file, you can still enter growth parameters manuall
 
 ## Window Layout
 
-The predictor window has three main parts.
+The predictor window now uses a compact two-column layout.
 
-### Left panel
+### Left sidebar
 
-This is where you define the model input.
+The left side is a narrow setup area with:
 
-It contains:
+- a primary `Simulate` button
+- tabs for:
+  - `Files`
+  - `Model`
+  - `Schedule`
+
+This is meant to keep setup controls available without taking too much width from the plots.
+
+The sidebar contains:
 
 - `Treated tumor`: the irradiated tumor file you want to model
 - `Control`: the control file used for untreated growth fitting
@@ -92,9 +100,16 @@ It contains:
 - model parameters
 - editable dose schedule
 
-### Upper-right panel
+### Right results area
 
-This panel shows 2D curves:
+The right side is reserved for output and uses two tabs:
+
+- `Curves`
+- `Sensitivity`
+- `Comparison`
+- `3D`
+
+The `Curves` tab shows 2D trajectories:
 
 - predicted total volume
 - predicted live volume
@@ -103,12 +118,39 @@ This panel shows 2D curves:
 - predicted `a`, `b`, `c`
 - observed `a`, `b`, `c`
 
-### Lower-right panel
+The `Sensitivity` tab shows:
 
-This panel shows:
+- one-at-a-time sensitivity of prediction RMSE to:
+  - `alpha`
+  - `beta`
+  - `growth_rate`
+  - `carrying_capacity`
+  - `clearance_rate`
+  - dose scaling
+- interval sensitivity for alternative gaps such as `0.5 h`, `1 h`, `2.5 h`, `24 h`
+- a compact influence ranking and interval-RMSE plot
+- `Export CSV`, which writes:
+  - `..._parameter_sensitivity.csv`
+  - `..._parameter_influence.csv`
+  - `..._interval_sensitivity.csv`
 
-- the predicted 3D ellipsoid
-- a day-by-day slider
+The `Comparison` tab shows:
+
+- the current schedule as the baseline scenario
+- one editable alternative schedule
+- overlaid predicted total-volume curves
+- a summary table with:
+  - total physical dose
+  - family sequence
+  - nadir volume and nadir day
+  - final predicted volume
+  - total AUC
+- `Export CSV` for the scenario summary table
+
+The `3D` tab shows:
+
+- the predicted ellipsoid
+- a slider over displayed frames
 - a `Frames` switch with `Daily snapshots` and `Raw timeline`
 - a `Speed` switch for faster playback, especially in `Raw timeline`
 - `Play/Pause`
@@ -296,7 +338,13 @@ Examples:
 
 ### `Dose schedule`
 
-The schedule table uses `Time (days)` rather than integer treatment days.
+The schedule table uses:
+
+- `Time (days)`
+- `Dose (Gy)`
+- `Family`
+
+instead of only integer treatment days.
 
 This is important for experiments where fractions are separated by hours rather
 than by full days. When the treated file contains a header token starting with
@@ -312,6 +360,19 @@ days.
 
 If `Repair T1/2 (h)` is enabled, those sub-day gaps affect not only the plot
 timeline but also the radiation kill itself.
+
+The `Family` column enables combined schedules such as:
+
+- `y` + `p_peak`
+- `p_peak` + `n`
+- `c` mixed with photon fractions
+
+For mixed schedules the predictor uses:
+
+- the current manual / selected settings as the default family behavior;
+- recent fitter results as automatic overrides for any explicitly labeled family rows.
+
+If a schedule row uses a family for which no fitted result is available, the predictor falls back to the current default `alpha/beta` values and shows that in the summary.
 
 ### `Carrying capacity K`
 
@@ -341,8 +402,66 @@ Each row is one irradiation event:
 
 - `Time (days)`
 - `Dose (Gy)`
+- `Family`
 
 The schedule can be prefilled from the treated file header and then edited manually.
+
+Typical usage:
+
+- keep all rows in the treated-file family for an ordinary single-family prediction;
+- change individual rows to `p_peak`, `p_through`, `n`, `e`, or `c` for combined irradiation scenarios;
+- keep `Family` blank if you want that row to use the default current `alpha/beta`.
+
+### `Sensitivity`
+
+The `Sensitivity` tab uses the currently selected tumor, the current schedule and the current predictor parameters.
+
+Controls:
+
+- `Perturbations (%)`
+  - values like `10, 20, 30` mean one-at-a-time changes of `+-10%`, `+-20%`, `+-30%`
+- `Intervals (h)`
+  - candidate inter-fraction gaps to compare in the interval analysis
+- `Run sensitivity`
+  - recomputes the analysis without rerunning the full manual workflow
+- `Export CSV`
+  - writes the three current sensitivity tables to separate CSV files with a shared stem
+
+Interpretation:
+
+- the left plot ranks parameters by maximum absolute `Delta RMSE`
+- the right plot shows how prediction error changes with the assumed interval
+- the parameter table lists every individual perturbation
+- the influence table gives the aggregate ranking
+- the interval table shows the tested schedule for each candidate gap
+
+### `Comparison`
+
+This tab is meant for direct scenario-vs-scenario comparisons such as:
+
+- `p_peak + n` vs `c`
+- current mixed schedule vs all-`c`
+- current schedule vs a modified interval pattern
+
+Workflow:
+
+1. Run the main simulation for the current schedule.
+2. Open `Comparison`.
+3. Press `Copy current schedule`.
+4. Edit the alternative schedule:
+   - times
+   - doses
+   - `Family`
+5. Press `Compare scenarios`.
+6. Press `Export CSV` if you want the scenario summary table on disk.
+
+Interpretation:
+
+- the plot overlays the predicted total-volume trajectories
+- the table ranks scenarios by response metrics
+- the summary explicitly states whether both scenarios use the same physical dose
+
+If a family in the alternative schedule has no fitted `alpha/beta` source, the predictor falls back to the current default parameters and reports that in the summary.
 
 ## How To Read the Output
 

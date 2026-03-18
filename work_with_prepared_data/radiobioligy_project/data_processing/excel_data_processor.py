@@ -9,6 +9,13 @@ from datetime import datetime
 from work_with_prepared_data.radiobioligy_project.data_processing.rat_manager import register_rat_labels
 
 
+def _normalize_tumor_cell(value) -> str:
+    """Normalize raw Excel cell contents before tumor-volume parsing."""
+    if pd.isna(value):
+        return "NA"
+    return str(value).strip().replace(',', '.').replace(' -', '-')
+
+
 def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str], List[List[float]]]:
     """
     Обрабатывает данные из указанного файла Excel, содержащего информацию о реакциях кожи на эксперименты.
@@ -110,8 +117,7 @@ def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str]
     time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in data.iloc[1, 1:]]
 
     # Преобразование данных об объемах опухолей
-    tumor_data = tumor_data.applymap(
-        lambda x: str(x).strip().replace(',', '.').replace(' -', '-') if pd.notna(x) else "NA")
+    tumor_data = tumor_data.apply(lambda column: column.map(_normalize_tumor_cell))
     rat_labels = tumor_data.iloc[:, 0].tolist()
 
     # Преобразование объемов опухолей в числовой формат
