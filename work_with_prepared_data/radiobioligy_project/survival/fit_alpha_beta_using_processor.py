@@ -44,12 +44,13 @@ RequestedModelKind = Literal[
     "auto",
     "classic_lq",
     "repair_lq",
+    "glq",
     "linear",
     "lq_l",
     "lq_repop",
     "repair_repop",
 ]
-ModelKind = Literal["classic_lq", "repair_lq", "linear", "lq_l", "lq_repop", "repair_repop"]
+ModelKind = Literal["classic_lq", "repair_lq", "glq", "linear", "lq_l", "lq_repop", "repair_repop"]
 
 # ---------------------- INLINE CONFIG -----------------
 # Set USE_INLINE_PARAMS = True to run the script without CLI arguments.
@@ -527,6 +528,7 @@ class LQFitResult:
     repair_half_time_hours: Optional[float] = None
     curve_clearance_rate: Optional[float] = None
     transition_dose: Optional[float] = None
+    saturation_dose: Optional[float] = None
     lag_days: Optional[float] = None
     repopulation_rate: Optional[float] = None
 
@@ -546,6 +548,15 @@ class LQFitResult:
         if self.model_kind == "linear":
             quadratic_term = 0.0
             exponent = self.alpha * experiment.dose_sum + self.beta * quadratic_term
+        elif self.model_kind == "glq":
+            if self.saturation_dose is None:
+                raise ValueError("gLQ prediction requires saturation_dose.")
+            exponent = Fitter.glq_exponent(
+                experiment,
+                alpha=self.alpha,
+                beta=self.beta,
+                saturation_dose=self.saturation_dose,
+            )
         elif self.model_kind == "lq_l":
             if self.transition_dose is None:
                 raise ValueError("LQ-L prediction requires transition_dose.")
@@ -590,6 +601,19 @@ class LQFitResult:
 
         if self.model_kind == "lq_repop":
             sf = float(np.exp(-(self.alpha * experiment.dose_sum + self.beta * experiment.dose2_sum)))
+        elif self.model_kind == "glq":
+            if self.saturation_dose is None:
+                raise ValueError("gLQ curve prediction requires saturation_dose.")
+            sf = float(
+                np.exp(
+                    -Fitter.glq_exponent(
+                        experiment,
+                        alpha=self.alpha,
+                        beta=self.beta,
+                        saturation_dose=self.saturation_dose,
+                    )
+                )
+            )
         elif self.model_kind == "repair_repop":
             sf = float(
                 np.exp(
@@ -642,6 +666,7 @@ class ModelComparisonRow:
     beta: Optional[float] = None
     curve_clearance_rate: Optional[float] = None
     transition_dose: Optional[float] = None
+    saturation_dose: Optional[float] = None
     lag_days: Optional[float] = None
     repopulation_rate: Optional[float] = None
     metrics: Optional[FitMetrics] = None
@@ -1526,7 +1551,44 @@ class Fitter:
         )
 
     @staticmethod
+    def glq_fraction_kill(
+        dose: float,
+        alpha: float,
+        beta: float,
+        saturation_dose: float,
+    ) -> float:
+        saturation_dose = max(float(saturation_dose), 1.0e-8)
+        dose = float(dose)
+        return alpha * dose + beta * dose * dose / (1.0 + dose / saturation_dose)
+
+    @staticmethod
+    def glq_exponent(
+        experiment: TumorExperiment,
+        alpha: float,
+        beta: float,
+        saturation_dose: float,
+    ) -> float:
+        return float(
+            sum(
+                Fitter.glq_fraction_kill(
+                    dose=dose,
+                    alpha=alpha,
+                    beta=beta,
+                    saturation_dose=saturation_dose,
+                )
+                for dose in experiment.fractions
+            )
+        )
+
+    @staticmethod
     def _initial_transition_dose(experiments: Sequence[TumorExperiment]) -> float:
+        max_fractions = [max(experiment.fractions) for experiment in experiments if experiment.fractions]
+        if not max_fractions:
+            return 6.0
+        return max(1.0, float(np.median(np.asarray(max_fractions, dtype=float))))
+
+    @staticmethod
+    def _initial_saturation_dose(experiments: Sequence[TumorExperiment]) -> float:
         max_fractions = [max(experiment.fractions) for experiment in experiments if experiment.fractions]
         if not max_fractions:
             return 6.0
@@ -1639,6 +1701,27 @@ class Fitter:
         return np.asarray(predicted, dtype=float)
 
     @staticmethod
+    def _glq_scalar_model(
+        experiment_index: np.ndarray,
+        alpha: float,
+        beta: float,
+        saturation_dose: float,
+        experiments: Sequence[TumorExperiment],
+    ) -> np.ndarray:
+        predicted = [
+            math.exp(
+                -Fitter.glq_exponent(
+                    experiments[int(index)],
+                    alpha=alpha,
+                    beta=beta,
+                    saturation_dose=saturation_dose,
+                )
+            )
+            for index in np.asarray(experiment_index, dtype=int)
+        ]
+        return np.asarray(predicted, dtype=float)
+
+    @staticmethod
     def _lql_curve_response_model(
         xdata: Tuple[np.ndarray, np.ndarray, np.ndarray],
         alpha: float,
@@ -1653,6 +1736,26 @@ class Fitter:
             alpha=alpha,
             beta=beta,
             transition_dose=transition_dose,
+            experiments=experiments,
+        )
+        control_relative = np.clip(control_relative, 1.0e-8, None)
+        return sf + (1.0 - sf) * np.exp(-clearance_rate * time_days) / control_relative
+
+    @staticmethod
+    def _glq_curve_response_model(
+        xdata: Tuple[np.ndarray, np.ndarray, np.ndarray],
+        alpha: float,
+        beta: float,
+        saturation_dose: float,
+        clearance_rate: float,
+        experiments: Sequence[TumorExperiment],
+    ) -> np.ndarray:
+        experiment_index, time_days, control_relative = xdata
+        sf = Fitter._glq_scalar_model(
+            experiment_index,
+            alpha=alpha,
+            beta=beta,
+            saturation_dose=saturation_dose,
             experiments=experiments,
         )
         control_relative = np.clip(control_relative, 1.0e-8, None)
@@ -1841,6 +1944,7 @@ class Fitter:
         Optional[float],
         Optional[float],
         Optional[float],
+        Optional[float],
     ]:
         repair_rate = None
         if model_kind in ("repair_lq", "repair_repop"):
@@ -1862,7 +1966,32 @@ class Fitter:
             else:
                 alpha = self._fit_alpha_for_linear_model(dose_sum, sf, sigma_log_sf)
             beta = 0.0
-            return alpha, beta, None, None, None, None
+            return alpha, beta, None, None, None, None, None
+
+        if model_kind == "glq":
+            experiment_index = np.arange(len(experiments), dtype=float)
+            initial_saturation = self._initial_saturation_dose(experiments)
+            max_fraction = max(max(experiment.fractions) for experiment in experiments if experiment.fractions)
+            saturation_upper = max(max_fraction * 2.0, initial_saturation * 2.0, 1.0)
+
+            if self.alpha_fixed is not None:
+                params, _ = self._safe_curve_fit(
+                    lambda index, beta, saturation_dose: self._glq_scalar_model(
+                        index,
+                        self.alpha_fixed,
+                        beta,
+                        saturation_dose,
+                        experiments,
+                    ),
+                    experiment_index,
+                    sf,
+                    p0=(0.01, initial_saturation),
+                    bounds=((0.0, 1.0e-6), (np.inf, saturation_upper)),
+                    sigma=np.clip(sigma_sf, 1.0e-8, None),
+                    absolute_sigma=False,
+                    maxfev=30000,
+                )
+                return self.alpha_fixed, float(params[0]), None, None, float(params[1]), None, None
 
         if model_kind == "lq_l":
             experiment_index = np.arange(len(experiments), dtype=float)
@@ -1887,7 +2016,7 @@ class Fitter:
                     absolute_sigma=False,
                     maxfev=30000,
                 )
-                return self.alpha_fixed, float(params[0]), None, float(params[1]), None, None
+                return self.alpha_fixed, float(params[0]), None, float(params[1]), None, None, None
 
             initial_alpha, initial_beta = self._fit_free_alpha_beta(
                 dose_sum=dose_sum,
@@ -1911,7 +2040,32 @@ class Fitter:
                 absolute_sigma=False,
                 maxfev=30000,
             )
-            return float(params[0]), float(params[1]), None, float(params[2]), None, None
+            return float(params[0]), float(params[1]), None, float(params[2]), None, None, None
+
+        if model_kind == "glq":
+            initial_alpha, initial_beta = self._fit_free_alpha_beta(
+                dose_sum=dose_sum,
+                quadratic_term=quadratic_term,
+                sf=sf,
+                sigma_sf=sigma_sf,
+            )
+            params, _ = self._safe_curve_fit(
+                lambda index, alpha, beta, saturation_dose: self._glq_scalar_model(
+                    index,
+                    alpha,
+                    beta,
+                    saturation_dose,
+                    experiments,
+                ),
+                experiment_index,
+                sf,
+                p0=(max(initial_alpha, 1.0e-8), max(initial_beta, 1.0e-8), initial_saturation),
+                bounds=((0.0, 0.0, 1.0e-6), (np.inf, np.inf, saturation_upper)),
+                sigma=np.clip(sigma_sf, 1.0e-8, None),
+                absolute_sigma=False,
+                maxfev=30000,
+            )
+            return float(params[0]), float(params[1]), None, None, float(params[2]), None, None
 
         if model_kind == "lq_repop":
             experiment_index = np.arange(len(experiments), dtype=float)
@@ -1938,7 +2092,7 @@ class Fitter:
                     absolute_sigma=False,
                     maxfev=30000,
                 )
-                return self.alpha_fixed, float(params[0]), None, None, float(params[1]), float(params[2])
+                return self.alpha_fixed, float(params[0]), None, None, None, float(params[1]), float(params[2])
 
             initial_alpha, initial_beta = self._fit_free_alpha_beta(
                 dose_sum=dose_sum,
@@ -1963,7 +2117,7 @@ class Fitter:
                 absolute_sigma=False,
                 maxfev=30000,
             )
-            return float(params[0]), float(params[1]), None, None, float(params[2]), float(params[3])
+            return float(params[0]), float(params[1]), None, None, None, float(params[2]), float(params[3])
 
         if model_kind == "repair_repop":
             experiment_index = np.arange(len(experiments), dtype=float)
@@ -1991,7 +2145,7 @@ class Fitter:
                     absolute_sigma=False,
                     maxfev=30000,
                 )
-                return self.alpha_fixed, float(params[0]), None, None, float(params[1]), float(params[2])
+                return self.alpha_fixed, float(params[0]), None, None, None, float(params[1]), float(params[2])
 
             params, _ = self._safe_curve_fit(
                 lambda index, alpha, beta, lag_days, repopulation_rate: self._repair_repop_scalar_model(
@@ -2011,7 +2165,7 @@ class Fitter:
                 absolute_sigma=False,
                 maxfev=30000,
             )
-            return float(params[0]), float(params[1]), None, None, float(params[2]), float(params[3])
+            return float(params[0]), float(params[1]), None, None, None, float(params[2]), float(params[3])
 
         if self.alpha_fixed is not None:
             beta = self._fit_beta_for_fixed_alpha(
@@ -2021,7 +2175,7 @@ class Fitter:
                 sigma_log_sf=sigma_log_sf,
                 alpha=self.alpha_fixed,
             )
-            return self.alpha_fixed, beta, None, None, None, None
+            return self.alpha_fixed, beta, None, None, None, None, None
 
         alpha, beta = self._fit_free_alpha_beta(
             dose_sum=dose_sum,
@@ -2029,7 +2183,7 @@ class Fitter:
             sf=sf,
             sigma_sf=sigma_sf,
         )
-        return alpha, beta, None, None, None, None
+        return alpha, beta, None, None, None, None, None
 
     def _fit_curve_parameters(
         self,
@@ -2042,7 +2196,71 @@ class Fitter:
         Optional[float],
         Optional[float],
         Optional[float],
+        Optional[float],
     ]:
+        if model_kind == "glq":
+            (
+                experiment_index,
+                time_days,
+                control_relative,
+                observed_curve,
+            ) = self._to_lql_curve_arrays(experiments)
+            (
+                initial_alpha,
+                initial_beta,
+                _,
+                _,
+                initial_saturation,
+                _,
+                _,
+            ) = self._fit_scalar_parameters(experiments, model_kind)
+            if initial_saturation is None:
+                initial_saturation = self._initial_saturation_dose(experiments)
+            max_fraction = max(
+                max(experiment.fractions) for experiment in experiments if experiment.fractions
+            )
+            saturation_upper = max(max_fraction * 2.0, initial_saturation * 2.0, 1.0)
+
+            if self.alpha_fixed is not None:
+                params, _ = self._safe_curve_fit(
+                    lambda xdata, beta, saturation_dose, clearance_rate: self._glq_curve_response_model(
+                        xdata,
+                        self.alpha_fixed,
+                        beta,
+                        saturation_dose,
+                        clearance_rate,
+                        experiments,
+                    ),
+                    (experiment_index, time_days, control_relative),
+                    observed_curve,
+                    p0=(max(initial_beta, 1.0e-8), initial_saturation, 0.10),
+                    bounds=((0.0, 1.0e-6, 0.0), (np.inf, saturation_upper, np.inf)),
+                    maxfev=30000,
+                )
+                return self.alpha_fixed, float(params[0]), float(params[2]), None, float(params[1]), None, None
+
+            params, _ = self._safe_curve_fit(
+                lambda xdata, alpha, beta, saturation_dose, clearance_rate: self._glq_curve_response_model(
+                    xdata,
+                    alpha,
+                    beta,
+                    saturation_dose,
+                    clearance_rate,
+                    experiments,
+                ),
+                (experiment_index, time_days, control_relative),
+                observed_curve,
+                p0=(
+                    max(initial_alpha, 1.0e-8),
+                    max(initial_beta, 1.0e-8),
+                    initial_saturation,
+                    0.10,
+                ),
+                bounds=((0.0, 0.0, 1.0e-6, 0.0), (np.inf, np.inf, saturation_upper, np.inf)),
+                maxfev=30000,
+            )
+            return float(params[0]), float(params[1]), float(params[3]), None, float(params[2]), None, None
+
         if model_kind == "lq_l":
             (
                 experiment_index,
@@ -2050,7 +2268,7 @@ class Fitter:
                 control_relative,
                 observed_curve,
             ) = self._to_lql_curve_arrays(experiments)
-            initial_alpha, initial_beta, _, initial_transition, _, _ = self._fit_scalar_parameters(
+            initial_alpha, initial_beta, _, initial_transition, _, _, _ = self._fit_scalar_parameters(
                 experiments,
                 model_kind,
             )
@@ -2077,7 +2295,7 @@ class Fitter:
                     bounds=((0.0, 1.0e-6, 0.0), (np.inf, transition_upper, np.inf)),
                     maxfev=30000,
                 )
-                return self.alpha_fixed, float(params[0]), float(params[2]), float(params[1]), None, None
+                return self.alpha_fixed, float(params[0]), float(params[2]), float(params[1]), None, None, None
 
             params, _ = self._safe_curve_fit(
                 lambda xdata, alpha, beta, transition_dose, clearance_rate: self._lql_curve_response_model(
@@ -2099,7 +2317,7 @@ class Fitter:
                 bounds=((0.0, 0.0, 1.0e-6, 0.0), (np.inf, np.inf, transition_upper, np.inf)),
                 maxfev=30000,
             )
-            return float(params[0]), float(params[1]), float(params[3]), float(params[2]), None, None
+            return float(params[0]), float(params[1]), float(params[3]), float(params[2]), None, None, None
 
         if model_kind == "lq_repop":
             (
@@ -2109,7 +2327,7 @@ class Fitter:
                 control_relative,
                 observed_curve,
             ) = self._to_curve_arrays(experiments, model_kind="classic_lq")
-            initial_alpha, initial_beta, _, _, initial_lag, initial_repopulation = self._fit_scalar_parameters(
+            initial_alpha, initial_beta, _, _, _, initial_lag, initial_repopulation = self._fit_scalar_parameters(
                 experiments,
                 model_kind,
             )
@@ -2141,6 +2359,7 @@ class Fitter:
                     self.alpha_fixed,
                     float(params[0]),
                     float(params[1]),
+                    None,
                     None,
                     float(params[2]),
                     float(params[3]),
@@ -2165,6 +2384,7 @@ class Fitter:
                 float(params[1]),
                 float(params[2]),
                 None,
+                None,
                 float(params[3]),
                 float(params[4]),
             )
@@ -2177,7 +2397,7 @@ class Fitter:
                 control_relative,
                 observed_curve,
             ) = self._to_curve_arrays(experiments, model_kind="repair_lq")
-            initial_alpha, initial_beta, _, _, initial_lag, initial_repopulation = self._fit_scalar_parameters(
+            initial_alpha, initial_beta, _, _, _, initial_lag, initial_repopulation = self._fit_scalar_parameters(
                 experiments,
                 model_kind,
             )
@@ -2210,6 +2430,7 @@ class Fitter:
                     float(params[0]),
                     float(params[1]),
                     None,
+                    None,
                     float(params[2]),
                     float(params[3]),
                 )
@@ -2232,6 +2453,7 @@ class Fitter:
                 float(params[0]),
                 float(params[1]),
                 float(params[2]),
+                None,
                 None,
                 float(params[3]),
                 float(params[4]),
@@ -2266,7 +2488,7 @@ class Fitter:
                     bounds=((0.0,), (np.inf,)),
                     maxfev=20000,
                 )
-                return self.alpha_fixed, 0.0, float(params[0]), None, None, None
+            return self.alpha_fixed, 0.0, float(params[0]), None, None, None, None
 
             params, _ = self._safe_curve_fit(
                 lambda xdata, alpha, clearance_rate: self._curve_response_model(
@@ -2281,9 +2503,9 @@ class Fitter:
                 bounds=((0.0, 0.0), (np.inf, np.inf)),
                 maxfev=20000,
             )
-            return float(params[0]), 0.0, float(params[1]), None, None, None
+            return float(params[0]), 0.0, float(params[1]), None, None, None, None
 
-        initial_alpha, initial_beta, _, _, _, _ = self._fit_scalar_parameters(experiments, model_kind)
+        initial_alpha, initial_beta, _, _, _, _, _ = self._fit_scalar_parameters(experiments, model_kind)
         if self.alpha_fixed is not None:
             params, _ = self._safe_curve_fit(
                 lambda xdata, beta, clearance_rate: self._curve_response_model(
@@ -2298,7 +2520,7 @@ class Fitter:
                 bounds=((0.0, 0.0), (np.inf, np.inf)),
                 maxfev=20000,
             )
-            return self.alpha_fixed, float(params[0]), float(params[1]), None, None, None
+            return self.alpha_fixed, float(params[0]), float(params[1]), None, None, None, None
 
         params, _ = self._safe_curve_fit(
             self._curve_response_model,
@@ -2308,7 +2530,7 @@ class Fitter:
             bounds=((0.0, 0.0, 0.0), (np.inf, np.inf, np.inf)),
             maxfev=20000,
         )
-        return float(params[0]), float(params[1]), float(params[2]), None, None, None
+        return float(params[0]), float(params[1]), float(params[2]), None, None, None, None
 
     def fit(
         self,
@@ -2335,6 +2557,7 @@ class Fitter:
                 beta,
                 curve_clearance_rate,
                 transition_dose,
+                saturation_dose,
                 lag_days,
                 repopulation_rate,
             ) = self._fit_curve_parameters(
@@ -2347,6 +2570,7 @@ class Fitter:
                 beta,
                 curve_clearance_rate,
                 transition_dose,
+                saturation_dose,
                 lag_days,
                 repopulation_rate,
             ) = self._fit_scalar_parameters(
@@ -2366,6 +2590,7 @@ class Fitter:
             repair_half_time_hours=self.repair_half_time_hours,
             curve_clearance_rate=curve_clearance_rate,
             transition_dose=transition_dose,
+            saturation_dose=saturation_dose,
             lag_days=lag_days,
             repopulation_rate=repopulation_rate,
         )
@@ -2381,6 +2606,8 @@ class Fitter:
         if self.alpha_fixed is not None:
             parameter_count -= 1
         if result.model_kind == "lq_l":
+            parameter_count += 1
+        if result.model_kind == "glq":
             parameter_count += 1
         if result.model_kind in ("lq_repop", "repair_repop"):
             parameter_count += 2
@@ -2445,7 +2672,7 @@ class Fitter:
         family: Optional[str],
         sf_mode: Optional[str],
     ) -> Tuple[ModelComparisonRow, ...]:
-        candidates: List[ModelKind] = ["classic_lq", "lq_l", "lq_repop", "linear"]
+        candidates: List[ModelKind] = ["classic_lq", "glq", "lq_l", "lq_repop", "linear"]
         if self.repair_rate_per_day is not None:
             candidates.insert(1, "repair_lq")
             candidates.insert(2, "repair_repop")
@@ -2471,6 +2698,7 @@ class Fitter:
                         beta=fit_result.beta,
                         curve_clearance_rate=fit_result.curve_clearance_rate,
                         transition_dose=fit_result.transition_dose,
+                        saturation_dose=fit_result.saturation_dose,
                         lag_days=fit_result.lag_days,
                         repopulation_rate=fit_result.repopulation_rate,
                         metrics=metrics,
@@ -2526,6 +2754,7 @@ class Fitter:
                     beta=row.beta,
                     curve_clearance_rate=row.curve_clearance_rate,
                     transition_dose=row.transition_dose,
+                    saturation_dose=row.saturation_dose,
                     lag_days=row.lag_days,
                     repopulation_rate=row.repopulation_rate,
                     metrics=row.metrics,
@@ -2757,6 +2986,8 @@ class Fitter:
         )
         if result.model_kind == "linear":
             print("model=linear")
+        elif result.model_kind == "glq":
+            print("model=glq")
         elif result.model_kind == "lq_l":
             print("model=lq-l")
         elif result.model_kind == "lq_repop":
@@ -2775,6 +3006,8 @@ class Fitter:
             print("model=classic-lq")
         if result.transition_dose is not None:
             print(f"transition_dose={result.transition_dose:.6f} Gy")
+        if result.saturation_dose is not None:
+            print(f"saturation_dose={result.saturation_dose:.6f} Gy")
         if result.lag_days is not None:
             print(f"lag_days={result.lag_days:.6f}")
         if result.repopulation_rate is not None:
@@ -3258,6 +3491,8 @@ def report_analysis_run(fitter: Fitter, run: AnalysisRunResult) -> None:
                 line += f" clearance={row.curve_clearance_rate:.6f}"
             if row.transition_dose is not None:
                 line += f" transition_dose={row.transition_dose:.6f}"
+            if row.saturation_dose is not None:
+                line += f" saturation_dose={row.saturation_dose:.6f}"
             if row.lag_days is not None:
                 line += f" lag_days={row.lag_days:.6f}"
             if row.repopulation_rate is not None:
@@ -3311,7 +3546,7 @@ def parse_cli() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model-kind",
-        choices=("auto", "classic_lq", "repair_lq", "linear", "lq_l", "lq_repop", "repair_repop"),
+        choices=("auto", "classic_lq", "repair_lq", "glq", "linear", "lq_l", "lq_repop", "repair_repop"),
         default="auto",
         help="Model family to fit (default: auto)",
     )

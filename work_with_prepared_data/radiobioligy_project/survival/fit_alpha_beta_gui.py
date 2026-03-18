@@ -329,6 +329,7 @@ class FitAlphaBetaWindow(QMainWindow):
         self.model_kind_combo.addItem("auto", "auto")
         self.model_kind_combo.addItem("classic_lq", "classic_lq")
         self.model_kind_combo.addItem("repair_lq", "repair_lq")
+        self.model_kind_combo.addItem("glq", "glq")
         self.model_kind_combo.addItem("repair_repop", "repair_repop")
         self.model_kind_combo.addItem("lq_l", "lq_l")
         self.model_kind_combo.addItem("lq_repop", "lq_repop")
@@ -337,7 +338,7 @@ class FitAlphaBetaWindow(QMainWindow):
 
         self.compare_models_check = QCheckBox("Compare models", self)
         self.compare_models_check.setToolTip(
-            "Run classic LQ, repair-aware LQ, repair + repopulation, LQ-L, LQ + repopulation and linear candidates, then rank them by fit error."
+            "Run classic LQ, repair-aware LQ, gLQ, repair + repopulation, LQ-L, LQ + repopulation and linear candidates, then rank them by fit error."
         )
         layout.addWidget(self.compare_models_check, 3, 4, 1, 2)
 
@@ -1067,6 +1068,8 @@ class FitAlphaBetaWindow(QMainWindow):
                 )
             if run.fit_result.transition_dose is not None:
                 lines.append(f"transition_dose = {run.fit_result.transition_dose:.6f} Gy")
+            if run.fit_result.saturation_dose is not None:
+                lines.append(f"saturation_dose = {run.fit_result.saturation_dose:.6f} Gy")
             if run.fit_result.lag_days is not None:
                 lines.append(f"lag_days = {run.fit_result.lag_days:.6f}")
             if run.fit_result.repopulation_rate is not None:
@@ -1075,6 +1078,8 @@ class FitAlphaBetaWindow(QMainWindow):
                 )
             if run.fit_result.model_kind == "linear":
                 lines.append("repair_half_time = n/a for linear model")
+            elif run.fit_result.model_kind == "glq":
+                lines.append("repair_half_time = not used by gLQ")
             elif run.fit_result.model_kind == "lq_l":
                 lines.append("repair_half_time = not used by LQ-L")
             elif run.fit_result.model_kind == "lq_repop":
@@ -1177,6 +1182,8 @@ class FitAlphaBetaWindow(QMainWindow):
                         metrics_text += f" | AIC={row.metrics.aic:.4f}"
                 if row.transition_dose is not None:
                     metrics_text += f" | transition_dose={row.transition_dose:.6f}"
+                if row.saturation_dose is not None:
+                    metrics_text += f" | saturation_dose={row.saturation_dose:.6f}"
                 if row.lag_days is not None:
                     metrics_text += f" | lag_days={row.lag_days:.6f}"
                 if row.repopulation_rate is not None:

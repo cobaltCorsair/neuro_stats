@@ -458,6 +458,50 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertIsNotNone(result.curve_clearance_rate)
         self.assertAlmostEqual(result.curve_clearance_rate or 0.0, expected_clearance, places=4)
 
+    def test_fit_glq_model_recovers_saturation_dose(self) -> None:
+        expected_alpha = 0.03
+        expected_beta = 0.04
+        expected_saturation_dose = 6.0
+        experiments = []
+        for name, fractions in (
+            ("single4.xlsx", (4.0,)),
+            ("single8.xlsx", (8.0,)),
+            ("single12.xlsx", (12.0,)),
+            ("single16.xlsx", (16.0,)),
+            ("split8_8.xlsx", (8.0, 8.0)),
+            ("split4_12.xlsx", (4.0, 12.0)),
+        ):
+            exponent = sum(
+                Fitter.glq_fraction_kill(
+                    dose=dose,
+                    alpha=expected_alpha,
+                    beta=expected_beta,
+                    saturation_dose=expected_saturation_dose,
+                )
+                for dose in fractions
+            )
+            experiments.append(
+                TumorExperiment(
+                    Path(name),
+                    fractions,
+                    math.exp(-exponent),
+                    "y",
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+        )
+        result = fitter.fit(experiments=experiments, model_kind="glq")
+
+        self.assertAlmostEqual(result.alpha, expected_alpha, places=3)
+        self.assertAlmostEqual(result.beta, expected_beta, places=3)
+        self.assertIsNotNone(result.saturation_dose)
+        self.assertAlmostEqual(result.saturation_dose or 0.0, expected_saturation_dose, places=2)
+
     def test_fit_lq_l_model_recovers_transition_dose(self) -> None:
         expected_alpha = 0.08
         expected_beta = 0.012
@@ -589,6 +633,55 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(comparison), 3)
         self.assertEqual(comparison[0].model_kind, "lq_l")
+        self.assertEqual(comparison[0].status, "ok")
+        self.assertEqual(comparison[0].reason, "rank=1")
+
+    def test_compare_models_ranks_glq_first_on_glq_data(self) -> None:
+        expected_alpha = 0.03
+        expected_beta = 0.04
+        expected_saturation_dose = 6.0
+        experiments = []
+        for name, fractions in (
+            ("single4.xlsx", (4.0,)),
+            ("single8.xlsx", (8.0,)),
+            ("single12.xlsx", (12.0,)),
+            ("single16.xlsx", (16.0,)),
+            ("split8_8.xlsx", (8.0, 8.0)),
+            ("split4_12.xlsx", (4.0, 12.0)),
+        ):
+            exponent = sum(
+                Fitter.glq_fraction_kill(
+                    dose=dose,
+                    alpha=expected_alpha,
+                    beta=expected_beta,
+                    saturation_dose=expected_saturation_dose,
+                )
+                for dose in fractions
+            )
+            experiments.append(
+                TumorExperiment(
+                    Path(name),
+                    fractions,
+                    math.exp(-exponent),
+                    "y",
+                )
+            )
+
+        fitter = Fitter(
+            sf_mode="absolute",
+            min_sf=1.0,
+            alpha_fixed=None,
+            verbose=False,
+        )
+        comparison = fitter.compare_models(
+            experiments=experiments,
+            response_mode="scalar",
+            family="y",
+            sf_mode="absolute",
+        )
+
+        self.assertGreaterEqual(len(comparison), 4)
+        self.assertEqual(comparison[0].model_kind, "glq")
         self.assertEqual(comparison[0].status, "ok")
         self.assertEqual(comparison[0].reason, "rank=1")
 

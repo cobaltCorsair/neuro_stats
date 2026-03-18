@@ -81,6 +81,7 @@ CLI:
 - `--model-kind auto`
 - `--model-kind classic_lq`
 - `--model-kind repair_lq`
+- `--model-kind glq`
 - `--model-kind repair_repop`
 - `--model-kind lq_l`
 - `--model-kind lq_repop`
@@ -92,6 +93,9 @@ CLI:
   - `SF = exp(-alpha * D - beta * sum(d_i^2))`
 - `repair_lq`
   - тот же LQ, но с учетом `t=` интервалов и репарации через `--repair-half-time-hours`
+- `glq`
+  - generalized high-dose LQ variant with saturating quadratic term;
+  - fitter оценивает `saturation_dose`
 - `repair_repop`
   - repair-aware LQ plus delayed repopulation;
   - fitter использует `t=` интервалы, `lag_days` и `repopulation_rate`
@@ -114,6 +118,7 @@ CLI:
 
 Для расширенных моделей fitter дополнительно выводит:
 
+- `saturation_dose` для `gLQ`
 - `transition_dose` для `LQ-L`
 - `lag_days` и `repopulation_rate` для `LQ + repopulation`
 - `lag_days` и `repopulation_rate` для `repair + repopulation`
