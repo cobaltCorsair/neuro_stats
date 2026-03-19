@@ -14,6 +14,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolb
 from matplotlib.figure import Figure
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QComboBox,
     QDoubleSpinBox,
@@ -23,6 +24,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -447,11 +449,13 @@ class TumorGrowthPredictorWindow(QMainWindow):
         layout.addWidget(control_button, 1, 2)
 
         self.selection_combo = QComboBox(self)
+        self._configure_combo_box(self.selection_combo)
         self.selection_combo.currentIndexChanged.connect(self.on_selection_changed)
         layout.addWidget(QLabel("Tumor"), 2, 0)
         layout.addWidget(self.selection_combo, 2, 1, 1, 2)
 
         self.fit_result_combo = QComboBox(self)
+        self._configure_combo_box(self.fit_result_combo)
         self.fit_result_combo.currentIndexChanged.connect(self.apply_selected_fit_result)
         layout.addWidget(QLabel("Alpha/Beta source"), 3, 0)
         layout.addWidget(self.fit_result_combo, 3, 1, 1, 2)
@@ -509,6 +513,7 @@ class TumorGrowthPredictorWindow(QMainWindow):
 
         layout.addWidget(QLabel("Geometry mode"), 4, 0)
         self.geometry_mode_combo = QComboBox(self)
+        self._configure_combo_box(self.geometry_mode_combo)
         self.geometry_mode_combo.addItem("Fixed ratios", "fixed")
         self.geometry_mode_combo.addItem("Fit from observed shape", "fitted")
         self.geometry_mode_combo.currentIndexChanged.connect(self.on_geometry_mode_changed)
@@ -697,6 +702,7 @@ class TumorGrowthPredictorWindow(QMainWindow):
         controls.addWidget(QLabel("Frames", self))
 
         self.frame_mode_combo = QComboBox(self)
+        self._configure_combo_box(self.frame_mode_combo)
         self.frame_mode_combo.addItem("Daily snapshots", "daily")
         self.frame_mode_combo.addItem("Raw timeline", "raw")
         self.frame_mode_combo.currentIndexChanged.connect(self.on_frame_mode_changed)
@@ -704,6 +710,7 @@ class TumorGrowthPredictorWindow(QMainWindow):
 
         controls.addWidget(QLabel("Speed", self))
         self.playback_speed_combo = QComboBox(self)
+        self._configure_combo_box(self.playback_speed_combo)
         self.playback_speed_combo.addItem("Auto", "auto")
         self.playback_speed_combo.addItem("1x", 1)
         self.playback_speed_combo.addItem("2x", 2)
@@ -771,6 +778,12 @@ class TumorGrowthPredictorWindow(QMainWindow):
         header.setStretchLastSection(True)
         return table
 
+    @staticmethod
+    def _configure_combo_box(combo: QComboBox) -> None:
+        combo.setMinimumHeight(30)
+        combo.setMaxVisibleItems(14)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContentsOnFirstShow)
+
     def _apply_window_style(self) -> None:
         self.setStyleSheet(
             """
@@ -829,12 +842,34 @@ class TumorGrowthPredictorWindow(QMainWindow):
             QPushButton#PrimaryAction:hover {
                 background: #cfe4ff;
             }
-            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+            QLineEdit, QSpinBox, QDoubleSpinBox {
                 background: #ffffff;
                 border: 1px solid #cfd7e4;
                 border-radius: 7px;
                 padding: 4px 6px;
                 min-height: 24px;
+            }
+            QComboBox {
+                background: #ffffff;
+                border: 1px solid #cfd7e4;
+                border-radius: 7px;
+                padding: 2px 28px 2px 6px;
+                min-height: 0px;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 24px;
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+            }
+            QComboBox QAbstractItemView {
+                background: #ffffff;
+                color: #1f2937;
+                border: 1px solid #cfd7e4;
+                selection-background-color: #dcecff;
+                selection-color: #1f2937;
+                outline: 0;
+                padding: 2px;
             }
             QTableWidget, QPlainTextEdit, QScrollArea {
                 background: #ffffff;

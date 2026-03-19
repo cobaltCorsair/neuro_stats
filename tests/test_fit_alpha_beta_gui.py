@@ -1,7 +1,10 @@
 import unittest
 from pathlib import Path
 
+from PyQt6.QtWidgets import QApplication
+
 from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_gui import (
+    FitAlphaBetaWindow,
     SUMMARY_HEADERS,
     build_cross_validation_table_rows,
     build_let_alpha_table_rows,
@@ -180,6 +183,23 @@ class FitAlphaBetaGuiHelperTests(unittest.TestCase):
         self.assertEqual(rows[0][1], "c")
         self.assertEqual(rows[0][2], "2.000")
         self.assertEqual(rows[1][1], "p_peak")
+
+
+class FitAlphaBetaGuiWindowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = QApplication.instance() or QApplication([])
+
+    def test_growth_predictor_button_opens_window(self) -> None:
+        window = FitAlphaBetaWindow()
+
+        window.open_growth_predictor()
+
+        self.assertIsNotNone(window.growth_predictor_window)
+        self.assertEqual(
+            window.growth_predictor_window.windowTitle(),
+            "Tumor growth predictor",
+        )
 
     def test_build_sf_metric_table_rows_formats_numeric_columns(self) -> None:
         rows = build_sf_metric_table_rows(

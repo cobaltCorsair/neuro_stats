@@ -9,6 +9,8 @@ It is intended for series where:
 
 The fitter supports both CLI and GUI workflows.
 
+For a full Russian-language user manual with GUI workflows and common use cases, see [USER_GUIDE_RU.md](USER_GUIDE_RU.md).
+
 ## What It Does
 
 - reads `.xlsx` tumor-volume files;
