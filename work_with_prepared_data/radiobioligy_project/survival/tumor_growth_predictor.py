@@ -254,6 +254,60 @@ def _resolve_fraction_parameters(
     return family_parameters[family_key]
 
 
+def predict_schedule_surviving_fraction(
+    schedule: Sequence[TreatmentFraction],
+    parameters: GrowthModelParameters,
+    family_parameters: Mapping[str, GrowthModelParameters] | None = None,
+) -> float:
+    """Predict net surviving fraction from the schedule without growth dynamics."""
+    schedule = sanitize_schedule(schedule)
+    if not schedule:
+        return 1.0
+
+    normalized_family_parameters = None
+    if family_parameters is not None:
+        normalized_family_parameters = {
+            str(key).strip().lower(): value
+            for key, value in family_parameters.items()
+        }
+
+    surviving = 1.0
+    unrepaired_dose_by_family: dict[str, float] = {}
+    current_time = float(schedule[0].day)
+
+    for event in schedule:
+        event_parameters = _resolve_fraction_parameters(
+            event,
+            parameters,
+            normalized_family_parameters,
+        )
+        dt_event = max(float(event.day) - current_time, 0.0)
+        unrepaired_dose_by_family = _decay_unrepaired_dose_map(
+            unrepaired_dose_by_family,
+            dt_event,
+            parameters,
+            normalized_family_parameters,
+        )
+        current_time = max(current_time, float(event.day))
+
+        event_sf = surviving_fraction(
+            event_parameters.alpha,
+            event_parameters.beta,
+            event.dose,
+            prior_unrepaired_dose=sum(unrepaired_dose_by_family.values()),
+        )
+        surviving *= event_sf
+
+        repair_rate = event_parameters.repair_rate_per_day
+        if repair_rate is not None and repair_rate > 0.0:
+            family_key = _fraction_parameter_key(event)
+            unrepaired_dose_by_family[family_key] = (
+                unrepaired_dose_by_family.get(family_key, 0.0) + float(event.dose)
+            )
+
+    return float(surviving)
+
+
 def _decay_unrepaired_dose_map(
     unrepaired_dose_by_family: dict[str, float],
     dt_days: float,

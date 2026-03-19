@@ -44,13 +44,25 @@ RequestedModelKind = Literal[
     "auto",
     "classic_lq",
     "repair_lq",
+    "repair_biexp",
     "glq",
+    "let_dependent",
     "linear",
     "lq_l",
     "lq_repop",
     "repair_repop",
 ]
-ModelKind = Literal["classic_lq", "repair_lq", "glq", "linear", "lq_l", "lq_repop", "repair_repop"]
+ModelKind = Literal[
+    "classic_lq",
+    "repair_lq",
+    "repair_biexp",
+    "glq",
+    "let_dependent",
+    "linear",
+    "lq_l",
+    "lq_repop",
+    "repair_repop",
+]
 
 # ---------------------- INLINE CONFIG -----------------
 # Set USE_INLINE_PARAMS = True to run the script without CLI arguments.
@@ -59,6 +71,9 @@ INLINE_FILES: Optional[List[str]] = None
 INLINE_SF_MODES: List[str] = ["absolute"]
 INLINE_ALPHA: Optional[float] = None
 INLINE_REPAIR_HALF_TIME_HOURS: Optional[float] = None
+INLINE_REPAIR_HALF_TIME_FAST_HOURS: Optional[float] = None
+INLINE_REPAIR_HALF_TIME_SLOW_HOURS: Optional[float] = None
+INLINE_REPAIR_FAST_FRACTION: float = 0.6
 INLINE_MIN_SF = 1.0
 INLINE_FIT_KIND: RegimenKind = "all"
 INLINE_VALIDATE_KIND: ValidationKind = "none"
@@ -72,6 +87,7 @@ INLINE_BOOTSTRAP_SEED: Optional[int] = None
 INLINE_RESPONSE_MODE: ResponseMode = "scalar"
 INLINE_MODEL_KIND: RequestedModelKind = "auto"
 INLINE_COMPARE_MODELS = False
+INLINE_CROSS_VALIDATE_LOO = True
 INLINE_VERBOSE = True
 # -----------------------------------------------------
 
@@ -82,6 +98,16 @@ KNOWN_FAMILIES = ("y", "p", "p_peak", "p_through", "n", "e", "c")
 TIME_TOKEN = re.compile(r"\bt\s*=")
 PROTON_PEAK_TOKENS = ("in_peak", "в_пике")
 PROTON_THROUGH_TOKENS = ("прострел",)
+FAMILY_LET_DEFAULTS: Dict[str, float] = {
+    "y": 0.3,
+    "e": 0.3,
+    "p": 3.0,
+    "p_peak": 12.0,
+    "p_through": 2.0,
+    "n": 20.0,
+    "c": 100.0,
+}
+DURATION_MARKER = re.compile(r"(t_irr|tirr|tau|duration|dur|irradiation\s*duration)", re.IGNORECASE)
 
 
 def parse_fractions(experiment_params: List[str]) -> List[float]:
@@ -231,6 +257,46 @@ def parse_schedule_days(
         emitted_doses += 1
 
     return tuple(times), True
+
+
+def parse_irradiation_durations_hours(
+    experiment_params: Sequence[str],
+    fractions: Optional[Sequence[float]] = None,
+) -> Tuple[float, ...]:
+    """Extract optional per-fraction irradiation durations in hours."""
+    doses = [float(dose) for dose in (fractions or parse_fractions(list(experiment_params)))]
+    if not doses:
+        return ()
+
+    durations: List[float] = []
+    for raw_token in experiment_params:
+        token = str(raw_token).strip()
+        token_lower = token.lower().replace(",", ".")
+        if TIME_TOKEN.search(token_lower):
+            continue
+        if not DURATION_MARKER.search(token_lower):
+            continue
+
+        values = [float(num.replace(",", ".")) for num in NUMBER.findall(token_lower)]
+        if not values:
+            continue
+
+        factor = 1.0
+        if any(unit in token_lower for unit in ("РјРёРЅ", "minute", "minutes", "min", "mins")):
+            factor = 1.0 / 60.0
+        elif any(unit in token_lower for unit in ("СЃСѓС‚", "РґРЅ", "РґРµРЅСЊ", "РґРЅСЏ", "РґРЅРµР№", "day", "days")):
+            factor = 24.0
+        durations.extend(
+            value * factor for value in values if np.isfinite(value) and value >= 0.0
+        )
+
+    if not durations:
+        return ()
+    if len(durations) == 1:
+        return tuple(float(durations[0]) for _ in doses)
+    if len(durations) < len(doses):
+        durations.extend([durations[-1]] * (len(doses) - len(durations)))
+    return tuple(float(value) for value in durations[: len(doses)])
 
 
 def parse_time_days(time_labels: Sequence[str]) -> Tuple[float, ...]:
@@ -389,8 +455,10 @@ class RawTumorSeries:
     fractions: Tuple[float, ...]
     family: Optional[str]
     volumes: np.ndarray
+    let_kev_um: Optional[float] = None
     time_days: Tuple[float, ...] = ()
     schedule_days: Tuple[float, ...] = ()
+    irradiation_duration_hours: Tuple[float, ...] = ()
     has_explicit_timing: bool = False
     control_path: Optional[Path] = None
 
@@ -415,6 +483,7 @@ class TumorExperiment:
     fractions: Tuple[float, ...]
     sf: float
     family: Optional[str] = None
+    let_kev_um: Optional[float] = None
     sf_time_day: float = 0.0
     time_days: Tuple[float, ...] = ()
     curve_response: Tuple[float, ...] = ()
@@ -425,6 +494,8 @@ class TumorExperiment:
     source_paths: Tuple[Path, ...] = ()
     has_explicit_timing: bool = False
     control_path: Optional[Path] = None
+    initial_volume_mm3: Optional[float] = None
+    irradiation_duration_hours: Tuple[float, ...] = ()
 
     @property
     def dose_sum(self) -> float:
@@ -458,16 +529,90 @@ class TumorExperiment:
             for index in range(1, len(schedule))
         )
 
+    @property
+    def resolved_irradiation_duration_hours(self) -> Tuple[float, ...]:
+        if len(self.irradiation_duration_hours) == self.fraction_count:
+            return tuple(max(float(value), 0.0) for value in self.irradiation_duration_hours)
+        return tuple(0.0 for _ in range(self.fraction_count))
+
+    @staticmethod
+    def _self_repair_g_factor(
+        irradiation_duration_days: float,
+        repair_rate_per_day: Optional[float],
+    ) -> float:
+        if (
+            repair_rate_per_day is None
+            or repair_rate_per_day <= 0.0
+            or irradiation_duration_days <= 0.0
+        ):
+            return 1.0
+        x_value = float(repair_rate_per_day) * float(irradiation_duration_days)
+        if x_value <= 1.0e-10:
+            return 1.0
+        return float(2.0 * (x_value + math.exp(-x_value) - 1.0) / (x_value * x_value))
+
     def quadratic_term(self, repair_rate_per_day: Optional[float] = None) -> float:
-        if repair_rate_per_day is None or repair_rate_per_day <= 0.0 or self.fraction_count <= 1:
+        if repair_rate_per_day is None or repair_rate_per_day <= 0.0:
             return self.dose2_sum
         schedule = self.resolved_schedule_days
+        durations_days = tuple(value / 24.0 for value in self.resolved_irradiation_duration_hours)
         term = 0.0
         for i, dose_i in enumerate(self.fractions):
             for j, dose_j in enumerate(self.fractions):
-                delta_days = abs(schedule[i] - schedule[j])
-                term += dose_i * dose_j * math.exp(-repair_rate_per_day * delta_days)
+                if i == j:
+                    g_value = self._self_repair_g_factor(durations_days[i], repair_rate_per_day)
+                else:
+                    delta_days = abs(schedule[i] - schedule[j])
+                    g_value = math.exp(-repair_rate_per_day * delta_days)
+                term += dose_i * dose_j * g_value
         return float(term)
+
+    def quadratic_term_biexp(
+        self,
+        fast_rate_per_day: Optional[float],
+        slow_rate_per_day: Optional[float],
+        fast_fraction: float = 0.6,
+    ) -> float:
+        if (
+            fast_rate_per_day is None
+            or slow_rate_per_day is None
+            or fast_rate_per_day <= 0.0
+            or slow_rate_per_day <= 0.0
+        ):
+            return self.dose2_sum
+        fast_fraction = float(np.clip(fast_fraction, 0.0, 1.0))
+        schedule = self.resolved_schedule_days
+        durations_days = tuple(value / 24.0 for value in self.resolved_irradiation_duration_hours)
+        term = 0.0
+        for i, dose_i in enumerate(self.fractions):
+            for j, dose_j in enumerate(self.fractions):
+                if i == j:
+                    g = (
+                        fast_fraction
+                        * self._self_repair_g_factor(durations_days[i], fast_rate_per_day)
+                        + (1.0 - fast_fraction)
+                        * self._self_repair_g_factor(durations_days[i], slow_rate_per_day)
+                    )
+                else:
+                    delta_days = abs(schedule[i] - schedule[j])
+                    g = (
+                        fast_fraction * math.exp(-fast_rate_per_day * delta_days)
+                        + (1.0 - fast_fraction) * math.exp(-slow_rate_per_day * delta_days)
+                    )
+                term += dose_i * dose_j * g
+        return float(term)
+
+    def lea_catcheside_g_factor(self, repair_rate_per_day: Optional[float] = None) -> float:
+        dose_total_sq = self.dose_sum * self.dose_sum
+        if dose_total_sq <= 0.0:
+            return 1.0
+        return float(self.quadratic_term(repair_rate_per_day) / dose_total_sq)
+
+    @property
+    def initial_volume_cm3(self) -> Optional[float]:
+        if self.initial_volume_mm3 is None or self.initial_volume_mm3 <= 0.0:
+            return None
+        return float(self.initial_volume_mm3) / 1000.0
 
     @property
     def path_label(self) -> str:
@@ -482,12 +627,15 @@ class TumorExperiment:
         return self.control_path.name
 
     @property
-    def regimen_key(self) -> Tuple[Optional[str], Optional[Path], Tuple[float, ...], Tuple[float, ...]]:
+    def regimen_key(
+        self,
+    ) -> Tuple[Optional[str], Optional[Path], Tuple[float, ...], Tuple[float, ...], Tuple[float, ...]]:
         return (
             self.family,
             self.control_path,
             tuple(round(dose, 8) for dose in self.fractions),
             tuple(round(day, 8) for day in self.resolved_schedule_days),
+            tuple(round(duration, 8) for duration in self.resolved_irradiation_duration_hours),
         )
 
     @property
@@ -526,6 +674,11 @@ class LQFitResult:
     model_kind: ModelKind = "classic_lq"
     response_mode: ResponseMode = "scalar"
     repair_half_time_hours: Optional[float] = None
+    repair_half_time_fast_hours: Optional[float] = None
+    repair_half_time_slow_hours: Optional[float] = None
+    repair_fast_fraction: Optional[float] = None
+    alpha_0: Optional[float] = None
+    lambda_alpha: Optional[float] = None
     curve_clearance_rate: Optional[float] = None
     transition_dose: Optional[float] = None
     saturation_dose: Optional[float] = None
@@ -543,6 +696,84 @@ class LQFitResult:
         if self.repair_half_time_hours is None or self.repair_half_time_hours <= 0.0:
             return None
         return math.log(2.0) * 24.0 / self.repair_half_time_hours
+
+    @property
+    def repair_fast_rate_per_day(self) -> Optional[float]:
+        if self.repair_half_time_fast_hours is None or self.repair_half_time_fast_hours <= 0.0:
+            return None
+        return math.log(2.0) * 24.0 / self.repair_half_time_fast_hours
+
+    @property
+    def repair_slow_rate_per_day(self) -> Optional[float]:
+        if self.repair_half_time_slow_hours is None or self.repair_half_time_slow_hours <= 0.0:
+            return None
+        return math.log(2.0) * 24.0 / self.repair_half_time_slow_hours
+
+    def effective_alpha(
+        self,
+        let_kev_um: Optional[float] = None,
+        family: Optional[str] = None,
+    ) -> float:
+        if self.model_kind != "let_dependent":
+            return float(self.alpha)
+        if self.lambda_alpha is None:
+            raise ValueError("LET-dependent prediction requires lambda_alpha.")
+        if let_kev_um is not None and np.isfinite(let_kev_um):
+            let_value = float(let_kev_um)
+        else:
+            family_key = normalize_family(family) or normalize_family(self.family)
+            let_value = FAMILY_LET_DEFAULTS.get(family_key or "", 0.3)
+        alpha_0 = self.alpha_0 if self.alpha_0 is not None else self.alpha
+        return float(alpha_0 + self.lambda_alpha * let_value)
+
+    def alpha_beta_ratio_for_experiment(self, experiment: TumorExperiment) -> Optional[float]:
+        if self.beta <= 0.0:
+            return None
+        if self.model_kind == "let_dependent":
+            return self.effective_alpha(experiment.let_kev_um, family=experiment.family) / self.beta
+        return self.alpha_beta_ratio
+
+    def _quadratic_term_for_experiment(self, experiment: TumorExperiment) -> float:
+        if self.model_kind in ("repair_lq", "repair_repop"):
+            return experiment.quadratic_term(self.repair_rate_per_day)
+        if self.model_kind == "repair_biexp":
+            return experiment.quadratic_term_biexp(
+                self.repair_fast_rate_per_day,
+                self.repair_slow_rate_per_day,
+                self.repair_fast_fraction or 0.6,
+            )
+        return experiment.dose2_sum
+
+    def compute_bed(self, experiment: TumorExperiment) -> float:
+        alpha_beta_ratio = self.alpha_beta_ratio_for_experiment(experiment)
+        if alpha_beta_ratio is None or alpha_beta_ratio <= 0.0:
+            return float("nan")
+        quadratic_term = self._quadratic_term_for_experiment(experiment)
+        return float(experiment.dose_sum + quadratic_term / alpha_beta_ratio)
+
+    def compute_eqd2(self, experiment: TumorExperiment) -> float:
+        alpha_beta_ratio = self.alpha_beta_ratio_for_experiment(experiment)
+        if alpha_beta_ratio is None or alpha_beta_ratio <= 0.0:
+            return float("nan")
+        bed = self.compute_bed(experiment)
+        return float(bed / (1.0 + 2.0 / alpha_beta_ratio))
+
+    def compute_g_factor(self, experiment: TumorExperiment) -> float:
+        if self.model_kind in ("repair_lq", "repair_repop"):
+            return experiment.lea_catcheside_g_factor(self.repair_rate_per_day)
+        if self.model_kind == "repair_biexp":
+            dose_total_sq = experiment.dose_sum * experiment.dose_sum
+            if dose_total_sq <= 0.0:
+                return 1.0
+            return float(
+                experiment.quadratic_term_biexp(
+                    self.repair_fast_rate_per_day,
+                    self.repair_slow_rate_per_day,
+                    self.repair_fast_fraction or 0.6,
+                )
+                / dose_total_sq
+            )
+        return experiment.lea_catcheside_g_factor(None)
 
     def predict_sf(self, experiment: TumorExperiment) -> float:
         if self.model_kind == "linear":
@@ -574,19 +805,27 @@ class LQFitResult:
                 experiment.sf_time_day - self.lag_days,
                 0.0,
             )
+        elif self.model_kind == "let_dependent":
+            exponent = (
+                self.effective_alpha(experiment.let_kev_um, family=experiment.family) * experiment.dose_sum
+                + self.beta * experiment.dose2_sum
+            )
         elif self.model_kind == "repair_repop":
             if self.lag_days is None or self.repopulation_rate is None:
                 raise ValueError(
                     "Repair-aware LQ + repopulation prediction requires lag_days and repopulation_rate."
                 )
-            quadratic_term = experiment.quadratic_term(self.repair_rate_per_day)
+            quadratic_term = self._quadratic_term_for_experiment(experiment)
             base_exponent = self.alpha * experiment.dose_sum + self.beta * quadratic_term
             exponent = base_exponent - self.repopulation_rate * max(
                 experiment.sf_time_day - self.lag_days,
                 0.0,
             )
         elif self.model_kind == "repair_lq":
-            quadratic_term = experiment.quadratic_term(self.repair_rate_per_day)
+            quadratic_term = self._quadratic_term_for_experiment(experiment)
+            exponent = self.alpha * experiment.dose_sum + self.beta * quadratic_term
+        elif self.model_kind == "repair_biexp":
+            quadratic_term = self._quadratic_term_for_experiment(experiment)
             exponent = self.alpha * experiment.dose_sum + self.beta * quadratic_term
         else:
             quadratic_term = experiment.dose2_sum
@@ -619,7 +858,7 @@ class LQFitResult:
                 np.exp(
                     -(
                         self.alpha * experiment.dose_sum
-                        + self.beta * experiment.quadratic_term(self.repair_rate_per_day)
+                        + self.beta * self._quadratic_term_for_experiment(experiment)
                     )
                 )
             )
@@ -653,6 +892,9 @@ class FitMetrics:
     mean_abs_log_error: float
     rss: float
     aic: Optional[float] = None
+    r_squared: Optional[float] = None
+    adjusted_r_squared: Optional[float] = None
+    bic: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -664,6 +906,7 @@ class ModelComparisonRow:
     response_mode: ResponseMode
     alpha: Optional[float] = None
     beta: Optional[float] = None
+    lambda_alpha: Optional[float] = None
     curve_clearance_rate: Optional[float] = None
     transition_dose: Optional[float] = None
     saturation_dose: Optional[float] = None
@@ -682,6 +925,14 @@ class PredictionRow:
     abs_error: float
     rel_error: float
     log_error: float
+
+    @property
+    def observed_sf(self) -> float:
+        return float(self.experiment.sf)
+
+    @property
+    def residual(self) -> float:
+        return float(self.predicted_sf - self.experiment.sf)
 
     def report(self) -> str:
         return (
@@ -728,6 +979,20 @@ class BootstrapSummary:
 
 
 @dataclass(frozen=True)
+class CrossValidationResult:
+    """Leave-one-out predictive performance on the training experiments."""
+
+    n_experiments: int
+    n_successful: int
+    cv_rmse: float
+    cv_mae: float
+    cv_r_squared: Optional[float]
+    residuals: Tuple[float, ...]
+    rows: Tuple[PredictionRow, ...]
+    response_mode: ResponseMode = "scalar"
+
+
+@dataclass(frozen=True)
 class TimingDiagnostics:
     """How informative the training set is for schedule-aware fitting."""
 
@@ -742,6 +1007,9 @@ class TimingDiagnostics:
     unique_quadratic_count: int
     design_rank: int
     condition_number: Optional[float]
+    repair_half_time_fast_hours: Optional[float] = None
+    repair_half_time_slow_hours: Optional[float] = None
+    repair_fast_fraction: Optional[float] = None
     warnings: Tuple[str, ...] = ()
 
 
@@ -787,6 +1055,7 @@ class AnalysisRunResult:
     training_metrics: Optional[FitMetrics] = None
     validation_summary: Optional[ValidationSummary] = None
     bootstrap_summary: Optional[BootstrapSummary] = None
+    cross_validation: Optional[CrossValidationResult] = None
     timing_diagnostics: Optional[TimingDiagnostics] = None
     model_comparison: Tuple[ModelComparisonRow, ...] = ()
 
@@ -799,6 +1068,42 @@ class AnalysisRunResult:
             f"family={self.summary.family_label} | "
             f"status={self.summary.status}"
         )
+
+    def _mean_train_metric(self, getter) -> Optional[float]:
+        if self.fit_result is None or not self.train:
+            return None
+        values = [float(getter(self.fit_result, experiment)) for experiment in self.train]
+        finite_values = [value for value in values if np.isfinite(value)]
+        if not finite_values:
+            return None
+        return float(np.mean(finite_values))
+
+    @property
+    def mean_train_bed(self) -> Optional[float]:
+        return self._mean_train_metric(lambda fit, experiment: fit.compute_bed(experiment))
+
+    @property
+    def mean_train_eqd2(self) -> Optional[float]:
+        return self._mean_train_metric(lambda fit, experiment: fit.compute_eqd2(experiment))
+
+    @property
+    def mean_train_g_factor(self) -> Optional[float]:
+        return self._mean_train_metric(lambda fit, experiment: fit.compute_g_factor(experiment))
+
+    def estimate_mean_train_tcp(self, cell_density: float = 1.0e7) -> Optional[float]:
+        if self.fit_result is None or not self.train or cell_density <= 0.0:
+            return None
+        tcp_values: List[float] = []
+        for experiment in self.train:
+            initial_volume_cm3 = experiment.initial_volume_cm3
+            if initial_volume_cm3 is None or initial_volume_cm3 <= 0.0:
+                continue
+            sf = self.fit_result.predict_sf(experiment)
+            burden = initial_volume_cm3 * cell_density * sf
+            tcp_values.append(0.0 if burden >= 700.0 else float(math.exp(-burden)))
+        if not tcp_values:
+            return None
+        return float(np.mean(tcp_values))
 
 
 @dataclass(frozen=True)
@@ -904,6 +1209,9 @@ class Fitter:
         alpha_fixed: Optional[float],
         verbose: bool,
         repair_half_time_hours: Optional[float] = None,
+        repair_half_time_fast_hours: Optional[float] = None,
+        repair_half_time_slow_hours: Optional[float] = None,
+        repair_fast_fraction: float = 0.6,
         aggregate_regimens: bool = False,
         dedupe_regimens: bool = False,
     ):
@@ -911,6 +1219,9 @@ class Fitter:
         self.min_sf = min_sf
         self.alpha_fixed = alpha_fixed
         self.repair_half_time_hours = repair_half_time_hours
+        self.repair_half_time_fast_hours = repair_half_time_fast_hours
+        self.repair_half_time_slow_hours = repair_half_time_slow_hours
+        self.repair_fast_fraction = float(np.clip(repair_fast_fraction, 0.0, 1.0))
         self.verbose = verbose
         self.aggregate_regimens = aggregate_regimens
         self.dedupe_regimens = dedupe_regimens
@@ -924,6 +1235,34 @@ class Fitter:
         if self.repair_half_time_hours is None or self.repair_half_time_hours <= 0.0:
             return None
         return math.log(2.0) * 24.0 / self.repair_half_time_hours
+
+    @property
+    def repair_fast_rate_per_day(self) -> Optional[float]:
+        if self.repair_half_time_fast_hours is None or self.repair_half_time_fast_hours <= 0.0:
+            return None
+        return math.log(2.0) * 24.0 / self.repair_half_time_fast_hours
+
+    @property
+    def repair_slow_rate_per_day(self) -> Optional[float]:
+        if self.repair_half_time_slow_hours is None or self.repair_half_time_slow_hours <= 0.0:
+            return None
+        return math.log(2.0) * 24.0 / self.repair_half_time_slow_hours
+
+    def _quadratic_term_for_model(
+        self,
+        experiment: TumorExperiment,
+        model_kind: ModelKind,
+        repair_rate_per_day: Optional[float] = None,
+    ) -> float:
+        if model_kind in ("repair_lq", "repair_repop"):
+            return experiment.quadratic_term(repair_rate_per_day)
+        if model_kind == "repair_biexp":
+            return experiment.quadratic_term_biexp(
+                self.repair_fast_rate_per_day,
+                self.repair_slow_rate_per_day,
+                self.repair_fast_fraction,
+            )
+        return experiment.dose2_sum
 
     @staticmethod
     def _mean_tumor_volumes(volumes: np.ndarray) -> np.ndarray:
@@ -1008,6 +1347,7 @@ class Fitter:
             fractions=raw_experiment.fractions,
             sf=sf,
             family=raw_experiment.family,
+            let_kev_um=raw_experiment.let_kev_um,
             sf_time_day=float(sf_time_day),
             time_days=tuple(float(day) for day in time_days),
             curve_response=tuple(float(value) for value in curve_response),
@@ -1018,6 +1358,12 @@ class Fitter:
             source_paths=(raw_experiment.path,),
             has_explicit_timing=raw_experiment.has_explicit_timing,
             control_path=raw_experiment.control_path,
+            initial_volume_mm3=(
+                float(mean_abs[0])
+                if len(mean_abs) > 0 and np.isfinite(mean_abs[0]) and mean_abs[0] > 0.0
+                else None
+            ),
+            irradiation_duration_hours=raw_experiment.irradiation_duration_hours,
         )
 
     def materialize_experiments(
@@ -1062,7 +1408,7 @@ class Fitter:
 
         if self.dedupe_regimens:
             unique_experiments: Dict[
-                Tuple[Optional[str], Optional[Path], Tuple[float, ...], Tuple[float, ...]],
+                Tuple[Optional[str], Optional[Path], Tuple[float, ...], Tuple[float, ...], Tuple[float, ...]],
                 TumorExperiment,
             ] = {}
             for experiment in experiments:
@@ -1080,7 +1426,7 @@ class Fitter:
         experiments: Sequence[TumorExperiment],
     ) -> List[TumorExperiment]:
         grouped: Dict[
-            Tuple[Optional[str], Optional[Path], Tuple[float, ...], Tuple[float, ...]],
+            Tuple[Optional[str], Optional[Path], Tuple[float, ...], Tuple[float, ...], Tuple[float, ...]],
             List[TumorExperiment],
         ] = {}
         for experiment in experiments:
@@ -1117,6 +1463,17 @@ class Fitter:
                     fractions=first.fractions,
                     sf=float(np.mean(sfs)),
                     family=first.family,
+                    let_kev_um=float(
+                        np.mean(
+                            [
+                                experiment.let_kev_um
+                                for experiment in group
+                                if experiment.let_kev_um is not None
+                            ]
+                        )
+                    )
+                    if any(experiment.let_kev_um is not None for experiment in group)
+                    else None,
                     sf_time_day=float(np.mean([experiment.sf_time_day for experiment in group])),
                     time_days=longest_curve_source.time_days[: len(curve_response)],
                     curve_response=curve_response,
@@ -1129,6 +1486,18 @@ class Fitter:
                     source_paths=source_paths,
                     has_explicit_timing=first.has_explicit_timing,
                     control_path=first.control_path,
+                    initial_volume_mm3=float(
+                        np.mean(
+                            [
+                                experiment.initial_volume_mm3
+                                for experiment in group
+                                if experiment.initial_volume_mm3 is not None
+                            ]
+                        )
+                    )
+                    if any(experiment.initial_volume_mm3 is not None for experiment in group)
+                    else None,
+                    irradiation_duration_hours=first.irradiation_duration_hours,
                 )
             )
 
@@ -1265,6 +1634,26 @@ class Fitter:
                 model_kind="repair_lq",
                 status=repair_status,
                 reason=repair_reason,
+            )
+        )
+
+        repair_biexp_status = "not_ready"
+        repair_biexp_reason = "need timed fractionated regimens with short-interval contrast"
+        if matched_timing_patterns >= 1 and has_subday_interval:
+            repair_biexp_status = "recommended"
+            repair_biexp_reason = (
+                f"{matched_timing_patterns} matched fractionation pattern(s) include sub-day timing contrast"
+            )
+        elif repair_status != "not_ready":
+            repair_biexp_status = "possible"
+            repair_biexp_reason = (
+                "timed fractionation is available, but short-interval contrast is limited for bi-exponential repair"
+            )
+        assessments.append(
+            InventoryModelSuitability(
+                model_kind="repair_biexp",
+                status=repair_biexp_status,
+                reason=repair_biexp_reason,
             )
         )
 
@@ -1593,7 +1982,9 @@ class Fitter:
                     print(f"WARNING {path.name}: dose fractions were not parsed -> skip")
                 continue
             schedule_days, has_explicit_timing = parse_schedule_days(params, fractions)
+            irradiation_duration_hours = parse_irradiation_durations_hours(params, fractions)
             time_days = parse_time_days(time_data)
+            family = infer_radiation_family(path)
 
             assigned_control = None
             if normalized_control_map is not None:
@@ -1617,10 +2008,12 @@ class Fitter:
                 RawTumorSeries(
                     path=path,
                     fractions=fractions,
-                    family=infer_radiation_family(path),
+                    family=family,
                     volumes=np.asarray(volumes, dtype=float),
+                    let_kev_um=FAMILY_LET_DEFAULTS.get(family or ""),
                     time_days=time_days,
                     schedule_days=schedule_days,
+                    irradiation_duration_hours=irradiation_duration_hours,
                     has_explicit_timing=has_explicit_timing,
                     control_path=assigned_control,
                 )
@@ -1844,6 +2237,21 @@ class Fitter:
         )
 
     @staticmethod
+    def let_dependent_exponent(
+        experiment: TumorExperiment,
+        alpha_0: float,
+        lambda_alpha: float,
+        beta_0: float,
+    ) -> float:
+        let_value = (
+            float(experiment.let_kev_um)
+            if experiment.let_kev_um is not None and np.isfinite(experiment.let_kev_um)
+            else FAMILY_LET_DEFAULTS.get(experiment.family or "", 0.3)
+        )
+        alpha_eff = alpha_0 + lambda_alpha * let_value
+        return float(alpha_eff * experiment.dose_sum + beta_0 * experiment.dose2_sum)
+
+    @staticmethod
     def _initial_transition_dose(experiments: Sequence[TumorExperiment]) -> float:
         max_fractions = [max(experiment.fractions) for experiment in experiments if experiment.fractions]
         if not max_fractions:
@@ -1893,6 +2301,139 @@ class Fitter:
         return alpha, beta
 
     @staticmethod
+    def _let_values(experiments: Sequence[TumorExperiment]) -> np.ndarray:
+        return np.asarray(
+            [
+                float(experiment.let_kev_um)
+                if experiment.let_kev_um is not None and np.isfinite(experiment.let_kev_um)
+                else FAMILY_LET_DEFAULTS.get(experiment.family or "", 0.3)
+                for experiment in experiments
+            ],
+            dtype=float,
+        )
+
+    def _fit_scalar_let_parameters(
+        self,
+        experiments: Sequence[TumorExperiment],
+    ) -> Tuple[float, float, float]:
+        if len(experiments) < 3:
+            raise RuntimeError("LET-dependent fitting needs at least three experiments.")
+
+        let_values = self._let_values(experiments)
+        if len({round(value, 8) for value in let_values}) < 2:
+            raise RuntimeError("LET-dependent fitting needs at least two distinct LET levels.")
+
+        dose_sum = np.asarray([experiment.dose_sum for experiment in experiments], dtype=float)
+        dose2_sum = np.asarray([experiment.dose2_sum for experiment in experiments], dtype=float)
+        sf = np.asarray([experiment.sf for experiment in experiments], dtype=float)
+        sigma_sf = np.asarray(
+            [
+                max(
+                    (
+                        experiment.sf_std / np.sqrt(experiment.repeat_count)
+                        if experiment.repeat_count > 1 and experiment.sf_std > 0.0
+                        else experiment.sf / np.sqrt(experiment.repeat_count)
+                    ),
+                    1.0e-8,
+                )
+                for experiment in experiments
+            ],
+            dtype=float,
+        )
+
+        design = np.column_stack((dose_sum, dose_sum * let_values, dose2_sum))
+        y_log = -np.log(np.clip(sf, 1.0e-8, 1.0))
+        guess, *_ = np.linalg.lstsq(design, y_log, rcond=None)
+        guess = np.asarray(guess, dtype=float)
+        if len(guess) != 3 or np.any(~np.isfinite(guess)):
+            guess = np.array([0.05, 0.001, 0.01], dtype=float)
+        guess = np.clip(guess, 0.0, None)
+        experiment_index = np.arange(len(experiments), dtype=float)
+
+        if self.alpha_fixed is not None:
+            params, _ = self._safe_curve_fit(
+                lambda index, lambda_alpha, beta_0: self._let_scalar_model(
+                    index,
+                    self.alpha_fixed,
+                    lambda_alpha,
+                    beta_0,
+                    experiments,
+                ),
+                experiment_index,
+                sf,
+                p0=(max(guess[1], 1.0e-8), max(guess[2], 1.0e-8)),
+                bounds=((0.0, 0.0), (np.inf, np.inf)),
+                sigma=np.clip(sigma_sf, 1.0e-8, None),
+                absolute_sigma=False,
+                maxfev=30000,
+            )
+            return float(self.alpha_fixed), float(params[0]), float(params[1])
+
+        params, _ = self._safe_curve_fit(
+            lambda index, alpha_0, lambda_alpha, beta_0: self._let_scalar_model(
+                index,
+                alpha_0,
+                lambda_alpha,
+                beta_0,
+                experiments,
+            ),
+            experiment_index,
+            sf,
+            p0=(max(guess[0], 1.0e-8), max(guess[1], 1.0e-8), max(guess[2], 1.0e-8)),
+            bounds=((0.0, 0.0, 0.0), (np.inf, np.inf, np.inf)),
+            sigma=np.clip(sigma_sf, 1.0e-8, None),
+            absolute_sigma=False,
+            maxfev=30000,
+        )
+        return float(params[0]), float(params[1]), float(params[2])
+
+    def _fit_curve_let_parameters(
+        self,
+        experiments: Sequence[TumorExperiment],
+    ) -> Tuple[float, float, float, float]:
+        let_values = self._let_values(experiments)
+        if len({round(value, 8) for value in let_values}) < 2:
+            raise RuntimeError("LET-dependent curve fitting needs at least two distinct LET levels.")
+
+        experiment_index, time_days, control_relative, observed_curve = self._to_lql_curve_arrays(experiments)
+        alpha_0, lambda_alpha, beta_0 = self._fit_scalar_let_parameters(experiments)
+
+        if self.alpha_fixed is not None:
+            params, _ = self._safe_curve_fit(
+                lambda xdata, lambda_alpha_param, beta_0_param, clearance_rate: self._let_curve_response_model(
+                    xdata,
+                    self.alpha_fixed,
+                    lambda_alpha_param,
+                    beta_0_param,
+                    clearance_rate,
+                    experiments,
+                ),
+                (experiment_index, time_days, control_relative),
+                observed_curve,
+                p0=(max(lambda_alpha, 1.0e-8), max(beta_0, 1.0e-8), 0.10),
+                bounds=((0.0, 0.0, 0.0), (np.inf, np.inf, np.inf)),
+                maxfev=30000,
+            )
+            return float(self.alpha_fixed), float(params[0]), float(params[1]), float(params[2])
+
+        params, _ = self._safe_curve_fit(
+            lambda xdata, alpha_0_param, lambda_alpha_param, beta_0_param, clearance_rate: self._let_curve_response_model(
+                xdata,
+                alpha_0_param,
+                lambda_alpha_param,
+                beta_0_param,
+                clearance_rate,
+                experiments,
+            ),
+            (experiment_index, time_days, control_relative),
+            observed_curve,
+            p0=(max(alpha_0, 1.0e-8), max(lambda_alpha, 1.0e-8), max(beta_0, 1.0e-8), 0.10),
+            bounds=((0.0, 0.0, 0.0, 0.0), (np.inf, np.inf, np.inf, np.inf)),
+            maxfev=30000,
+        )
+        return float(params[0]), float(params[1]), float(params[2]), float(params[3])
+
+    @staticmethod
     def _safe_curve_fit(*args, **kwargs):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", OptimizeWarning)
@@ -1903,10 +2444,25 @@ class Fitter:
         experiments: Sequence[TumorExperiment],
         model_kind: ModelKind,
         repair_rate_per_day: Optional[float] = None,
+        repair_fast_rate_per_day: Optional[float] = None,
+        repair_slow_rate_per_day: Optional[float] = None,
+        repair_fast_fraction: float = 0.6,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         dose_sum = np.array([experiment.dose_sum for experiment in experiments], dtype=float)
         if model_kind == "linear":
             quadratic_term = np.zeros(len(experiments), dtype=float)
+        elif model_kind == "repair_biexp":
+            quadratic_term = np.array(
+                [
+                    experiment.quadratic_term_biexp(
+                        repair_fast_rate_per_day,
+                        repair_slow_rate_per_day,
+                        repair_fast_fraction,
+                    )
+                    for experiment in experiments
+                ],
+                dtype=float,
+            )
         else:
             quadratic_term = np.array(
                 [experiment.quadratic_term(repair_rate_per_day) for experiment in experiments],
@@ -2025,6 +2581,47 @@ class Fitter:
         return sf + (1.0 - sf) * np.exp(-clearance_rate * time_days) / control_relative
 
     @staticmethod
+    def _let_scalar_model(
+        experiment_index: np.ndarray,
+        alpha_0: float,
+        lambda_alpha: float,
+        beta_0: float,
+        experiments: Sequence[TumorExperiment],
+    ) -> np.ndarray:
+        predicted = [
+            math.exp(
+                -Fitter.let_dependent_exponent(
+                    experiments[int(index)],
+                    alpha_0=alpha_0,
+                    lambda_alpha=lambda_alpha,
+                    beta_0=beta_0,
+                )
+            )
+            for index in np.asarray(experiment_index, dtype=int)
+        ]
+        return np.asarray(predicted, dtype=float)
+
+    @staticmethod
+    def _let_curve_response_model(
+        xdata: Tuple[np.ndarray, np.ndarray, np.ndarray],
+        alpha_0: float,
+        lambda_alpha: float,
+        beta_0: float,
+        clearance_rate: float,
+        experiments: Sequence[TumorExperiment],
+    ) -> np.ndarray:
+        experiment_index, time_days, control_relative = xdata
+        sf = Fitter._let_scalar_model(
+            experiment_index,
+            alpha_0=alpha_0,
+            lambda_alpha=lambda_alpha,
+            beta_0=beta_0,
+            experiments=experiments,
+        )
+        control_relative = np.clip(control_relative, 1.0e-8, None)
+        return sf + (1.0 - sf) * np.exp(-clearance_rate * time_days) / control_relative
+
+    @staticmethod
     def _lq_repop_scalar_model(
         experiment_index: np.ndarray,
         alpha: float,
@@ -2088,7 +2685,7 @@ class Fitter:
         experiments: Sequence[TumorExperiment],
         model_kind: ModelKind,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        repair_rate = self.repair_rate_per_day if model_kind == "repair_lq" else None
+        repair_rate = self.repair_rate_per_day if model_kind in ("repair_lq", "repair_repop") else None
         observed_values: List[float] = []
         dose_sum_values: List[float] = []
         quadratic_values: List[float] = []
@@ -2130,7 +2727,11 @@ class Fitter:
             if model_kind == "linear":
                 quadratic_values.extend([0.0] * point_count)
             else:
-                quadratic_term = experiment.quadratic_term(repair_rate)
+                quadratic_term = self._quadratic_term_for_model(
+                    experiment,
+                    model_kind=model_kind,
+                    repair_rate_per_day=repair_rate,
+                )
                 quadratic_values.extend([quadratic_term] * point_count)
 
         if not observed_values:
@@ -2208,17 +2809,34 @@ class Fitter:
         Optional[float],
         Optional[float],
         Optional[float],
+        Optional[float],
     ]:
+        if model_kind == "let_dependent":
+            alpha_0, lambda_alpha, beta_0 = self._fit_scalar_let_parameters(experiments)
+            return alpha_0, beta_0, None, None, None, None, None, lambda_alpha
+
         repair_rate = None
         if model_kind in ("repair_lq", "repair_repop"):
             repair_rate = self.repair_rate_per_day
             if repair_rate is None:
                 raise RuntimeError("repair_half_time_hours must be set for the repair-aware model.")
+        repair_fast_rate = None
+        repair_slow_rate = None
+        if model_kind == "repair_biexp":
+            repair_fast_rate = self.repair_fast_rate_per_day
+            repair_slow_rate = self.repair_slow_rate_per_day
+            if repair_fast_rate is None or repair_slow_rate is None:
+                raise RuntimeError(
+                    "repair_half_time_fast_hours and repair_half_time_slow_hours must be set for the bi-exponential repair model."
+                )
 
         dose_sum, quadratic_term, sf, sigma_sf, sigma_log_sf = self._to_arrays(
             experiments,
             model_kind=model_kind,
             repair_rate_per_day=repair_rate,
+            repair_fast_rate_per_day=repair_fast_rate,
+            repair_slow_rate_per_day=repair_slow_rate,
+            repair_fast_fraction=self.repair_fast_fraction,
         )
         if np.any(~np.isfinite(sf)) or np.any(sf <= 0.0) or np.any(sf > 1.0):
             raise ValueError("All SF values must be finite and in the interval (0, 1].")
@@ -2229,7 +2847,7 @@ class Fitter:
             else:
                 alpha = self._fit_alpha_for_linear_model(dose_sum, sf, sigma_log_sf)
             beta = 0.0
-            return alpha, beta, None, None, None, None, None
+            return alpha, beta, None, None, None, None, None, None
 
         if model_kind == "glq":
             experiment_index = np.arange(len(experiments), dtype=float)
@@ -2254,7 +2872,7 @@ class Fitter:
                     absolute_sigma=False,
                     maxfev=30000,
                 )
-                return self.alpha_fixed, float(params[0]), None, None, float(params[1]), None, None
+                return self.alpha_fixed, float(params[0]), None, None, float(params[1]), None, None, None
 
         if model_kind == "lq_l":
             experiment_index = np.arange(len(experiments), dtype=float)
@@ -2279,7 +2897,7 @@ class Fitter:
                     absolute_sigma=False,
                     maxfev=30000,
                 )
-                return self.alpha_fixed, float(params[0]), None, float(params[1]), None, None, None
+                return self.alpha_fixed, float(params[0]), None, float(params[1]), None, None, None, None
 
             initial_alpha, initial_beta = self._fit_free_alpha_beta(
                 dose_sum=dose_sum,
@@ -2303,7 +2921,7 @@ class Fitter:
                 absolute_sigma=False,
                 maxfev=30000,
             )
-            return float(params[0]), float(params[1]), None, float(params[2]), None, None, None
+            return float(params[0]), float(params[1]), None, float(params[2]), None, None, None, None
 
         if model_kind == "glq":
             initial_alpha, initial_beta = self._fit_free_alpha_beta(
@@ -2328,7 +2946,7 @@ class Fitter:
                 absolute_sigma=False,
                 maxfev=30000,
             )
-            return float(params[0]), float(params[1]), None, None, float(params[2]), None, None
+            return float(params[0]), float(params[1]), None, None, float(params[2]), None, None, None
 
         if model_kind == "lq_repop":
             experiment_index = np.arange(len(experiments), dtype=float)
@@ -2355,7 +2973,7 @@ class Fitter:
                     absolute_sigma=False,
                     maxfev=30000,
                 )
-                return self.alpha_fixed, float(params[0]), None, None, None, float(params[1]), float(params[2])
+                return self.alpha_fixed, float(params[0]), None, None, None, float(params[1]), float(params[2]), None
 
             initial_alpha, initial_beta = self._fit_free_alpha_beta(
                 dose_sum=dose_sum,
@@ -2380,7 +2998,7 @@ class Fitter:
                 absolute_sigma=False,
                 maxfev=30000,
             )
-            return float(params[0]), float(params[1]), None, None, None, float(params[2]), float(params[3])
+            return float(params[0]), float(params[1]), None, None, None, float(params[2]), float(params[3]), None
 
         if model_kind == "repair_repop":
             experiment_index = np.arange(len(experiments), dtype=float)
@@ -2408,7 +3026,7 @@ class Fitter:
                     absolute_sigma=False,
                     maxfev=30000,
                 )
-                return self.alpha_fixed, float(params[0]), None, None, None, float(params[1]), float(params[2])
+                return self.alpha_fixed, float(params[0]), None, None, None, float(params[1]), float(params[2]), None
 
             params, _ = self._safe_curve_fit(
                 lambda index, alpha, beta, lag_days, repopulation_rate: self._repair_repop_scalar_model(
@@ -2428,7 +3046,7 @@ class Fitter:
                 absolute_sigma=False,
                 maxfev=30000,
             )
-            return float(params[0]), float(params[1]), None, None, None, float(params[2]), float(params[3])
+            return float(params[0]), float(params[1]), None, None, None, float(params[2]), float(params[3]), None
 
         if self.alpha_fixed is not None:
             beta = self._fit_beta_for_fixed_alpha(
@@ -2438,7 +3056,7 @@ class Fitter:
                 sigma_log_sf=sigma_log_sf,
                 alpha=self.alpha_fixed,
             )
-            return self.alpha_fixed, beta, None, None, None, None, None
+            return self.alpha_fixed, beta, None, None, None, None, None, None
 
         alpha, beta = self._fit_free_alpha_beta(
             dose_sum=dose_sum,
@@ -2446,7 +3064,7 @@ class Fitter:
             sf=sf,
             sigma_sf=sigma_sf,
         )
-        return alpha, beta, None, None, None, None, None
+        return alpha, beta, None, None, None, None, None, None
 
     def _fit_curve_parameters(
         self,
@@ -2460,7 +3078,12 @@ class Fitter:
         Optional[float],
         Optional[float],
         Optional[float],
+        Optional[float],
     ]:
+        if model_kind == "let_dependent":
+            alpha_0, lambda_alpha, beta_0, clearance_rate = self._fit_curve_let_parameters(experiments)
+            return alpha_0, beta_0, clearance_rate, None, None, None, None, lambda_alpha
+
         if model_kind == "glq":
             (
                 experiment_index,
@@ -2474,6 +3097,7 @@ class Fitter:
                 _,
                 _,
                 initial_saturation,
+                _,
                 _,
                 _,
             ) = self._fit_scalar_parameters(experiments, model_kind)
@@ -2531,7 +3155,7 @@ class Fitter:
                 control_relative,
                 observed_curve,
             ) = self._to_lql_curve_arrays(experiments)
-            initial_alpha, initial_beta, _, initial_transition, _, _, _ = self._fit_scalar_parameters(
+            initial_alpha, initial_beta, _, initial_transition, _, _, _, _ = self._fit_scalar_parameters(
                 experiments,
                 model_kind,
             )
@@ -2590,7 +3214,7 @@ class Fitter:
                 control_relative,
                 observed_curve,
             ) = self._to_curve_arrays(experiments, model_kind="classic_lq")
-            initial_alpha, initial_beta, _, _, _, initial_lag, initial_repopulation = self._fit_scalar_parameters(
+            initial_alpha, initial_beta, _, _, _, initial_lag, initial_repopulation, _ = self._fit_scalar_parameters(
                 experiments,
                 model_kind,
             )
@@ -2660,7 +3284,7 @@ class Fitter:
                 control_relative,
                 observed_curve,
             ) = self._to_curve_arrays(experiments, model_kind="repair_lq")
-            initial_alpha, initial_beta, _, _, _, initial_lag, initial_repopulation = self._fit_scalar_parameters(
+            initial_alpha, initial_beta, _, _, _, initial_lag, initial_repopulation, _ = self._fit_scalar_parameters(
                 experiments,
                 model_kind,
             )
@@ -2733,7 +3357,7 @@ class Fitter:
         if model_kind == "linear":
             initial_alpha = self.alpha_fixed
             if initial_alpha is None:
-                initial_alpha, _, _ = self._fit_scalar_parameters(experiments, "linear")
+                initial_alpha, _, _, _, _, _, _, _ = self._fit_scalar_parameters(experiments, "linear")
             initial_guess = [max(initial_alpha, 1.0e-8), 0.10]
 
             if self.alpha_fixed is not None:
@@ -2768,7 +3392,7 @@ class Fitter:
             )
             return float(params[0]), 0.0, float(params[1]), None, None, None, None
 
-        initial_alpha, initial_beta, _, _, _, _, _ = self._fit_scalar_parameters(experiments, model_kind)
+        initial_alpha, initial_beta, _, _, _, _, _, _ = self._fit_scalar_parameters(experiments, model_kind)
         if self.alpha_fixed is not None:
             params, _ = self._safe_curve_fit(
                 lambda xdata, beta, clearance_rate: self._curve_response_model(
@@ -2810,36 +3434,38 @@ class Fitter:
 
         resolved_model_kind: ModelKind
         if model_kind == "auto":
-            resolved_model_kind = "repair_lq" if self.repair_rate_per_day is not None else "classic_lq"
+            if self.repair_fast_rate_per_day is not None and self.repair_slow_rate_per_day is not None:
+                resolved_model_kind = "repair_biexp"
+            elif self.repair_rate_per_day is not None:
+                resolved_model_kind = "repair_lq"
+            else:
+                resolved_model_kind = "classic_lq"
         else:
             resolved_model_kind = model_kind
 
+        lambda_alpha = None
         if response_mode == "curve":
-            (
-                alpha,
-                beta,
-                curve_clearance_rate,
-                transition_dose,
-                saturation_dose,
-                lag_days,
-                repopulation_rate,
-            ) = self._fit_curve_parameters(
+            fit_params = self._fit_curve_parameters(
                 experiments,
                 model_kind=resolved_model_kind,
             )
         else:
-            (
-                alpha,
-                beta,
-                curve_clearance_rate,
-                transition_dose,
-                saturation_dose,
-                lag_days,
-                repopulation_rate,
-            ) = self._fit_scalar_parameters(
+            fit_params = self._fit_scalar_parameters(
                 experiments,
                 model_kind=resolved_model_kind,
             )
+        (
+            alpha,
+            beta,
+            curve_clearance_rate,
+            transition_dose,
+            saturation_dose,
+            lag_days,
+            repopulation_rate,
+            *extra_params,
+        ) = fit_params
+        if extra_params:
+            lambda_alpha = extra_params[0]
 
         return LQFitResult(
             alpha=alpha,
@@ -2851,6 +3477,11 @@ class Fitter:
             model_kind=resolved_model_kind,
             response_mode=response_mode,
             repair_half_time_hours=self.repair_half_time_hours,
+            repair_half_time_fast_hours=self.repair_half_time_fast_hours,
+            repair_half_time_slow_hours=self.repair_half_time_slow_hours,
+            repair_fast_fraction=self.repair_fast_fraction,
+            alpha_0=alpha if resolved_model_kind == "let_dependent" else None,
+            lambda_alpha=lambda_alpha,
             curve_clearance_rate=curve_clearance_rate,
             transition_dose=transition_dose,
             saturation_dose=saturation_dose,
@@ -2864,6 +3495,12 @@ class Fitter:
             return None
         return float(point_count * np.log(rss / point_count) + 2 * parameter_count)
 
+    @staticmethod
+    def _bic_from_rss(rss: float, point_count: int, parameter_count: int) -> Optional[float]:
+        if point_count <= 0 or parameter_count < 0 or rss <= 0.0:
+            return None
+        return float(point_count * np.log(rss / point_count) + parameter_count * np.log(point_count))
+
     def parameter_count(self, result: LQFitResult) -> int:
         parameter_count = 1 if result.model_kind == "linear" else 2
         if self.alpha_fixed is not None:
@@ -2871,6 +3508,8 @@ class Fitter:
         if result.model_kind == "lq_l":
             parameter_count += 1
         if result.model_kind == "glq":
+            parameter_count += 1
+        if result.model_kind == "let_dependent":
             parameter_count += 1
         if result.model_kind in ("lq_repop", "repair_repop"):
             parameter_count += 2
@@ -2918,7 +3557,21 @@ class Fitter:
             )
         )
         rss = float(np.sum(np.square(residuals)))
-        aic = self._aic_from_rss(rss, len(observed), self.parameter_count(result))
+        parameter_count = self.parameter_count(result)
+        aic = self._aic_from_rss(rss, len(observed), parameter_count)
+        bic = self._bic_from_rss(rss, len(observed), parameter_count)
+        r_squared = None
+        adjusted_r_squared = None
+        ss_tot = float(np.sum(np.square(observed - np.mean(observed))))
+        if ss_tot > 0.0:
+            r_squared = float(1.0 - rss / ss_tot)
+            if len(observed) > parameter_count + 1:
+                adjusted_r_squared = float(
+                    1.0
+                    - (1.0 - r_squared)
+                    * (len(observed) - 1)
+                    / (len(observed) - parameter_count - 1)
+                )
         return FitMetrics(
             point_count=len(observed),
             mae=mae,
@@ -2926,6 +3579,9 @@ class Fitter:
             mean_abs_log_error=mean_abs_log_error,
             rss=rss,
             aic=aic,
+            r_squared=r_squared,
+            adjusted_r_squared=adjusted_r_squared,
+            bic=bic,
         )
 
     def compare_models(
@@ -2939,6 +3595,19 @@ class Fitter:
         if self.repair_rate_per_day is not None:
             candidates.insert(1, "repair_lq")
             candidates.insert(2, "repair_repop")
+        if self.repair_fast_rate_per_day is not None and self.repair_slow_rate_per_day is not None:
+            candidates.insert(2, "repair_biexp")
+        let_levels = {
+            round(
+                float(experiment.let_kev_um)
+                if experiment.let_kev_um is not None and np.isfinite(experiment.let_kev_um)
+                else FAMILY_LET_DEFAULTS.get(experiment.family or "", 0.3),
+                8,
+            )
+            for experiment in experiments
+        }
+        if len(let_levels) >= 2:
+            candidates.append("let_dependent")
 
         rows: List[ModelComparisonRow] = []
         for model_kind in candidates:
@@ -2959,6 +3628,7 @@ class Fitter:
                         response_mode=response_mode,
                         alpha=fit_result.alpha,
                         beta=fit_result.beta,
+                        lambda_alpha=fit_result.lambda_alpha,
                         curve_clearance_rate=fit_result.curve_clearance_rate,
                         transition_dose=fit_result.transition_dose,
                         saturation_dose=fit_result.saturation_dose,
@@ -3015,6 +3685,7 @@ class Fitter:
                     response_mode=row.response_mode,
                     alpha=row.alpha,
                     beta=row.beta,
+                    lambda_alpha=row.lambda_alpha,
                     curve_clearance_rate=row.curve_clearance_rate,
                     transition_dose=row.transition_dose,
                     saturation_dose=row.saturation_dose,
@@ -3053,10 +3724,26 @@ class Fitter:
         )
 
         repair_rate = self.repair_rate_per_day
-        quadratic_term = np.array(
-            [experiment.quadratic_term(repair_rate) for experiment in experiments],
-            dtype=float,
+        repair_model_enabled = repair_rate is not None or (
+            self.repair_fast_rate_per_day is not None and self.repair_slow_rate_per_day is not None
         )
+        if self.repair_fast_rate_per_day is not None and self.repair_slow_rate_per_day is not None:
+            quadratic_term = np.array(
+                [
+                    experiment.quadratic_term_biexp(
+                        self.repair_fast_rate_per_day,
+                        self.repair_slow_rate_per_day,
+                        self.repair_fast_fraction,
+                    )
+                    for experiment in experiments
+                ],
+                dtype=float,
+            )
+        else:
+            quadratic_term = np.array(
+                [experiment.quadratic_term(repair_rate) for experiment in experiments],
+                dtype=float,
+            )
         unique_quadratic_count = len({round(value, 8) for value in quadratic_term})
 
         if experiments:
@@ -3071,7 +3758,7 @@ class Fitter:
             condition_number = None
 
         warnings_list: List[str] = []
-        if repair_rate is not None:
+        if repair_model_enabled:
             if len(experiments) < 3:
                 warnings_list.append(
                     "Only two training regimens are available; repair-aware alpha/beta is likely unstable."
@@ -3100,7 +3787,7 @@ class Fitter:
                 )
 
         return TimingDiagnostics(
-            repair_model_enabled=repair_rate is not None,
+            repair_model_enabled=repair_model_enabled,
             repair_half_time_hours=self.repair_half_time_hours,
             train_count=len(experiments),
             fractionated_count=len(fractionated),
@@ -3111,6 +3798,13 @@ class Fitter:
             unique_quadratic_count=unique_quadratic_count,
             design_rank=design_rank,
             condition_number=condition_number,
+            repair_half_time_fast_hours=self.repair_half_time_fast_hours,
+            repair_half_time_slow_hours=self.repair_half_time_slow_hours,
+            repair_fast_fraction=(
+                self.repair_fast_fraction
+                if self.repair_fast_rate_per_day is not None and self.repair_slow_rate_per_day is not None
+                else None
+            ),
             warnings=tuple(warnings_list),
         )
 
@@ -3161,6 +3855,66 @@ class Fitter:
             mean_abs_log_error=mean_abs_log_error,
             response_mode="scalar",
             point_count=len(rows),
+        )
+
+    def cross_validate_loo(
+        self,
+        experiments: Optional[Sequence[TumorExperiment]] = None,
+        family: Optional[str] = None,
+        sf_mode: Optional[str] = None,
+        response_mode: ResponseMode = "scalar",
+        model_kind: RequestedModelKind = "auto",
+    ) -> CrossValidationResult:
+        experiments = list(experiments) if experiments is not None else list(self.experiments)
+        if response_mode != "scalar":
+            raise ValueError("Leave-one-out cross-validation is currently implemented for scalar response mode only.")
+        if len(experiments) < 3:
+            raise RuntimeError("Need at least three experiments for leave-one-out cross-validation.")
+
+        rows: List[PredictionRow] = []
+        for holdout_index, holdout in enumerate(experiments):
+            train = [experiment for index, experiment in enumerate(experiments) if index != holdout_index]
+            if len(train) < 2:
+                continue
+            fit_result = self.fit(
+                experiments=train,
+                train_kind="all",
+                family=family,
+                sf_mode=sf_mode,
+                response_mode=response_mode,
+                model_kind=model_kind,
+            )
+            predicted_sf = fit_result.predict_sf(holdout)
+            abs_error = abs(predicted_sf - holdout.sf)
+            rel_error = abs_error / holdout.sf
+            log_error = float(np.log(predicted_sf) - np.log(holdout.sf))
+            rows.append(
+                PredictionRow(
+                    experiment=holdout,
+                    predicted_sf=predicted_sf,
+                    abs_error=abs_error,
+                    rel_error=rel_error,
+                    log_error=log_error,
+                )
+            )
+
+        if not rows:
+            raise RuntimeError("Leave-one-out cross-validation did not produce any successful folds.")
+
+        residuals = np.asarray([row.residual for row in rows], dtype=float)
+        observed = np.asarray([row.observed_sf for row in rows], dtype=float)
+        rss = float(np.sum(np.square(residuals)))
+        ss_tot = float(np.sum(np.square(observed - np.mean(observed))))
+        cv_r_squared = None if ss_tot <= 0.0 else float(1.0 - rss / ss_tot)
+        return CrossValidationResult(
+            n_experiments=len(experiments),
+            n_successful=len(rows),
+            cv_rmse=float(np.sqrt(np.mean(np.square(residuals)))),
+            cv_mae=float(np.mean(np.abs(residuals))),
+            cv_r_squared=cv_r_squared,
+            residuals=tuple(float(value) for value in residuals),
+            rows=tuple(rows),
+            response_mode="scalar",
         )
 
     @staticmethod
@@ -3249,12 +4003,21 @@ class Fitter:
         )
         if result.model_kind == "linear":
             print("model=linear")
+        elif result.model_kind == "let_dependent":
+            print("model=let-dependent-lq")
         elif result.model_kind == "glq":
             print("model=glq")
         elif result.model_kind == "lq_l":
             print("model=lq-l")
         elif result.model_kind == "lq_repop":
             print("model=lq-repopulation")
+        elif result.model_kind == "repair_biexp":
+            print(
+                "model=repair-aware-lq-biexponential "
+                f"repair_half_time_fast_hours={result.repair_half_time_fast_hours:.3f} "
+                f"repair_half_time_slow_hours={result.repair_half_time_slow_hours:.3f} "
+                f"repair_fast_fraction={(result.repair_fast_fraction or 0.6):.3f}"
+            )
         elif result.model_kind == "repair_repop":
             print(
                 "model=repair-aware-lq-repopulation "
@@ -3282,6 +4045,10 @@ class Fitter:
         print("\n===== FIT RESULT =====")
         print(f"alpha (Gy^-1): {result.alpha:.5f}")
         print(f"beta  (Gy^-2): {result.beta:.6f}")
+        if result.alpha_0 is not None:
+            print(f"alpha_0 (Gy^-1): {result.alpha_0:.5f}")
+        if result.lambda_alpha is not None:
+            print(f"lambda_alpha (Gy^-1 per keV/um): {result.lambda_alpha:.6f}")
         if result.alpha_beta_ratio is not None:
             print(f"alpha/beta   : {result.alpha_beta_ratio:.2f} Gy")
         print("======================")
@@ -3363,6 +4130,7 @@ class Fitter:
     def write_analysis_summaries_csv(
         path: Path,
         summaries: Sequence[AnalysisRunSummary],
+        run_results: Optional[Sequence[AnalysisRunResult]] = None,
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as handle:
@@ -3382,13 +4150,55 @@ class Fitter:
                     "alpha",
                     "beta",
                     "alpha_beta_ratio",
+                    "training_r_squared",
+                    "training_adjusted_r_squared",
+                    "training_bic",
+                    "cv_rmse",
+                    "cv_mae",
+                    "cv_r_squared",
+                    "mean_bed",
+                    "mean_eqd2",
+                    "mean_g_factor",
+                    "mean_tcp",
+                    "alpha_0",
+                    "lambda_alpha",
+                    "repair_half_time_hours",
+                    "repair_half_time_fast_hours",
+                    "repair_half_time_slow_hours",
+                    "repair_fast_fraction",
                     "reason",
                 ]
             )
+            run_lookup: Dict[Tuple[str, str, str, str], AnalysisRunResult] = {}
+            if run_results is not None:
+                run_lookup = {
+                    (
+                        run.summary.sf_mode,
+                        run.summary.response_mode,
+                        run.summary.model_kind,
+                        run.summary.family or "all",
+                    ): run
+                    for run in run_results
+                }
             for summary in summaries:
                 ratio = None
                 if summary.alpha is not None and summary.beta is not None and summary.beta > 0.0:
                     ratio = summary.alpha / summary.beta
+                run = run_lookup.get(
+                    (
+                        summary.sf_mode,
+                        summary.response_mode,
+                        summary.model_kind,
+                        summary.family or "all",
+                    )
+                )
+                training_metrics = run.training_metrics if run is not None else None
+                cross_validation = run.cross_validation if run is not None else None
+                mean_bed = run.mean_train_bed if run is not None else None
+                mean_eqd2 = run.mean_train_eqd2 if run is not None else None
+                mean_g_factor = run.mean_train_g_factor if run is not None else None
+                mean_tcp = run.estimate_mean_train_tcp() if run is not None else None
+                fit_result = run.fit_result if run is not None else None
                 writer.writerow(
                     [
                         summary.sf_mode,
@@ -3404,6 +4214,22 @@ class Fitter:
                         summary.alpha,
                         summary.beta,
                         ratio,
+                        training_metrics.r_squared if training_metrics is not None else None,
+                        training_metrics.adjusted_r_squared if training_metrics is not None else None,
+                        training_metrics.bic if training_metrics is not None else None,
+                        cross_validation.cv_rmse if cross_validation is not None else None,
+                        cross_validation.cv_mae if cross_validation is not None else None,
+                        cross_validation.cv_r_squared if cross_validation is not None else None,
+                        mean_bed,
+                        mean_eqd2,
+                        mean_g_factor,
+                        mean_tcp,
+                        fit_result.alpha_0 if fit_result is not None else None,
+                        fit_result.lambda_alpha if fit_result is not None else None,
+                        fit_result.repair_half_time_hours if fit_result is not None else None,
+                        fit_result.repair_half_time_fast_hours if fit_result is not None else None,
+                        fit_result.repair_half_time_slow_hours if fit_result is not None else None,
+                        fit_result.repair_fast_fraction if fit_result is not None else None,
                         summary.reason or "",
                     ]
                 )
@@ -3421,6 +4247,7 @@ def analyze_fitter(
     compare_models: bool,
     bootstrap: int,
     bootstrap_seed: Optional[int],
+    cross_validate_loo: bool = True,
 ) -> List[AnalysisRunResult]:
     """Run one or many analyses on an already collected fitter."""
     results: List[AnalysisRunResult] = []
@@ -3428,9 +4255,17 @@ def analyze_fitter(
         sf_modes = [sf_modes[0]]
 
     default_model_kind = (
-        "repair_lq"
-        if requested_model_kind == "auto" and fitter.repair_rate_per_day is not None
-        else ("classic_lq" if requested_model_kind == "auto" else requested_model_kind)
+        (
+            "repair_biexp"
+            if requested_model_kind == "auto"
+            and fitter.repair_fast_rate_per_day is not None
+            and fitter.repair_slow_rate_per_day is not None
+            else (
+                "repair_lq"
+                if requested_model_kind == "auto" and fitter.repair_rate_per_day is not None
+                else ("classic_lq" if requested_model_kind == "auto" else requested_model_kind)
+            )
+        )
     )
 
     for mode_index, sf_mode in enumerate(sf_modes):
@@ -3439,11 +4274,14 @@ def analyze_fitter(
         else:
             experiments = list(fitter.experiments)
         available_families = fitter.available_families(experiments)
-        requested_families = resolve_requested_families(
-            available_families=available_families,
-            family=family,
-            by_family=by_family,
-        )
+        if requested_model_kind == "let_dependent":
+            requested_families = [None]
+        else:
+            requested_families = resolve_requested_families(
+                available_families=available_families,
+                family=family,
+                by_family=by_family,
+            )
 
         if not requested_families:
             requested_family = normalize_family(family)
@@ -3479,14 +4317,15 @@ def analyze_fitter(
             continue
 
         for family_index, run_family in enumerate(requested_families):
+            effective_family = None if requested_model_kind == "let_dependent" else run_family
             total_count, single_count, fractionated_count = fitter.regimen_counts(
-                family=run_family,
+                family=effective_family,
                 experiments=experiments,
             )
             train, validation = fitter.build_train_validation_sets(
                 fit_kind=fit_kind,
                 validate_kind=validate_kind,
-                family=run_family,
+                family=effective_family,
                 experiments=experiments,
             )
             timing_diagnostics = fitter.compute_timing_diagnostics(train) if train else None
@@ -3502,7 +4341,7 @@ def analyze_fitter(
                     AnalysisRunResult(
                         summary=AnalysisRunSummary(
                             sf_mode=sf_mode,
-                            family=run_family,
+                            family=effective_family,
                             total_count=total_count,
                             single_count=single_count,
                             fractionated_count=fractionated_count,
@@ -3527,7 +4366,7 @@ def analyze_fitter(
                 model_comparison = fitter.compare_models(
                     experiments=train,
                     response_mode=response_mode,
-                    family=run_family,
+                    family=effective_family,
                     sf_mode=sf_mode,
                 )
 
@@ -3539,7 +4378,10 @@ def analyze_fitter(
                     model_kind: ModelKind = successful_rows[0].model_kind
                 else:
                     model_kind = (
-                        "repair_lq" if fitter.repair_rate_per_day is not None else "classic_lq"
+                        "repair_biexp"
+                        if fitter.repair_fast_rate_per_day is not None
+                        and fitter.repair_slow_rate_per_day is not None
+                        else ("repair_lq" if fitter.repair_rate_per_day is not None else "classic_lq")
                     )
             else:
                 model_kind = requested_model_kind
@@ -3548,7 +4390,7 @@ def analyze_fitter(
                 fit_result = fitter.fit(
                     experiments=train,
                     train_kind=fit_kind,
-                    family=run_family,
+                    family=effective_family,
                     sf_mode=sf_mode,
                     response_mode=response_mode,
                     model_kind=model_kind,
@@ -3559,7 +4401,7 @@ def analyze_fitter(
                     AnalysisRunResult(
                         summary=AnalysisRunSummary(
                             sf_mode=sf_mode,
-                            family=run_family,
+                            family=effective_family,
                             total_count=total_count,
                             single_count=single_count,
                             fractionated_count=fractionated_count,
@@ -3583,6 +4425,19 @@ def analyze_fitter(
             if validate_kind != "none" and validation:
                 validation_summary = fitter.evaluate(validation, fit_result)
 
+            cross_validation = None
+            if cross_validate_loo and response_mode == "scalar" and len(train) >= 3:
+                try:
+                    cross_validation = fitter.cross_validate_loo(
+                        experiments=train,
+                        family=effective_family,
+                        sf_mode=sf_mode,
+                        response_mode=response_mode,
+                        model_kind=model_kind,
+                    )
+                except (RuntimeError, ValueError):
+                    cross_validation = None
+
             bootstrap_summary = None
             if bootstrap > 0:
                 seed = None
@@ -3591,7 +4446,7 @@ def analyze_fitter(
                 bootstrap_summary = fitter.bootstrap_fit(
                     sf_mode=sf_mode,
                     fit_kind=fit_kind,
-                    family=run_family,
+                    family=effective_family,
                     repeats=bootstrap,
                     response_mode=response_mode,
                     model_kind=model_kind,
@@ -3602,7 +4457,7 @@ def analyze_fitter(
                 AnalysisRunResult(
                     summary=AnalysisRunSummary(
                         sf_mode=sf_mode,
-                        family=run_family,
+                        family=effective_family,
                         total_count=total_count,
                         single_count=single_count,
                         fractionated_count=fractionated_count,
@@ -3622,6 +4477,7 @@ def analyze_fitter(
                     training_metrics=fit_metrics,
                     validation_summary=validation_summary,
                     bootstrap_summary=bootstrap_summary,
+                    cross_validation=cross_validation,
                     timing_diagnostics=timing_diagnostics,
                     model_comparison=model_comparison,
                 )
@@ -3635,6 +4491,9 @@ def analyze_files(
     sf_modes: Sequence[str],
     alpha: Optional[float],
     repair_half_time_hours: Optional[float],
+    repair_half_time_fast_hours: Optional[float],
+    repair_half_time_slow_hours: Optional[float],
+    repair_fast_fraction: float,
     min_sf: float,
     fit_kind: RegimenKind,
     validate_kind: ValidationKind,
@@ -3648,6 +4507,7 @@ def analyze_files(
     bootstrap: int,
     bootstrap_seed: Optional[int],
     verbose: bool,
+    cross_validate_loo: bool = True,
     control_map: Optional[Mapping[object, Optional[object]]] = None,
 ) -> Tuple[Fitter, List[AnalysisRunResult]]:
     """Collect Excel files and run structured analysis results."""
@@ -3657,6 +4517,9 @@ def analyze_files(
         min_sf=min_sf,
         alpha_fixed=alpha,
         repair_half_time_hours=repair_half_time_hours,
+        repair_half_time_fast_hours=repair_half_time_fast_hours,
+        repair_half_time_slow_hours=repair_half_time_slow_hours,
+        repair_fast_fraction=repair_fast_fraction,
         verbose=verbose,
         aggregate_regimens=aggregate_regimens,
         dedupe_regimens=dedupe_regimens,
@@ -3672,6 +4535,7 @@ def analyze_files(
         response_mode=response_mode,
         requested_model_kind=requested_model_kind,
         compare_models=compare_models,
+        cross_validate_loo=cross_validate_loo,
         bootstrap=bootstrap,
         bootstrap_seed=bootstrap_seed,
     )
@@ -3701,6 +4565,12 @@ def report_analysis_run(fitter: Fitter, run: AnalysisRunResult) -> None:
         )
         if run.training_metrics.aic is not None:
             print(f"AIC={run.training_metrics.aic:.4f}")
+        if run.training_metrics.r_squared is not None:
+            print(f"R^2={run.training_metrics.r_squared:.4f}")
+        if run.training_metrics.adjusted_r_squared is not None:
+            print(f"Adjusted R^2={run.training_metrics.adjusted_r_squared:.4f}")
+        if run.training_metrics.bic is not None:
+            print(f"BIC={run.training_metrics.bic:.4f}")
 
     diagnostics = run.timing_diagnostics
     if diagnostics is not None and diagnostics.repair_model_enabled:
@@ -3718,6 +4588,12 @@ def report_analysis_run(fitter: Fitter, run: AnalysisRunResult) -> None:
         )
         if diagnostics.condition_number is not None:
             print(f"condition_number={diagnostics.condition_number:.2g}")
+        if diagnostics.repair_half_time_fast_hours is not None:
+            print(f"repair_half_time_fast_hours={diagnostics.repair_half_time_fast_hours:.3f}")
+        if diagnostics.repair_half_time_slow_hours is not None:
+            print(f"repair_half_time_slow_hours={diagnostics.repair_half_time_slow_hours:.3f}")
+        if diagnostics.repair_fast_fraction is not None:
+            print(f"repair_fast_fraction={diagnostics.repair_fast_fraction:.3f}")
         for warning in diagnostics.warnings:
             print(f"WARNING timing: {warning}")
 
@@ -3750,6 +4626,8 @@ def report_analysis_run(fitter: Fitter, run: AnalysisRunResult) -> None:
                 line += f" alpha={row.alpha:.6f}"
             if row.beta is not None:
                 line += f" beta={row.beta:.6f}"
+            if row.lambda_alpha is not None:
+                line += f" lambda_alpha={row.lambda_alpha:.6f}"
             if row.curve_clearance_rate is not None:
                 line += f" clearance={row.curve_clearance_rate:.6f}"
             if row.transition_dose is not None:
@@ -3796,6 +4674,22 @@ def parse_cli() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--repair-half-time-fast",
+        type=float,
+        help="Fast repair half-time in hours for the bi-exponential repair model.",
+    )
+    parser.add_argument(
+        "--repair-half-time-slow",
+        type=float,
+        help="Slow repair half-time in hours for the bi-exponential repair model.",
+    )
+    parser.add_argument(
+        "--repair-fast-fraction",
+        type=float,
+        default=0.6,
+        help="Weight of the fast repair component for the bi-exponential repair model (default: 0.6).",
+    )
+    parser.add_argument(
         "--min-sf",
         type=float,
         default=1.0,
@@ -3809,7 +4703,18 @@ def parse_cli() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model-kind",
-        choices=("auto", "classic_lq", "repair_lq", "glq", "linear", "lq_l", "lq_repop", "repair_repop"),
+        choices=(
+            "auto",
+            "classic_lq",
+            "repair_lq",
+            "repair_biexp",
+            "glq",
+            "let_dependent",
+            "linear",
+            "lq_l",
+            "lq_repop",
+            "repair_repop",
+        ),
         default="auto",
         help="Model family to fit (default: auto)",
     )
@@ -3817,6 +4722,13 @@ def parse_cli() -> argparse.Namespace:
         "--compare-models",
         action="store_true",
         help="Fit several model families and compare them by training error",
+    )
+    parser.add_argument(
+        "--cross-validate-loo",
+        dest="cross_validate_loo",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable or disable explicit leave-one-out cross-validation reporting (default: enabled).",
     )
     parser.add_argument(
         "--fit-kind",
@@ -3880,10 +4792,14 @@ def run_fit(
     sf_modes: Sequence[str],
     alpha: Optional[float],
     repair_half_time_hours: Optional[float],
+    repair_half_time_fast_hours: Optional[float],
+    repair_half_time_slow_hours: Optional[float],
+    repair_fast_fraction: float,
     min_sf: float,
     response_mode: ResponseMode,
     requested_model_kind: RequestedModelKind,
     compare_models: bool,
+    cross_validate_loo: bool,
     fit_kind: RegimenKind,
     validate_kind: ValidationKind,
     family: Optional[str],
@@ -3900,6 +4816,9 @@ def run_fit(
         sf_modes=sf_modes,
         alpha=alpha,
         repair_half_time_hours=repair_half_time_hours,
+        repair_half_time_fast_hours=repair_half_time_fast_hours,
+        repair_half_time_slow_hours=repair_half_time_slow_hours,
+        repair_fast_fraction=repair_fast_fraction,
         min_sf=min_sf,
         fit_kind=fit_kind,
         validate_kind=validate_kind,
@@ -3910,6 +4829,7 @@ def run_fit(
         response_mode=response_mode,
         requested_model_kind=requested_model_kind,
         compare_models=compare_models,
+        cross_validate_loo=cross_validate_loo,
         bootstrap=bootstrap,
         bootstrap_seed=bootstrap_seed,
         verbose=verbose,
@@ -3924,7 +4844,7 @@ def run_fit(
         fitter.report_analysis_summaries(summaries)
     if summary_csv and summaries:
         output_path = Path(summary_csv).expanduser().resolve()
-        fitter.write_analysis_summaries_csv(output_path, summaries)
+        fitter.write_analysis_summaries_csv(output_path, summaries, run_results=results)
         print(f"\n# Summary CSV written to {output_path}")
 
 
@@ -3935,10 +4855,14 @@ def main() -> None:
             sf_modes=INLINE_SF_MODES,
             alpha=INLINE_ALPHA,
             repair_half_time_hours=INLINE_REPAIR_HALF_TIME_HOURS,
+            repair_half_time_fast_hours=INLINE_REPAIR_HALF_TIME_FAST_HOURS,
+            repair_half_time_slow_hours=INLINE_REPAIR_HALF_TIME_SLOW_HOURS,
+            repair_fast_fraction=INLINE_REPAIR_FAST_FRACTION,
             min_sf=INLINE_MIN_SF,
             response_mode=INLINE_RESPONSE_MODE,
             requested_model_kind=INLINE_MODEL_KIND,
             compare_models=INLINE_COMPARE_MODELS,
+            cross_validate_loo=INLINE_CROSS_VALIDATE_LOO,
             fit_kind=INLINE_FIT_KIND,
             validate_kind=INLINE_VALIDATE_KIND,
             family=INLINE_FAMILY,
@@ -3958,10 +4882,14 @@ def main() -> None:
         sf_modes=parse_sf_modes(args.sf),
         alpha=args.alpha,
         repair_half_time_hours=args.repair_half_time_hours,
+        repair_half_time_fast_hours=args.repair_half_time_fast,
+        repair_half_time_slow_hours=args.repair_half_time_slow,
+        repair_fast_fraction=args.repair_fast_fraction,
         min_sf=args.min_sf,
         response_mode=args.response_mode,
         requested_model_kind=args.model_kind,
         compare_models=args.compare_models,
+        cross_validate_loo=args.cross_validate_loo,
         fit_kind=args.fit_kind,
         validate_kind=args.validate_kind,
         family=args.family,

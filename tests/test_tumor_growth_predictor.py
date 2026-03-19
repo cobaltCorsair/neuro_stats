@@ -11,6 +11,7 @@ from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predicto
     fit_gompertz_to_control,
     gompertz_volume,
     parse_irradiation_intervals_days,
+    predict_schedule_surviving_fraction,
     simulate_growth,
     surviving_fraction,
 )
@@ -212,6 +213,66 @@ class TumorGrowthPredictorTests(unittest.TestCase):
 
         self.assertLess(mixed.live_volume[-1], uniform.live_volume[-1])
         self.assertGreater(mixed.dead_volume[-1], uniform.dead_volume[-1])
+
+    def test_predict_schedule_surviving_fraction_matches_product_without_repair(self) -> None:
+        parameters = GrowthModelParameters(
+            alpha=0.1,
+            beta=0.02,
+            growth_rate=0.0,
+            carrying_capacity=50.0,
+            clearance_rate=0.0,
+            repair_half_time_hours=0.0,
+        )
+        schedule = [
+            TreatmentFraction(day=0.0, dose=2.0),
+            TreatmentFraction(day=1.0, dose=2.0),
+        ]
+
+        predicted = predict_schedule_surviving_fraction(schedule, parameters)
+        expected = surviving_fraction(0.1, 0.02, 2.0) ** 2
+
+        self.assertAlmostEqual(predicted, expected, places=8)
+
+    def test_predict_schedule_surviving_fraction_uses_mixed_family_overrides(self) -> None:
+        parameters = GrowthModelParameters(
+            alpha=0.05,
+            beta=0.0,
+            growth_rate=0.0,
+            carrying_capacity=50.0,
+            clearance_rate=0.0,
+            repair_half_time_hours=0.0,
+        )
+        family_parameters = {
+            "p_peak": GrowthModelParameters(
+                alpha=0.20,
+                beta=0.0,
+                growth_rate=0.0,
+                carrying_capacity=50.0,
+                clearance_rate=0.0,
+                repair_half_time_hours=0.0,
+            ),
+        }
+        mixed_schedule = [
+            TreatmentFraction(day=0.0, dose=2.0, family="y"),
+            TreatmentFraction(day=0.0, dose=2.0, family="p_peak"),
+        ]
+        uniform_schedule = [
+            TreatmentFraction(day=0.0, dose=2.0, family="y"),
+            TreatmentFraction(day=0.0, dose=2.0, family="y"),
+        ]
+
+        mixed_sf = predict_schedule_surviving_fraction(
+            mixed_schedule,
+            parameters,
+            family_parameters=family_parameters,
+        )
+        uniform_sf = predict_schedule_surviving_fraction(
+            uniform_schedule,
+            parameters,
+            family_parameters=family_parameters,
+        )
+
+        self.assertLess(mixed_sf, uniform_sf)
 
 
 if __name__ == "__main__":

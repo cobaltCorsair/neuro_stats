@@ -70,6 +70,7 @@ from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predicto
     default_geometry_scaling,
     fit_geometry_scaling,
     fit_gompertz_to_control,
+    predict_schedule_surviving_fraction,
     simulate_growth,
 )
 
@@ -157,6 +158,18 @@ def parse_positive_float_list(text: str, default: Sequence[float]) -> list[float
 def parse_percentage_list(text: str, default: Sequence[float]) -> list[float]:
     """Parse percentages like ``10, 20, 30`` into fractions ``0.1, 0.2, 0.3``."""
     return [value / 100.0 for value in parse_positive_float_list(text, default)]
+
+
+def parse_positive_scalar(text: str, *, label: str) -> float:
+    """Parse one positive scalar value from a GUI text field."""
+    normalized = text.strip().replace(",", ".")
+    if not normalized:
+        raise ValueError(f"{label} is required.")
+
+    value = float(normalized)
+    if not math.isfinite(value) or value <= 0.0:
+        raise ValueError(f"{label} must be a positive number.")
+    return value
 
 
 def _normalize_family_label(value: str | None) -> str | None:
@@ -468,6 +481,11 @@ class TumorGrowthPredictorWindow(QMainWindow):
             "0 keeps independent per-fraction kill. Positive values enable "
             "repair-aware interaction between closely spaced fractions."
         )
+        self.tcp_cell_density_edit = QLineEdit("1e7", self)
+        self.tcp_cell_density_edit.setPlaceholderText("1e7")
+        self.tcp_cell_density_edit.setToolTip(
+            "Clonogenic cell density in cells/cm^3 used for the TCP estimate in the summary."
+        )
 
         layout.addWidget(QLabel("alpha"), 0, 0)
         layout.addWidget(self.alpha_spin, 0, 1)
@@ -494,7 +512,10 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.geometry_mode_combo.addItem("Fixed ratios", "fixed")
         self.geometry_mode_combo.addItem("Fit from observed shape", "fitted")
         self.geometry_mode_combo.currentIndexChanged.connect(self.on_geometry_mode_changed)
-        layout.addWidget(self.geometry_mode_combo, 4, 1, 1, 3)
+        layout.addWidget(self.geometry_mode_combo, 4, 1)
+
+        layout.addWidget(QLabel("TCP cell density"), 4, 2)
+        layout.addWidget(self.tcp_cell_density_edit, 4, 3)
         return group
 
     def _build_schedule_group(self) -> QGroupBox:
@@ -1206,6 +1227,9 @@ class TumorGrowthPredictorWindow(QMainWindow):
             clearance_rate=self.clearance_rate_spin.value(),
             repair_half_time_hours=self.repair_half_time_spin.value(),
         )
+
+    def current_tcp_cell_density(self) -> float:
+        return parse_positive_scalar(self.tcp_cell_density_edit.text(), label="TCP cell density")
 
     def current_default_family(self) -> str | None:
         if self.geometry_dataset is None:
@@ -1989,6 +2013,30 @@ class TumorGrowthPredictorWindow(QMainWindow):
     ) -> str:
         lines = []
         frame_mode = str(self.frame_mode_combo.currentData() or "daily")
+        schedule = self.schedule_from_table()
+        tcp_summary_line: str | None = None
+        schedule_sf_line: str | None = None
+        initial_volume_line: str | None = None
+        if self.reference_geometry is not None and schedule:
+            initial_volume_cm3 = float(self.reference_geometry.volume) / 1000.0
+            initial_volume_line = f"Initial volume = {initial_volume_cm3:.4f} cm^3"
+            try:
+                cell_density = self.current_tcp_cell_density()
+                schedule_sf = predict_schedule_surviving_fraction(
+                    schedule,
+                    self.current_parameters(),
+                    family_parameters=self.active_family_overrides or None,
+                )
+                burden = initial_volume_cm3 * cell_density * schedule_sf
+                tcp_value = 0.0 if burden >= 700.0 else float(math.exp(-burden))
+                schedule_sf_line = f"Predicted schedule SF = {schedule_sf:.6f}"
+                tcp_summary_line = (
+                    f"Predicted TCP = {tcp_value:.6f} "
+                    f"(rho={cell_density:.4g} cells/cm^3)"
+                )
+            except ValueError as exc:
+                tcp_summary_line = f"Predicted TCP = unavailable ({exc})"
+
         if self.geometry_dataset is not None:
             lines.append(f"Treated tumor file: {self.geometry_dataset.path.name}")
         if self.control_dataset is not None:
@@ -2022,6 +2070,12 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 f"c = {axis_c:.3f}",
             ]
         )
+        if initial_volume_line is not None:
+            lines.append(initial_volume_line)
+        if schedule_sf_line is not None:
+            lines.append(schedule_sf_line)
+        if tcp_summary_line is not None:
+            lines.append(tcp_summary_line)
 
         if self.reference_geometry is not None:
             lines.extend(
@@ -2052,7 +2106,6 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 ]
             )
 
-        schedule = self.schedule_from_table()
         if schedule:
             lines.append("")
             lines.append("Dose schedule:")

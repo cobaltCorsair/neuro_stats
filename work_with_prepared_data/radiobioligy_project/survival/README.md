@@ -119,6 +119,7 @@ Model comparison ranks candidates by train-set quality using:
 ## Timing And Repair
 
 If experiment metadata contains `t=...`, the fitter can recover real inter-fraction timing in hours, half-hours, days, and similar intervals.
+If metadata also contains irradiation-duration markers such as `tau`, `t_irr`, or `duration`, the repair-aware quadratic term now treats each fraction as a finite exposure instead of an instantaneous pulse.
 
 Examples:
 
@@ -350,11 +351,15 @@ This layout is meant to fit better on a normal laptop screen than the older long
 - setup of `SF modes`, `family`, split strategy, response mode, model kind, repair half-time, bootstrap, and CSV export;
 - inventory scan before fitting;
 - run summary table plus per-run detail tabs;
+  the top summary now includes mean train-set `BED`, `EQD2`, and `G` alongside fit quality metrics;
 - `Analysis` tab with:
+  - `RBE mode`: either classic per-family iso-effect comparison or `LET model` based RBE from one `let_dependent` fit
   - `RBE vs dose`
   - `RBE vs alpha/beta`
+  - `alpha(LET)` line for `let_dependent` fits, with per-family alpha reference points when independent family fits are available
   - `SF`-metric drift table for the current response/model context;
-  - `Export CSV`, which writes paired analysis files such as `..._rbe.csv` and `..._sf_metrics.csv`;
+  - `Export CSV`, which writes paired analysis files such as `..._rbe.csv`, `..._sf_metrics.csv`, and `..._alpha_let.csv` when LET analysis is available;
+- `NTCP` tab with both a manual LKB curve builder and automatic `TD50/m` fitting from skin/RTOG Excel groups (`peak RTOG >= threshold`);
 - launch of the tumor growth predictor window.
 
 ### Inventory Mode
@@ -436,6 +441,14 @@ python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_u
   --response-mode scalar ^
   --repair-half-time-hours 1.0 ^
   --compare-models
+```
+
+Explicitly disable LOO cross-validation:
+
+```bash
+python -m work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor ^
+  --files *.xlsx ^
+  --no-cross-validate-loo
 ```
 
 ## Current Limitations

@@ -1,19 +1,32 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
+import pandas as pd
 
 from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor import (
     AnalysisRunResult,
     AnalysisRunSummary,
     LQFitResult,
+    TumorExperiment,
 )
 from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis import (
+    NTCPFitGroup,
     analyze_interval_sensitivity,
     analyze_parameter_sensitivity,
+    build_ntcp_curve,
     build_rbe_series,
+    build_rbe_let_series,
+    build_tcp_curve,
     compare_treatment_scenarios,
     compare_sf_metric_sensitivity,
+    compute_ntcp_lkb,
+    compute_rbe_let,
+    compute_tcp,
     compute_rbe,
+    fit_ntcp_lkb_from_groups,
+    summarize_skin_reaction_file,
 )
 from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predictor import (
     GeometryReference,
@@ -64,6 +77,155 @@ class RadiobiologyAnalysisTests(unittest.TestCase):
         self.assertTrue(all(row.test_family == "p_peak" for row in rows))
         self.assertTrue(all(row.reference_family == "y" for row in rows))
         self.assertTrue(all(row.rbe > 1.0 for row in rows))
+
+    def test_compute_rbe_let_uses_single_let_dependent_fit(self) -> None:
+        fit = LQFitResult(
+            alpha=0.03,
+            beta=0.004,
+            train_count=5,
+            train_kind="all",
+            family=None,
+            sf_mode="absolute",
+            model_kind="let_dependent",
+            alpha_0=0.03,
+            lambda_alpha=0.0015,
+        )
+
+        point = compute_rbe_let(fit, test_let=20.0, reference_let=0.3, dose=2.0)
+
+        self.assertGreater(point.reference_dose, point.test_dose)
+        self.assertGreater(point.rbe, 1.0)
+        self.assertEqual(point.test_model_kind, "let_dependent")
+
+    def test_build_rbe_let_series_uses_family_let_mapping(self) -> None:
+        fit = LQFitResult(
+            alpha=0.03,
+            beta=0.004,
+            train_count=5,
+            train_kind="all",
+            family=None,
+            sf_mode="absolute",
+            model_kind="let_dependent",
+            alpha_0=0.03,
+            lambda_alpha=0.0015,
+        )
+
+        rows = build_rbe_let_series(
+            fit,
+            {"y": 0.3, "p_peak": 12.0, "c": 100.0},
+            reference_family="y",
+            doses=(2.0, 10.0),
+        )
+
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(all(row.reference_family == "y" for row in rows))
+        self.assertEqual(sorted({row.test_family for row in rows}), ["c", "p_peak"])
+        self.assertTrue(all(row.rbe > 1.0 for row in rows))
+
+    def test_compute_ntcp_lkb_is_monotonic_with_dose(self) -> None:
+        low = compute_ntcp_lkb(20.0, td50=40.0, m=0.2)
+        mid = compute_ntcp_lkb(40.0, td50=40.0, m=0.2)
+        high = compute_ntcp_lkb(60.0, td50=40.0, m=0.2)
+
+        self.assertLess(low, mid)
+        self.assertLess(mid, high)
+        self.assertAlmostEqual(mid, 0.5, places=8)
+
+    def test_compute_tcp_uses_experiment_initial_volume(self) -> None:
+        fit = LQFitResult(
+            alpha=0.10,
+            beta=0.02,
+            train_count=3,
+            train_kind="all",
+            family="y",
+            sf_mode="absolute",
+        )
+        experiment = TumorExperiment(
+            path=Path("single10.xlsx"),
+            fractions=(10.0,),
+            sf=0.0,
+            family="y",
+            initial_volume_mm3=1200.0,
+        )
+
+        tcp = compute_tcp(fit, experiment, cell_density=1.0e6)
+
+        self.assertAlmostEqual(tcp.initial_volume_cm3, 1.2, places=8)
+        self.assertGreaterEqual(tcp.tcp, 0.0)
+        self.assertLessEqual(tcp.tcp, 1.0)
+
+    def test_build_tcp_curve_returns_one_row_per_dose(self) -> None:
+        fit = LQFitResult(
+            alpha=0.10,
+            beta=0.02,
+            train_count=3,
+            train_kind="all",
+            family="y",
+            sf_mode="absolute",
+        )
+
+        rows = build_tcp_curve(
+            fit,
+            dose_range=(2.0, 10.0),
+            n_fractions=1,
+            initial_volume_cm3=0.5,
+            cell_density=1.0e5,
+        )
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0].dose_total, 2.0)
+        self.assertEqual(rows[1].dose_total, 10.0)
+
+    def test_build_ntcp_curve_returns_one_row_per_dose(self) -> None:
+        rows = build_ntcp_curve((0.0, 25.0, 50.0), td50=50.0, m=0.2)
+
+        self.assertEqual(len(rows), 3)
+        self.assertAlmostEqual(rows[0].ntcp, compute_ntcp_lkb(0.0, td50=50.0, m=0.2), places=8)
+        self.assertAlmostEqual(rows[-1].ntcp, 0.5, places=8)
+
+    def test_fit_ntcp_lkb_from_groups_recovers_reasonable_parameters(self) -> None:
+        td50_true = 45.0
+        m_true = 0.18
+        doses = [25.0, 35.0, 45.0, 55.0, 65.0]
+        groups = []
+        for index, dose in enumerate(doses):
+            probability = compute_ntcp_lkb(dose, td50=td50_true, m=m_true)
+            groups.append(
+                NTCPFitGroup(
+                    label=f"group_{index}",
+                    dose_total=dose,
+                    n_subjects=120,
+                    n_complications=int(round(probability * 120.0)),
+                    complication_rate=float(round(probability * 120.0) / 120.0),
+                    peak_grade_mean=2.0 + probability,
+                    threshold_grade=3,
+                )
+            )
+
+        fit = fit_ntcp_lkb_from_groups(groups)
+
+        self.assertAlmostEqual(fit.td50, td50_true, delta=6.0)
+        self.assertAlmostEqual(fit.m, m_true, delta=0.08)
+        self.assertEqual(fit.subject_count, 120 * len(doses))
+
+    def test_summarize_skin_reaction_file_maps_legacy_scale_to_rtog_counts(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "test_y_10.xlsx"
+            frame = pd.DataFrame(
+                {
+                    "rat_1": [0.0, 250.0, 450.0],
+                    "rat_2": [0.0, 50.0, 700.0],
+                }
+            ).T
+            frame.to_excel(path, index=False)
+
+            summary = summarize_skin_reaction_file(path, threshold_grade=3, input_scale="our")
+
+        self.assertEqual(summary.n_subjects, 2)
+        self.assertEqual(summary.n_complications, 2)
+        self.assertAlmostEqual(summary.complication_rate, 1.0, places=8)
+        self.assertAlmostEqual(summary.peak_grade_mean, 3.5, places=8)
+        self.assertAlmostEqual(summary.dose_total or 0.0, 10.0, places=8)
 
     def test_parameter_sensitivity_reports_nonzero_rmse_for_perturbations(self) -> None:
         reference = GeometryReference(axis_a=2.0, axis_b=3.0, axis_c=4.0, volume=12.0)

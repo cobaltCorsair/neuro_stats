@@ -98,6 +98,7 @@ The sidebar contains:
 - `Tumor`: selection of either one rat or `Mean across rats`
 - `Alpha/Beta source`: either manual values or one of the recent fitter results
 - model parameters
+  - includes `TCP cell density`, used for the quick TCP estimate in the summary panel
 - editable dose schedule
 
 ### Right results area
@@ -117,6 +118,12 @@ The `Curves` tab shows 2D trajectories:
 - observed volume points
 - predicted `a`, `b`, `c`
 - observed `a`, `b`, `c`
+
+The summary panel under the plots now also shows:
+
+- initial tumor volume in `cm^3`
+- predicted schedule-level `SF`
+- predicted `TCP` for the current schedule and current `TCP cell density`
 
 The `Sensitivity` tab shows:
 
