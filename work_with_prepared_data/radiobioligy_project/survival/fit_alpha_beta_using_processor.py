@@ -96,6 +96,20 @@ GR_SUFFIX = re.compile(r"гр|gy", re.IGNORECASE)
 FAMILY_TOKEN = re.compile(r"[A-Za-zА-Яа-я]+\d*|\d+")
 KNOWN_FAMILIES = ("y", "p", "p_peak", "p_through", "n", "e", "c")
 TIME_TOKEN = re.compile(r"\bt\s*=")
+TIME_VALUE_WITH_UNIT = re.compile(
+    r"(?P<value>\d+(?:[.,]\d+)?)\s*"
+    r"(?P<unit>"
+    r"(?:ч(?:\.|ас(?:а|ов)?)?)|"
+    r"(?:hour|hours|hr|hrs)|"
+    r"(?:мин(?:\.|ут(?:а|ы|)?)?)|"
+    r"(?:minute|minutes|min|mins)|"
+    r"(?:сут(?:\.|ки)?)|"
+    r"(?:дн(?:\.|я|ей)?)|"
+    r"(?:день|дня|дней)|"
+    r"(?:day|days)"
+    r")",
+    re.IGNORECASE,
+)
 PROTON_PEAK_TOKENS = ("in_peak", "в_пике")
 PROTON_THROUGH_TOKENS = ("прострел",)
 FAMILY_LET_DEFAULTS: Dict[str, float] = {
@@ -108,6 +122,9 @@ FAMILY_LET_DEFAULTS: Dict[str, float] = {
     "c": 100.0,
 }
 DURATION_MARKER = re.compile(r"(t_irr|tirr|tau|duration|dur|irradiation\s*duration)", re.IGNORECASE)
+TIME_HOUR_MARKERS = ("ч", "час", "hour", "hours", "hr", "hrs")
+TIME_MINUTE_MARKERS = ("мин", "minute", "minutes", "min", "mins")
+TIME_DAY_MARKERS = ("сут", "дн", "день", "дня", "дней", "day", "days")
 
 
 def parse_fractions(experiment_params: List[str]) -> List[float]:
@@ -121,26 +138,99 @@ def parse_fractions(experiment_params: List[str]) -> List[float]:
     return fractions
 
 
-def _extract_interval_values_days(token: str) -> List[float]:
-    """Extract one or many time gaps from tokens like ``t = 1 ч`` or ``t=2.5 hr``."""
+def _strip_time_prefix(token: str) -> Tuple[str, bool]:
+    """Remove known time prefixes and report whether the token is a time token."""
     token_lower = token.strip().lower().replace(",", ".")
+    is_time_token = False
     if token_lower.startswith("irradiation time="):
         token_lower = token_lower.split("=", 1)[1].strip()
-    if not TIME_TOKEN.search(token_lower):
+        is_time_token = True
+    if TIME_TOKEN.search(token_lower):
+        token_lower = TIME_TOKEN.sub("", token_lower, count=1).strip()
+        is_time_token = True
+    token_lower = token_lower.lstrip("=:").strip()
+    return token_lower, is_time_token
+
+
+def _detect_time_unit_kind(text: str) -> Optional[Literal["hours", "minutes", "days"]]:
+    """Return the unique time-unit category used in text or ``None`` if ambiguous."""
+    text_lower = text.strip().lower()
+    kinds: set[str] = set()
+    if any(marker in text_lower for marker in TIME_HOUR_MARKERS):
+        kinds.add("hours")
+    if any(marker in text_lower for marker in TIME_MINUTE_MARKERS):
+        kinds.add("minutes")
+    if any(marker in text_lower for marker in TIME_DAY_MARKERS):
+        kinds.add("days")
+    if len(kinds) != 1:
+        return None
+    return next(iter(kinds))  # type: ignore[return-value]
+
+
+def _time_kind_factor(
+    kind: Literal["hours", "minutes", "days"],
+    output_unit: Literal["days", "hours"],
+) -> float:
+    """Convert a parsed time-unit category into the requested output scale."""
+    factor_days = {
+        "minutes": 1.0 / (24.0 * 60.0),
+        "hours": 1.0 / 24.0,
+        "days": 1.0,
+    }[kind]
+    if output_unit == "days":
+        return factor_days
+    return factor_days * 24.0
+
+
+def extract_time_values(
+    token: str,
+    *,
+    require_t_token: bool,
+    output_unit: Literal["days", "hours"],
+) -> List[float]:
+    """Extract one or many time values, including slash-separated mixed units."""
+    token_body, is_time_token = _strip_time_prefix(token)
+    if require_t_token and not is_time_token:
+        return []
+    if not token_body:
         return []
 
-    values = [float(num.replace(",", ".")) for num in NUMBER.findall(token_lower)]
-    if not values:
-        return []
+    total_numbers = NUMBER.findall(token_body)
+    pair_matches = list(TIME_VALUE_WITH_UNIT.finditer(token_body))
+    if pair_matches and len(pair_matches) == len(total_numbers):
+        parsed_values: List[float] = []
+        for match in pair_matches:
+            kind = _detect_time_unit_kind(match.group("unit"))
+            if kind is None:
+                continue
+            value = float(match.group("value").replace(",", "."))
+            if not np.isfinite(value) or value < 0.0:
+                continue
+            parsed_values.append(value * _time_kind_factor(kind, output_unit))
+        if parsed_values:
+            return parsed_values
 
-    factor = 1.0
-    if any(unit in token_lower for unit in ("ч", "час", "hour", "hours", "hr", "hrs")):
-        factor = 1.0 / 24.0
-    elif any(unit in token_lower for unit in ("мин", "minute", "minutes", "min", "mins")):
-        factor = 1.0 / (24.0 * 60.0)
-    elif any(unit in token_lower for unit in ("сут", "дн", "день", "дня", "дней", "day", "days")):
-        factor = 1.0
-    return [value * factor for value in values if np.isfinite(value) and value >= 0.0]
+    segments = [segment.strip() for segment in re.split(r"\s*[/;|]+\s*", token_body) if segment.strip()]
+    if not segments:
+        segments = [token_body]
+
+    global_kind = _detect_time_unit_kind(token_body)
+    values: List[float] = []
+    for segment in segments:
+        segment_values = [float(num.replace(",", ".")) for num in NUMBER.findall(segment)]
+        if not segment_values:
+            continue
+        kind = _detect_time_unit_kind(segment) or global_kind
+        if kind is None:
+            continue
+        factor = _time_kind_factor(kind, output_unit)
+        values.extend(value * factor for value in segment_values if np.isfinite(value) and value >= 0.0)
+    return values
+
+
+def _extract_interval_values_days(token: str) -> List[float]:
+    """Extract one or many inter-fraction gaps in days from one metadata token."""
+    return extract_time_values(token, require_t_token=True, output_unit="days")
 
 
 def _build_schedule_from_intervals(
@@ -277,6 +367,11 @@ def parse_irradiation_durations_hours(
         if not DURATION_MARKER.search(token_lower):
             continue
 
+        parsed_durations = extract_time_values(token, require_t_token=False, output_unit="hours")
+        if parsed_durations:
+            durations.extend(parsed_durations)
+            continue
+
         values = [float(num.replace(",", ".")) for num in NUMBER.findall(token_lower)]
         if not values:
             continue
@@ -349,6 +444,51 @@ def format_schedule_days(schedule_days: Sequence[float]) -> str:
         else:
             parts.append(f"{float(day):g}d")
     return "[" + ", ".join(parts) + "]"
+
+
+def interval_days_from_schedule(schedule_days: Sequence[float]) -> Tuple[float, ...]:
+    """Convert cumulative fraction times into inter-fraction gaps."""
+    if len(schedule_days) < 2:
+        return ()
+    return tuple(
+        float(schedule_days[index] - schedule_days[index - 1])
+        for index in range(1, len(schedule_days))
+    )
+
+
+def _format_interval_value_days(interval_days: float) -> str:
+    """Render one interval in a compact operator-friendly form."""
+    minutes = float(interval_days) * 24.0 * 60.0
+    hours = float(interval_days) * 24.0
+    rounded_hours = int(round(hours))
+    if (
+        abs(rounded_hours) >= 1
+        and abs(rounded_hours) < 24
+        and math.isclose(hours, rounded_hours, rel_tol=0.0, abs_tol=1.0e-4)
+    ):
+        return f"{rounded_hours} ч."
+    if abs(minutes) < 60.0 and math.isclose(minutes, round(minutes), rel_tol=0.0, abs_tol=1.0e-4):
+        return f"{int(round(minutes))} мин."
+    if abs(hours) < 24.0:
+        return f"{hours:g} ч."
+    return f"{float(interval_days):g} сут."
+
+
+def format_interval_values_days(interval_days: Sequence[float]) -> str:
+    """Format inter-fraction gaps like ``t=1 ч./1 сут./1 ч.``."""
+    if not interval_days:
+        return "-"
+    return "t=" + "/".join(_format_interval_value_days(value) for value in interval_days)
+
+
+def format_schedule_intervals(schedule_days: Sequence[float]) -> str:
+    """Format a cumulative schedule via intervals when possible."""
+    intervals = interval_days_from_schedule(schedule_days)
+    if not intervals:
+        return "-"
+    if any(not np.isfinite(value) for value in intervals) or any(value < -1.0e-9 for value in intervals):
+        return format_schedule_days(schedule_days)
+    return format_interval_values_days(intervals)
 
 
 def is_control_file(path: Path) -> bool:
@@ -521,13 +661,7 @@ class TumorExperiment:
 
     @property
     def interval_days(self) -> Tuple[float, ...]:
-        schedule = self.resolved_schedule_days
-        if len(schedule) < 2:
-            return ()
-        return tuple(
-            float(schedule[index] - schedule[index - 1])
-            for index in range(1, len(schedule))
-        )
+        return interval_days_from_schedule(self.resolved_schedule_days)
 
     @property
     def resolved_irradiation_duration_hours(self) -> Tuple[float, ...]:
@@ -640,7 +774,9 @@ class TumorExperiment:
 
     @property
     def schedule_label(self) -> str:
-        return format_schedule_days(self.resolved_schedule_days)
+        if self.fraction_count <= 1:
+            return "-"
+        return format_schedule_intervals(self.resolved_schedule_days)
 
     @property
     def curve_point_count(self) -> int:
@@ -1140,7 +1276,7 @@ class InventoryRow:
     def schedule_label(self) -> str:
         if self.kind != "fractionated":
             return "-"
-        return format_schedule_days(self.schedule_days)
+        return format_schedule_intervals(self.schedule_days)
 
     @property
     def control_label(self) -> str:

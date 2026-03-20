@@ -106,6 +106,16 @@ class TumorGrowthPredictorTests(unittest.TestCase):
         self.assertEqual(len(intervals), 1)
         self.assertAlmostEqual(intervals[0], 1.0 / 24.0, places=8)
 
+    def test_parse_irradiation_intervals_days_supports_mixed_units_in_one_token(self) -> None:
+        intervals = parse_irradiation_intervals_days(
+            ("y = 4 Гр", "y = 4 Гр", "y = 4 Гр", "y = 4 Гр", "t=1 ч./1 сут./1 ч.")
+        )
+
+        self.assertEqual(len(intervals), 3)
+        self.assertAlmostEqual(intervals[0], 1.0 / 24.0, places=8)
+        self.assertAlmostEqual(intervals[1], 1.0, places=8)
+        self.assertAlmostEqual(intervals[2], 1.0 / 24.0, places=8)
+
     def test_build_schedule_from_intervals_uses_subday_spacing(self) -> None:
         schedule = build_schedule_from_intervals(
             [4.0, 4.0, 32.0],

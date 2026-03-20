@@ -200,9 +200,17 @@ class TumorGrowthPredictorGuiTests(unittest.TestCase):
         comparison_rows = build_comparison_table_rows(comparison_report)
 
         self.assertEqual(interval_rows[0][0], "2.500")
-        self.assertIn("0.1042", interval_rows[0][4])
+        self.assertEqual(interval_rows[0][4], "t=2.5 ч./2.5 ч.")
         self.assertEqual(comparison_rows[0][2], "p_peak -> n")
         self.assertEqual(comparison_rows[0][6], "55.000000")
+
+    def test_build_interval_preview_from_days_uses_t_expression(self) -> None:
+        preview = TumorGrowthPredictorWindow._build_interval_preview_from_days(
+            [0.0, 1.0 / 24.0, 25.0 / 24.0, 26.0 / 24.0],
+            label="Intervals",
+        )
+
+        self.assertEqual(preview, "Intervals: t=1 ч./1 сут./1 ч.")
 
 
 if __name__ == "__main__":

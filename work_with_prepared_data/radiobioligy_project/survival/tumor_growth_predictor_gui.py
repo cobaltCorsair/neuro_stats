@@ -46,6 +46,8 @@ from work_with_prepared_data.radiobioligy_project.data_processing.tumor_geometry
 )
 from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor import (
     AnalysisRunResult,
+    format_interval_values_days,
+    format_schedule_intervals,
     infer_radiation_family,
     parse_fractions,
 )
@@ -99,7 +101,7 @@ INTERVAL_SENSITIVITY_HEADERS = [
     "RMSE",
     "Delta RMSE",
     "RMSE ratio",
-    "Schedule (days)",
+    "Intervals",
 ]
 COMPARISON_HEADERS = [
     "Scenario",
@@ -278,7 +280,7 @@ def build_interval_sensitivity_table_rows(
             _format_optional_float(row.rmse, digits=6),
             _format_optional_float(row.delta_rmse, digits=6),
             _format_optional_ratio(row.rmse_ratio),
-            ", ".join(f"{day:.4g}" for day in row.schedule_days),
+            format_schedule_intervals(row.schedule_days),
         ]
         for row in rows
     ]
@@ -336,6 +338,7 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self._build_ui()
         self._apply_window_style()
         self.populate_fit_results()
+        self.refresh_schedule_preview_labels()
 
     def _build_ui(self) -> None:
         central = QWidget(self)
@@ -560,7 +563,13 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.schedule_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.schedule_table.verticalHeader().setVisible(False)
         self.schedule_table.setMinimumHeight(120)
+        self.schedule_table.itemChanged.connect(self.refresh_schedule_preview_labels)
         layout.addWidget(self.schedule_table, 1)
+
+        self.schedule_hint_label = QLabel("Intervals: -", self)
+        self.schedule_hint_label.setWordWrap(True)
+        self.schedule_hint_label.setObjectName("ScheduleHint")
+        layout.addWidget(self.schedule_hint_label)
         return group
 
     def _build_plot_panel(self) -> QWidget:
@@ -668,7 +677,13 @@ class TumorGrowthPredictorWindow(QMainWindow):
 
         self.comparison_schedule_table = self._create_table(["Time (days)", "Dose (Gy)", "Family"])
         self.comparison_schedule_table.setMinimumHeight(150)
+        self.comparison_schedule_table.itemChanged.connect(self.refresh_schedule_preview_labels)
         layout.addWidget(self.comparison_schedule_table)
+
+        self.comparison_schedule_hint_label = QLabel("Alternative intervals: -", self)
+        self.comparison_schedule_hint_label.setWordWrap(True)
+        self.comparison_schedule_hint_label.setObjectName("ScheduleHint")
+        layout.addWidget(self.comparison_schedule_hint_label)
 
         self.comparison_figure = Figure(figsize=(8, 4.6))
         self.comparison_canvas = FigureCanvasQTAgg(self.comparison_figure)
@@ -885,6 +900,10 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 padding: 5px 6px;
                 font-weight: 600;
             }
+            QLabel#ScheduleHint {
+                color: #475569;
+                padding: 2px 2px 0 2px;
+            }
             QSplitter::handle {
                 background: #e3e8f0;
             }
@@ -939,6 +958,39 @@ class TumorGrowthPredictorWindow(QMainWindow):
             self.control_label,
             self.control_path_text,
             "No control file loaded",
+        )
+
+    @staticmethod
+    def _build_interval_preview_from_days(
+        schedule_days: Sequence[float],
+        *,
+        label: str,
+    ) -> str:
+        if len(schedule_days) < 2:
+            return f"{label}: -"
+        return f"{label}: {format_schedule_intervals(schedule_days)}"
+
+    def _build_interval_preview_from_table(self, table: QTableWidget, *, label: str) -> str:
+        schedule_days: list[float] = []
+        for row_index in range(table.rowCount()):
+            day_item = table.item(row_index, 0)
+            if day_item is None or not day_item.text().strip():
+                continue
+            try:
+                schedule_days.append(float(day_item.text().replace(",", ".")))
+            except ValueError:
+                return f"{label}: invalid time value"
+        return self._build_interval_preview_from_days(schedule_days, label=label)
+
+    def refresh_schedule_preview_labels(self) -> None:
+        self.schedule_hint_label.setText(
+            self._build_interval_preview_from_table(self.schedule_table, label="Intervals")
+        )
+        self.comparison_schedule_hint_label.setText(
+            self._build_interval_preview_from_table(
+                self.comparison_schedule_table,
+                label="Alternative intervals",
+            )
         )
 
     def apply_selected_fit_result(self) -> None:
@@ -1157,19 +1209,24 @@ class TumorGrowthPredictorWindow(QMainWindow):
             self.populate_comparison_schedule_table(schedule)
         if schedule:
             if interval_days:
-                interval_text = ", ".join(f"{gap * 24.0:g} h" for gap in interval_days)
                 self.statusBar().showMessage(
-                    f"Schedule prefilled from experiment fractions and t= intervals ({interval_text})."
+                    "Schedule prefilled from experiment fractions and "
+                    f"{format_interval_values_days(interval_days)}."
                 )
             else:
                 self.statusBar().showMessage("Schedule prefilled from experiment fractions.")
 
     def populate_schedule_table(self, schedule: Sequence[TreatmentFraction]) -> None:
-        self.schedule_table.setRowCount(len(schedule))
-        for row_index, event in enumerate(schedule):
-            self.schedule_table.setItem(row_index, 0, QTableWidgetItem(f"{event.day:.6g}"))
-            self.schedule_table.setItem(row_index, 1, QTableWidgetItem(f"{event.dose:g}"))
-            self.schedule_table.setItem(row_index, 2, QTableWidgetItem(event.family or ""))
+        self.schedule_table.blockSignals(True)
+        try:
+            self.schedule_table.setRowCount(len(schedule))
+            for row_index, event in enumerate(schedule):
+                self.schedule_table.setItem(row_index, 0, QTableWidgetItem(f"{event.day:.6g}"))
+                self.schedule_table.setItem(row_index, 1, QTableWidgetItem(f"{event.dose:g}"))
+                self.schedule_table.setItem(row_index, 2, QTableWidgetItem(event.family or ""))
+        finally:
+            self.schedule_table.blockSignals(False)
+        self.refresh_schedule_preview_labels()
 
     def add_schedule_row(self) -> None:
         row_index = self.schedule_table.rowCount()
@@ -1180,27 +1237,36 @@ class TumorGrowthPredictorWindow(QMainWindow):
         self.schedule_table.setItem(row_index, 0, QTableWidgetItem("0"))
         self.schedule_table.setItem(row_index, 1, QTableWidgetItem("1"))
         self.schedule_table.setItem(row_index, 2, QTableWidgetItem(default_family))
+        self.refresh_schedule_preview_labels()
 
     def remove_selected_schedule_rows(self) -> None:
         rows = sorted({item.row() for item in self.schedule_table.selectedItems()}, reverse=True)
         for row in rows:
             self.schedule_table.removeRow(row)
+        self.refresh_schedule_preview_labels()
 
     def clear_schedule(self) -> None:
         self.schedule_table.setRowCount(0)
+        self.refresh_schedule_preview_labels()
 
     def schedule_from_table(self) -> list[TreatmentFraction]:
         return self._schedule_from_widget(self.schedule_table, "schedule")
 
     def populate_comparison_schedule_table(self, schedule: Sequence[TreatmentFraction]) -> None:
-        self.comparison_schedule_table.setRowCount(len(schedule))
-        for row_index, event in enumerate(schedule):
-            self.comparison_schedule_table.setItem(row_index, 0, QTableWidgetItem(f"{event.day:.6g}"))
-            self.comparison_schedule_table.setItem(row_index, 1, QTableWidgetItem(f"{event.dose:g}"))
-            self.comparison_schedule_table.setItem(row_index, 2, QTableWidgetItem(event.family or ""))
+        self.comparison_schedule_table.blockSignals(True)
+        try:
+            self.comparison_schedule_table.setRowCount(len(schedule))
+            for row_index, event in enumerate(schedule):
+                self.comparison_schedule_table.setItem(row_index, 0, QTableWidgetItem(f"{event.day:.6g}"))
+                self.comparison_schedule_table.setItem(row_index, 1, QTableWidgetItem(f"{event.dose:g}"))
+                self.comparison_schedule_table.setItem(row_index, 2, QTableWidgetItem(event.family or ""))
+        finally:
+            self.comparison_schedule_table.blockSignals(False)
+        self.refresh_schedule_preview_labels()
 
     def clear_comparison_schedule(self) -> None:
         self.comparison_schedule_table.setRowCount(0)
+        self.refresh_schedule_preview_labels()
         self.clear_comparison_outputs()
 
     def copy_current_schedule_to_comparison(self) -> None:
@@ -1700,8 +1766,20 @@ class TumorGrowthPredictorWindow(QMainWindow):
         rows = list(self.scenario_comparison_report.rows)
         current_row = next((row for row in rows if row.scenario == "Current"), None)
         alternative_row = next((row for row in rows if row.scenario == alternative_name), None)
+        current_schedule = self.schedule_from_table()
+        alternative_schedule = self.comparison_schedule_from_table()
 
         lines: list[str] = []
+        if len(current_schedule) >= 2:
+            lines.append(
+                "Current intervals: "
+                + format_schedule_intervals([event.day for event in current_schedule])
+            )
+        if len(alternative_schedule) >= 2:
+            lines.append(
+                f"{alternative_name} intervals: "
+                + format_schedule_intervals([event.day for event in alternative_schedule])
+            )
         if current_row is not None and alternative_row is not None:
             same_dose = abs(current_row.total_physical_dose - alternative_row.total_physical_dose) <= 1.0e-9
             lines.append(
@@ -2049,6 +2127,9 @@ class TumorGrowthPredictorWindow(QMainWindow):
         lines = []
         frame_mode = str(self.frame_mode_combo.currentData() or "daily")
         schedule = self.schedule_from_table()
+        interval_schedule_label = "-"
+        if len(schedule) >= 2:
+            interval_schedule_label = format_schedule_intervals([event.day for event in schedule])
         tcp_summary_line: str | None = None
         schedule_sf_line: str | None = None
         initial_volume_line: str | None = None
@@ -2143,6 +2224,7 @@ class TumorGrowthPredictorWindow(QMainWindow):
 
         if schedule:
             lines.append("")
+            lines.append(f"Interval schedule = {interval_schedule_label}")
             lines.append("Dose schedule:")
             for event in schedule:
                 family_suffix = f" | family={event.family}" if event.family else ""

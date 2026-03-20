@@ -16,6 +16,8 @@ from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_
     TumorExperiment,
     analyze_fitter,
     analyze_files,
+    format_interval_values_days,
+    format_schedule_intervals,
     infer_radiation_family,
     is_control_file,
     parse_cli,
@@ -28,6 +30,18 @@ from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_
 
 
 class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
+    def test_format_interval_values_days_uses_operator_friendly_units(self) -> None:
+        self.assertEqual(
+            format_interval_values_days((1.0 / 24.0, 1.0, 1.0 / 48.0)),
+            "t=1 ч./1 сут./30 мин.",
+        )
+
+    def test_format_schedule_intervals_formats_mixed_schedule_as_t_expression(self) -> None:
+        self.assertEqual(
+            format_schedule_intervals((0.0, 1.0 / 24.0, 25.0 / 24.0, 26.0 / 24.0)),
+            "t=1 ч./1 сут./1 ч.",
+        )
+
     def test_fit_recovers_alpha_beta_from_two_regimens(self) -> None:
         expected_alpha = 0.12
         expected_beta = 0.03
@@ -274,6 +288,19 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertAlmostEqual(schedule_days[1], 1.0 / 24.0, places=8)
         self.assertAlmostEqual(schedule_days[2], 2.0 / 24.0, places=8)
 
+    def test_parse_schedule_days_supports_mixed_units_in_one_token(self) -> None:
+        schedule_days, has_explicit_timing = parse_schedule_days(
+            ["y = 4 Гр", "y = 4 Гр", "y = 4 Гр", "y = 4 Гр", "t = 1 ч./1 сут./1 ч."],
+            fractions=(4.0, 4.0, 4.0, 4.0),
+        )
+
+        self.assertTrue(has_explicit_timing)
+        self.assertEqual(len(schedule_days), 4)
+        self.assertAlmostEqual(schedule_days[0], 0.0, places=8)
+        self.assertAlmostEqual(schedule_days[1], 1.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[2], 25.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[3], 26.0 / 24.0, places=8)
+
     def test_parse_irradiation_durations_hours_repeats_single_value(self) -> None:
         durations = parse_irradiation_durations_hours(
             ["y = 4 Gy", "y = 4 Gy", "tau = 30 min"],
@@ -281,6 +308,14 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         )
 
         self.assertEqual(durations, (0.5, 0.5))
+
+    def test_parse_irradiation_durations_hours_supports_mixed_units_in_one_token(self) -> None:
+        durations = parse_irradiation_durations_hours(
+            ["y = 4 Gy", "y = 4 Gy", "y = 4 Gy", "tau = 30 min/1 hr/1 day"],
+            fractions=(4.0, 4.0, 4.0),
+        )
+
+        self.assertEqual(durations, (0.5, 1.0, 24.0))
 
     def test_quadratic_term_with_finite_irradiation_duration_reduces_self_term(self) -> None:
         experiment = TumorExperiment(

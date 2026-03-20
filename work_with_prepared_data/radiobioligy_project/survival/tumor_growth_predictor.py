@@ -4,14 +4,15 @@
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass
 from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 from scipy.optimize import curve_fit
 
-NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
+from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor import (
+    extract_time_values,
+)
 
 
 @dataclass(frozen=True)
@@ -159,28 +160,7 @@ def parse_irradiation_intervals_days(experiment_params: Sequence[str]) -> list[f
     """Extract irradiation intervals from metadata tokens like ``t = 1 ч``."""
     intervals: list[float] = []
     for raw_token in experiment_params:
-        token = str(raw_token).strip().lower().replace(",", ".")
-        if token.startswith("irradiation time="):
-            token = token.split("=", 1)[1].strip()
-        if "t" not in token or "=" not in token:
-            continue
-        if not re.search(r"\bt\s*=", token):
-            continue
-
-        values = [float(value) for value in NUMBER.findall(token)]
-        if not values:
-            continue
-
-        factor = 1.0
-        if any(unit in token for unit in ("ч", "час", "hour", "hours", "hr", "hrs")):
-            factor = 1.0 / 24.0
-        elif any(unit in token for unit in ("мин", "minute", "minutes", "min", "mins")):
-            factor = 1.0 / (24.0 * 60.0)
-        elif any(unit in token for unit in ("сут", "дн", "день", "дня", "дней", "day", "days")):
-            factor = 1.0
-
-        intervals.extend(value * factor for value in values if np.isfinite(value) and value >= 0.0)
-
+        intervals.extend(extract_time_values(str(raw_token), require_t_token=True, output_unit="days"))
     return intervals
 
 
