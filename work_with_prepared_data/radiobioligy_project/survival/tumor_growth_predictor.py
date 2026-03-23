@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Iterable, Mapping, Sequence
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -13,6 +13,11 @@ from scipy.optimize import curve_fit
 from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor import (
     extract_time_values,
 )
+
+if TYPE_CHECKING:
+    from work_with_prepared_data.radiobioligy_project.survival.voxel_sf_calculator import (
+        VolumetricSFResult,
+    )
 
 
 @dataclass(frozen=True)
@@ -234,6 +239,20 @@ def _resolve_fraction_parameters(
     return family_parameters[family_key]
 
 
+def _override_parameters_with_volumetric_sf(
+    parameters: GrowthModelParameters,
+    volumetric_sf: VolumetricSFResult | None,
+) -> GrowthModelParameters:
+    """Replace alpha/beta with volume-aggregated values when provided."""
+    if volumetric_sf is None:
+        return parameters
+    return replace(
+        parameters,
+        alpha=float(volumetric_sf.effective_alpha),
+        beta=float(volumetric_sf.effective_beta),
+    )
+
+
 def predict_schedule_surviving_fraction(
     schedule: Sequence[TreatmentFraction],
     parameters: GrowthModelParameters,
@@ -411,6 +430,7 @@ def simulate_growth(
     schedule: Sequence[TreatmentFraction],
     scaling_model: GeometryScalingModel | None = None,
     family_parameters: Mapping[str, GrowthModelParameters] | None = None,
+    volumetric_sf: VolumetricSFResult | None = None,
 ) -> GrowthSimulationResult:
     """Simulate tumor dynamics with Gompertz growth, LQ kill, and delayed clearance."""
     times = np.asarray(sample_times, dtype=float)
@@ -422,6 +442,7 @@ def simulate_growth(
         raise ValueError("sample_times must be sorted in ascending order.")
     if reference.volume <= 0.0:
         raise ValueError("Reference volume must be positive.")
+    parameters = _override_parameters_with_volumetric_sf(parameters, volumetric_sf)
     if parameters.carrying_capacity <= reference.volume:
         raise ValueError("carrying_capacity must exceed the reference volume.")
 

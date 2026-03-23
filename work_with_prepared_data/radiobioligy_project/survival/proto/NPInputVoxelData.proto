@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package NPLibrary;
+
+message ContourMeta {
+  map<int32, string> voxelStructureNames = 1;
+  map<int32, double> voxelDoseTargets = 2;
+  map<int32, double> voxelHighDoseLimits = 3;
+}
+
+
+message InputVoxelEntry {
+  int32 vId = 1;
+  string materialName = 2;
+  double density = 3;
+  double mev2gyConversion = 4;
+  double voxelStructureMarker = 5;
+  map<int32, int32> voxelStructureId = 6;
+}
+
+message InputVoxelMap {
+  map<int32, InputVoxelEntry> voxData = 1;
+  int32 xLen = 2;
+  int32 yLen = 3;
+  int32 zLen = 4;
+  double xSize = 5;
+  double ySize = 6;
+  double zSize = 7;
+  map<int32, string> matList = 8;
+  int32 origXLen = 9;
+  int32 origYLen = 10;
+  double origXSize = 11;
+  double origYSize = 12;
+}
+

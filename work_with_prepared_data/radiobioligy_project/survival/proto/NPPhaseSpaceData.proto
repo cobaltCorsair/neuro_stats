@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package NPLibrary;
+
+message singlePhaseSpaceEntry {
+  int32 pid = 1;
+  double ene = 2;
+  float x = 3;
+  float y = 4;
+  float z = 5;
+  float ux = 6;
+  float uy = 7;
+  float uz = 9;
+}
+
+message totPhaseSpaceMap {
+  repeated singlePhaseSpaceEntry phaseSpaceMap = 1;
+}
+

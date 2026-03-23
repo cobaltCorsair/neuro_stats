@@ -1,7 +1,8 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QComboBox
 
 from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_gui import (
     FitAlphaBetaWindow,
@@ -200,6 +201,41 @@ class FitAlphaBetaGuiWindowTests(unittest.TestCase):
             window.growth_predictor_window.windowTitle(),
             "Tumor growth predictor",
         )
+
+    def test_apply_default_control_to_all_does_not_scan_inventory_immediately(self) -> None:
+        window = FitAlphaBetaWindow()
+        window.control_combo.clear()
+        window.control_combo.addItem("control_a.xlsx", "control_a")
+        window.control_combo.addItem("control_b.xlsx", "control_b")
+        window.control_combo.setCurrentIndex(1)
+
+        window.assignment_table.setRowCount(2)
+        for row_index in range(2):
+            combo = QComboBox()
+            combo.addItem("control_a.xlsx", "control_a")
+            combo.addItem("control_b.xlsx", "control_b")
+            combo.currentIndexChanged.connect(window.on_assignment_control_changed)
+            window.assignment_table.setCellWidget(row_index, 2, combo)
+
+        with patch.object(window, "scan_inventory") as scan_mock:
+            window.apply_default_control_to_all()
+
+        self.assertEqual(scan_mock.call_count, 0)
+        self.assertTrue(window.inventory_stale)
+        for row_index in range(2):
+            combo = window.assignment_table.cellWidget(row_index, 2)
+            self.assertIsNotNone(combo)
+            self.assertEqual(combo.currentData(), "control_b")
+
+    def test_on_assignment_control_changed_marks_inventory_stale(self) -> None:
+        window = FitAlphaBetaWindow()
+        window.inventory_stale = False
+
+        with patch.object(window, "scan_inventory") as scan_mock:
+            window.on_assignment_control_changed()
+
+        self.assertEqual(scan_mock.call_count, 0)
+        self.assertTrue(window.inventory_stale)
 
     def test_build_sf_metric_table_rows_formats_numeric_columns(self) -> None:
         rows = build_sf_metric_table_rows(

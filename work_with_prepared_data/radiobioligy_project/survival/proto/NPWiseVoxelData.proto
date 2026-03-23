@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package NPLibrary;
+
+message singleVoxelEntry {
+  int32 vId = 1;
+  double depEnergy = 2;
+  double depEnergy2 = 3;
+  double letBase = 4;
+  double letBase2 = 5;
+  int64 nEvents = 6;
+  double letd = 7;
+  double mev2gy = 8;
+  double dose = 9;
+  double scaledDose = 10;
+  double lnSurvivalAtScaledDose = 11;
+  double doseGyEQD = 12;
+}
+
+message totDoseVoxelMap {
+  map<int32, singleVoxelEntry> totDose = 1;
+}
+
+message fullVoxelMap {
+  map<int32, singleVoxelEntry> totDose = 1;
+  map<int32, singleVoxelEntry> protonDose = 2;
+  map<int32, singleVoxelEntry> midDose = 3;
+  map<int32, singleVoxelEntry> mainDose = 4;
+  map<int32, singleVoxelEntry> stuffDose = 5;
+}
+
+message singleVoxelDoseHandler {
+  int32 vId = 1;
+  double depEnergy = 2;
+  double depRelError = 3;
+  double mev2gy = 4;
+  double pDose = 5;
+}
+
+message singleVoxelDoseLetHandler {
+  int32 vId = 1;
+  double depEnergy = 2;
+  double depRelError = 3;
+  double letd = 4;
+  double letdRelError = 5;
+  double mev2gy = 6;
+  double pDose = 7;
+}
+
+message dummyValue {
+  int32 vId = 1;
+  double value = 2;
+  double value2 = 3;
+  int64 nEvents = 4;
+}
+

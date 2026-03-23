@@ -655,6 +655,67 @@ def build_tcp_curve(
     return tuple(rows)
 
 
+def export_bed_eqd2_table(
+    fit_results: Mapping[str, LQFitResult],
+    dose_grid: np.ndarray = np.arange(0.5, 25.1, 0.5),
+    fractions: Sequence[int] = (1, 3, 5, 10, 20, 30),
+    reference_ab: float = 2.0,
+    output_csv: Optional[Path] = None,
+) -> pd.DataFrame:
+    """Build a BED/EQD2 table for one or more fitted radiation families."""
+    if reference_ab <= 0.0:
+        raise ValueError("reference_ab must be positive.")
+
+    rows: list[dict[str, float | str]] = []
+    for family, result in fit_results.items():
+        family_label = str(family).strip().lower() or (result.family or "unknown")
+        alpha_beta_ratio = _result_alpha_beta_ratio_for_export(result, family_label)
+        if alpha_beta_ratio is None or not np.isfinite(alpha_beta_ratio) or alpha_beta_ratio <= 0.0:
+            continue
+        for n_fractions in fractions:
+            n_fractions = int(n_fractions)
+            if n_fractions <= 0:
+                continue
+            for total_dose in np.asarray(dose_grid, dtype=float):
+                if not np.isfinite(total_dose) or total_dose < 0.0:
+                    continue
+                dose_per_fraction = float(total_dose) / float(n_fractions)
+                bed = float(total_dose * (1.0 + dose_per_fraction / alpha_beta_ratio))
+                eqd2 = float(bed / (1.0 + 2.0 / reference_ab))
+                rows.append(
+                    {
+                        "family": family_label,
+                        "model_kind": result.model_kind,
+                        "alpha": float(result.alpha),
+                        "beta": float(result.beta),
+                        "alpha_beta_ratio": float(alpha_beta_ratio),
+                        "n_fractions": float(n_fractions),
+                        "total_dose_gy": float(total_dose),
+                        "dose_per_fraction_gy": dose_per_fraction,
+                        "bed": bed,
+                        "eqd2": eqd2,
+                    }
+                )
+
+    frame = pd.DataFrame(rows)
+    if output_csv is not None:
+        output_csv = Path(output_csv)
+        output_csv.parent.mkdir(parents=True, exist_ok=True)
+        frame.to_csv(output_csv, index=False)
+    return frame
+
+
+def _result_alpha_beta_ratio_for_export(
+    result: LQFitResult,
+    family_label: str,
+) -> Optional[float]:
+    if result.beta <= 0.0:
+        return None
+    if result.model_kind == "let_dependent":
+        return float(result.effective_alpha(family=family_label) / result.beta)
+    return float(result.alpha / result.beta)
+
+
 def prediction_rmse(
     simulation_result: GrowthSimulationResult,
     observed_days: Sequence[float],

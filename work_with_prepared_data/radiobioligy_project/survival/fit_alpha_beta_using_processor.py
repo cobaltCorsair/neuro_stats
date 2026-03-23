@@ -36,6 +36,16 @@ from work_with_prepared_data.radiobioligy_project.data_processing.data_processin
 from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import (
     process_tumor_data_excel,
 )
+try:
+    from work_with_prepared_data.radiobioligy_project.survival.let_parametrization import (
+        LETDependentParams,
+        fit_let_dependence as fit_family_let_dependence,
+    )
+except ModuleNotFoundError:
+    from survival.let_parametrization import (
+        LETDependentParams,
+        fit_let_dependence as fit_family_let_dependence,
+    )
 
 RegimenKind = Literal["all", "single", "fractionated"]
 ValidationKind = Literal["none", "all", "single", "fractionated"]
@@ -86,6 +96,8 @@ INLINE_BOOTSTRAP = 0
 INLINE_BOOTSTRAP_SEED: Optional[int] = None
 INLINE_RESPONSE_MODE: ResponseMode = "scalar"
 INLINE_MODEL_KIND: RequestedModelKind = "auto"
+INLINE_LET_FIT = False
+INLINE_LET_VALUES: Optional[str] = None
 INLINE_COMPARE_MODELS = False
 INLINE_CROSS_VALIDATE_LOO = True
 INLINE_VERBOSE = True
@@ -556,6 +568,34 @@ def resolve_requested_families(
             return [family] if family in available_families else []
         return list(available_families)
     return [family]
+
+
+def parse_family_let_values(let_values: Optional[str]) -> Dict[str, float]:
+    """Parse CLI overrides like ``y=0.3,p=12.0,n=45.0`` into a family -> LET map."""
+    parsed = dict(FAMILY_LET_DEFAULTS)
+    if let_values is None or not let_values.strip():
+        return parsed
+
+    for chunk in let_values.split(","):
+        item = chunk.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError(
+                f"Invalid LET assignment '{item}'. Expected comma-separated family=value pairs."
+            )
+        family_token, value_token = item.split("=", 1)
+        family = normalize_family(family_token)
+        if family is None:
+            raise ValueError(f"Invalid family label in LET assignment '{item}'.")
+        try:
+            let_value = float(value_token.strip().replace(",", "."))
+        except ValueError as exc:
+            raise ValueError(f"Invalid LET value in assignment '{item}'.") from exc
+        if not np.isfinite(let_value) or let_value < 0.0:
+            raise ValueError(f"LET value must be a finite non-negative number in '{item}'.")
+        parsed[family] = float(let_value)
+    return parsed
 
 
 def infer_radiation_family(path: Path) -> Optional[str]:
@@ -3625,6 +3665,14 @@ class Fitter:
             repopulation_rate=repopulation_rate,
         )
 
+    def fit_let_dependence(
+        self,
+        family_results: Mapping[str, LQFitResult],
+        family_lets: Mapping[str, float],
+    ) -> LETDependentParams:
+        """Fit alpha(LET) and beta(LET) from family-specific LQ fit results."""
+        return fit_family_let_dependence(family_results, family_lets)
+
     @staticmethod
     def _aic_from_rss(rss: float, point_count: int, parameter_count: int) -> Optional[float]:
         if point_count <= 0 or parameter_count < 0 or rss <= 0.0:
@@ -4779,6 +4827,49 @@ def report_analysis_run(fitter: Fitter, run: AnalysisRunResult) -> None:
             print(line)
 
 
+def collect_family_fit_results(run_results: Sequence[AnalysisRunResult]) -> Dict[str, LQFitResult]:
+    """Pick one successful fit result per family, preferring the largest training subset."""
+    collected: Dict[str, LQFitResult] = {}
+    for run in run_results:
+        if run.fit_result is None:
+            continue
+        family = normalize_family(run.summary.family or run.fit_result.family)
+        if family is None:
+            continue
+        current = collected.get(family)
+        if current is None or run.fit_result.train_count >= current.train_count:
+            collected[family] = run.fit_result
+    return collected
+
+
+def report_let_parametrization(
+    params: LETDependentParams,
+    family_lets: Mapping[str, float],
+) -> None:
+    """Print the fitted LET-dependent alpha/beta parametrization."""
+    print("\n# LET parametrization:")
+    print(
+        f"families={','.join(params.family_order)} "
+        f"alpha_0={params.alpha_0:.6f} "
+        f"lambda_alpha={params.lambda_alpha:.6f} "
+        f"beta_0={params.beta_0:.6f} "
+        f"lambda_beta={params.lambda_beta:.6f}"
+    )
+    if params.alpha_r_squared is not None and np.isfinite(params.alpha_r_squared):
+        print(f"alpha_r_squared={params.alpha_r_squared:.6f}")
+    if params.beta_r_squared is not None and np.isfinite(params.beta_r_squared):
+        print(f"beta_r_squared={params.beta_r_squared:.6f}")
+    for family in params.family_order:
+        let_value = family_lets.get(family)
+        if let_value is None:
+            continue
+        print(
+            f"  family={family:>7s} LET={float(let_value):8.3f} keV/um "
+            f"alpha={params.alpha(let_value):.6f} beta={params.beta(let_value):.6f} "
+            f"alpha_beta={params.alpha_beta_ratio(let_value):.6f}"
+        )
+
+
 def parse_cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fit alpha and beta from normalized tumor-volume curves."
@@ -4853,6 +4944,21 @@ def parse_cli() -> argparse.Namespace:
         ),
         default="auto",
         help="Model family to fit (default: auto)",
+    )
+    parser.add_argument(
+        "--let-fit",
+        action="store_true",
+        help=(
+            "After per-family LQ fits, derive a linear alpha(LET), beta(LET) parametrization "
+            "across families."
+        ),
+    )
+    parser.add_argument(
+        "--let-values",
+        help=(
+            "Override family LET levels as comma-separated family=value pairs, "
+            "for example: y=0.3,p=12.0,n=45.0,c=180.0"
+        ),
     )
     parser.add_argument(
         "--compare-models",
@@ -4934,6 +5040,8 @@ def run_fit(
     min_sf: float,
     response_mode: ResponseMode,
     requested_model_kind: RequestedModelKind,
+    let_fit: bool,
+    let_values: Optional[str],
     compare_models: bool,
     cross_validate_loo: bool,
     fit_kind: RegimenKind,
@@ -4976,6 +5084,19 @@ def run_fit(
     for run in results:
         report_analysis_run(fitter, run)
 
+    if let_fit:
+        family_fit_results = collect_family_fit_results(results)
+        family_let_map = parse_family_let_values(let_values)
+        try:
+            let_params = fitter.fit_let_dependence(
+                family_results=family_fit_results,
+                family_lets=family_let_map,
+            )
+        except ValueError as exc:
+            print(f"\n# LET parametrization skipped: {exc}")
+        else:
+            report_let_parametrization(let_params, family_let_map)
+
     if by_family and summaries:
         fitter.report_analysis_summaries(summaries)
     if summary_csv and summaries:
@@ -4997,6 +5118,8 @@ def main() -> None:
             min_sf=INLINE_MIN_SF,
             response_mode=INLINE_RESPONSE_MODE,
             requested_model_kind=INLINE_MODEL_KIND,
+            let_fit=INLINE_LET_FIT,
+            let_values=INLINE_LET_VALUES,
             compare_models=INLINE_COMPARE_MODELS,
             cross_validate_loo=INLINE_CROSS_VALIDATE_LOO,
             fit_kind=INLINE_FIT_KIND,
@@ -5024,6 +5147,8 @@ def main() -> None:
         min_sf=args.min_sf,
         response_mode=args.response_mode,
         requested_model_kind=args.model_kind,
+        let_fit=args.let_fit,
+        let_values=args.let_values,
         compare_models=args.compare_models,
         cross_validate_loo=args.cross_validate_loo,
         fit_kind=args.fit_kind,

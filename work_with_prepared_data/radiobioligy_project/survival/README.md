@@ -322,6 +322,21 @@ Important interpretation notes:
 - sensitivity analysis uses predictor `total-volume RMSE` as the score.
 - interval sensitivity is most informative when timing can actually change the predicted curve, for example via repair, clearance, growth, or sub-day observations.
 
+## GEANT4 Prediction Pipeline
+
+The module [pipeline_geant4_to_prediction.py](/C:/dev/neuro_stats/work_with_prepared_data/radiobioligy_project/survival/pipeline_geant4_to_prediction.py) closes the full bridge:
+
+- GEANT4 voxel dose protobuf -> `DoseMap`
+- voxel-level `SF/BED` -> structure-level aggregation
+- aggregated `alpha/beta` -> tumor growth prediction
+- CSV/JSON export for downstream analysis
+
+The Windows launcher [run_geant4_pipeline.bat](/C:/dev/neuro_stats/work_with_prepared_data/radiobioligy_project/survival/run_geant4_pipeline.bat) forwards arguments to the CLI entry point.
+The fitter GUI also exposes a `GEANT4 pipeline` button, which opens a dedicated window for selecting `dose.pb`, `geometry.ivz`, radiobiology source, and output directory without leaving the interface.
+`contour_path` may now point either to `ContourMeta.pb` or to a binary 3D Slicer `NIfTI` mask that has already been resampled to the GEANT4 voxel grid.
+
+For a focused operator guide with single-field and mixed-field examples, see [GEANT4_PIPELINE_CLI.md](/C:/dev/neuro_stats/work_with_prepared_data/radiobioligy_project/survival/GEANT4_PIPELINE_CLI.md).
+
 ## GUI
 
 Launch:

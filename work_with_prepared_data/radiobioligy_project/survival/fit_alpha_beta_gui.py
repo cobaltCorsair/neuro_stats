@@ -57,6 +57,9 @@ from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_
     is_control_file,
     parse_sf_modes,
 )
+from work_with_prepared_data.radiobioligy_project.survival.geant4_pipeline_gui import (
+    Geant4PipelineWindow,
+)
 from work_with_prepared_data.radiobioligy_project.survival.gui_csv_export import (
     related_csv_path,
     write_csv_rows,
@@ -588,7 +591,10 @@ class FitAlphaBetaWindow(QMainWindow):
         super().__init__()
         self.run_results: List[AnalysisRunResult] = []
         self.inventory_report: Optional[InventoryReport] = None
+        self.inventory_stale = False
+        self._suspend_assignment_inventory_refresh = False
         self.growth_predictor_window: Optional[TumorGrowthPredictorWindow] = None
+        self.geant4_pipeline_window: Optional[Geant4PipelineWindow] = None
         self.rbe_points: List[RBEPoint] = []
         self.sf_metric_rows: List[SFMetricComparisonRow] = []
         self.let_fit_result: Optional[LQFitResult] = None
@@ -656,6 +662,10 @@ class FitAlphaBetaWindow(QMainWindow):
         self.predictor_button.clicked.connect(self.open_growth_predictor)
         layout.addWidget(self.predictor_button)
 
+        self.geant4_pipeline_button = QPushButton("GEANT4 pipeline")
+        self.geant4_pipeline_button.clicked.connect(self.open_geant4_pipeline)
+        layout.addWidget(self.geant4_pipeline_button)
+
         tabs = QTabWidget(self)
 
         files_page = QWidget(self)
@@ -687,6 +697,22 @@ class FitAlphaBetaWindow(QMainWindow):
         self.growth_predictor_window.show()
         self.growth_predictor_window.raise_()
         self.growth_predictor_window.activateWindow()
+
+    def open_geant4_pipeline(self) -> None:
+        summary_csv_path = self.summary_csv_edit.text().strip() or None
+        if self.geant4_pipeline_window is None:
+            self.geant4_pipeline_window = Geant4PipelineWindow(
+                self.run_results,
+                summary_csv_path=summary_csv_path,
+            )
+        else:
+            self.geant4_pipeline_window.set_context(
+                self.run_results,
+                summary_csv_path=summary_csv_path,
+            )
+        self.geant4_pipeline_window.show()
+        self.geant4_pipeline_window.raise_()
+        self.geant4_pipeline_window.activateWindow()
 
     def _build_file_group(self) -> QGroupBox:
         group = QGroupBox("Files and controls", self)
@@ -1538,36 +1564,50 @@ class FitAlphaBetaWindow(QMainWindow):
         self.control_combo.blockSignals(False)
         self.apply_default_control_button.setEnabled(bool(controls and experiments))
 
-        self.assignment_table.setRowCount(len(experiments))
-        for row_index, experiment_path in enumerate(experiments):
-            experiment_item = QTableWidgetItem(experiment_path.name)
-            experiment_item.setData(Qt.ItemDataRole.UserRole, str(experiment_path))
-            experiment_item.setToolTip(str(experiment_path))
+        self.assignment_table.setUpdatesEnabled(False)
+        try:
+            self.assignment_table.setRowCount(len(experiments))
+            for row_index, experiment_path in enumerate(experiments):
+                experiment_item = QTableWidgetItem(experiment_path.name)
+                experiment_item.setData(Qt.ItemDataRole.UserRole, str(experiment_path))
+                experiment_item.setToolTip(str(experiment_path))
 
-            family_item = QTableWidgetItem(infer_radiation_family(experiment_path) or "-")
+                family_item = QTableWidgetItem(infer_radiation_family(experiment_path) or "-")
 
-            selected_value: object = UNASSIGNED_CONTROL
-            if experiment_path in previous_assignments:
-                previous_control = previous_assignments[experiment_path]
-                if previous_control is None:
-                    selected_value = USE_ALL_CONTROLS
+                selected_value: object = UNASSIGNED_CONTROL
+                if experiment_path in previous_assignments:
+                    previous_control = previous_assignments[experiment_path]
+                    if previous_control is None:
+                        selected_value = USE_ALL_CONTROLS
+                    else:
+                        selected_value = str(previous_control)
                 else:
-                    selected_value = str(previous_control)
-            else:
-                default_value = self.control_combo.currentData()
-                if default_value not in (None, UNASSIGNED_CONTROL):
-                    selected_value = default_value
+                    default_value = self.control_combo.currentData()
+                    if default_value not in (None, UNASSIGNED_CONTROL):
+                        selected_value = default_value
 
-            combo = self._create_assignment_combo(
-                controls=controls,
-                selected_value=selected_value,
-                allow_average=len(controls) > 1,
-            )
-            combo.currentIndexChanged.connect(lambda *_args: self.scan_inventory())
+                combo = self._create_assignment_combo(
+                    controls=controls,
+                    selected_value=selected_value,
+                    allow_average=len(controls) > 1,
+                )
+                combo.currentIndexChanged.connect(self.on_assignment_control_changed)
 
-            self.assignment_table.setItem(row_index, 0, experiment_item)
-            self.assignment_table.setItem(row_index, 1, family_item)
-            self.assignment_table.setCellWidget(row_index, 2, combo)
+                self.assignment_table.setItem(row_index, 0, experiment_item)
+                self.assignment_table.setItem(row_index, 1, family_item)
+                self.assignment_table.setCellWidget(row_index, 2, combo)
+        finally:
+            self.assignment_table.setUpdatesEnabled(True)
+
+    def on_assignment_control_changed(self) -> None:
+        if self._suspend_assignment_inventory_refresh:
+            return
+        self.mark_inventory_stale("Control mapping updated. Click Inventory to refresh readiness summary.")
+
+    def mark_inventory_stale(self, message: Optional[str] = None) -> None:
+        self.inventory_stale = True
+        if message:
+            self.statusBar().showMessage(message)
 
     def apply_default_control_to_all(self) -> None:
         selected_value = self.control_combo.currentData()
@@ -1579,15 +1619,29 @@ class FitAlphaBetaWindow(QMainWindow):
             )
             return
 
-        for row_index in range(self.assignment_table.rowCount()):
-            combo = self.assignment_table.cellWidget(row_index, 2)
-            if combo is None:
-                continue
-            for combo_index in range(combo.count()):
-                if combo.itemData(combo_index) == selected_value:
-                    combo.setCurrentIndex(combo_index)
-                    break
-        self.scan_inventory()
+        self._suspend_assignment_inventory_refresh = True
+        self.assignment_table.setUpdatesEnabled(False)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            for row_index in range(self.assignment_table.rowCount()):
+                combo = self.assignment_table.cellWidget(row_index, 2)
+                if combo is None:
+                    continue
+                for combo_index in range(combo.count()):
+                    if combo.itemData(combo_index) == selected_value:
+                        combo.blockSignals(True)
+                        try:
+                            combo.setCurrentIndex(combo_index)
+                        finally:
+                            combo.blockSignals(False)
+                        break
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.assignment_table.setUpdatesEnabled(True)
+            self._suspend_assignment_inventory_refresh = False
+        self.mark_inventory_stale(
+            "Default control applied to all experiments. Click Inventory to refresh readiness summary."
+        )
 
     def run_analysis(self) -> None:
         loaded_paths = self.loaded_paths()
@@ -2572,6 +2626,7 @@ class FitAlphaBetaWindow(QMainWindow):
 
     def clear_inventory(self) -> None:
         self.inventory_report = None
+        self.inventory_stale = False
         self.inventory_table.setRowCount(0)
         self.inventory_text.clear()
 
@@ -2595,6 +2650,7 @@ class FitAlphaBetaWindow(QMainWindow):
 
         self.populate_inventory_table(self.inventory_report)
         self.inventory_text.setPlainText(self.build_inventory_summary_text(self.inventory_report))
+        self.inventory_stale = False
         self.statusBar().showMessage(
             f"Inventory scanned: {self.inventory_report.experiment_count} experiment file(s), "
             f"{self.inventory_report.control_count} control file(s)."

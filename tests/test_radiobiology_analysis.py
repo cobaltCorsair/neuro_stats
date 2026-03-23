@@ -25,6 +25,7 @@ from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis
     compute_rbe_let,
     compute_tcp,
     compute_rbe,
+    export_bed_eqd2_table,
     fit_ntcp_lkb_from_groups,
     summarize_skin_reaction_file,
 )
@@ -175,6 +176,43 @@ class RadiobiologyAnalysisTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0].dose_total, 2.0)
         self.assertEqual(rows[1].dose_total, 10.0)
+
+    def test_export_bed_eqd2_table_writes_csv_and_uses_reference_ab(self) -> None:
+        fits = {
+            "y": LQFitResult(
+                alpha=0.30,
+                beta=0.03,
+                train_count=3,
+                train_kind="all",
+                family="y",
+                sf_mode="absolute",
+            ),
+            "p_peak": LQFitResult(
+                alpha=0.18,
+                beta=0.02,
+                train_count=3,
+                train_kind="all",
+                family="p_peak",
+                sf_mode="absolute",
+            ),
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "bed_eqd2.csv"
+            frame = export_bed_eqd2_table(
+                fits,
+                dose_grid=np.array([2.0, 10.0]),
+                fractions=(1, 5),
+                reference_ab=2.0,
+                output_csv=csv_path,
+            )
+
+            self.assertTrue(csv_path.exists())
+            self.assertEqual(len(frame), 8)
+            first_row = frame[(frame["family"] == "y") & (frame["n_fractions"] == 5.0) & (frame["total_dose_gy"] == 10.0)].iloc[0]
+            self.assertAlmostEqual(first_row["dose_per_fraction_gy"], 2.0, places=8)
+            self.assertAlmostEqual(first_row["bed"], 12.0, places=8)
+            self.assertAlmostEqual(first_row["eqd2"], 6.0, places=8)
 
     def test_build_ntcp_curve_returns_one_row_per_dose(self) -> None:
         rows = build_ntcp_curve((0.0, 25.0, 50.0), td50=50.0, m=0.2)

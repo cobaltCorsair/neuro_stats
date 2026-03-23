@@ -2,7 +2,7 @@
 
 ## Для чего нужен этот модуль
 
-Модуль `survival` решает две связанные, но разные задачи:
+Модуль `survival` решает три связанные, но разные задачи:
 
 1. `Survival LQ fitter`
    - оценивает эффективные радиобиологические параметры по данным динамики объёма опухоли;
@@ -17,7 +17,14 @@
    - строит 3D-эллипсоид по измерениям `a-b-c`;
    - поддерживает mixed-family расписания, sensitivity analysis и scenario comparison.
 
-Это руководство описывает работу с обоими окнами и типовые пользовательские сценарии.
+3. `GEANT4 prediction pipeline`
+   - принимает `totDoseVoxelMap.pb` или `fullVoxelMap.pb` вместе с геометрией `InputVoxelMap`;
+   - использует fitted/manual/LET-зависимые радиобиологические параметры;
+   - считает `DVH`, voxel-level `SF/BED`, агрегированные `alpha/beta`, `EUD`, `BED/EQD2`;
+   - передаёт volumetric SF в прогноз роста;
+   - сохраняет готовые `CSV/JSON` артефакты для анализа и текста диссертации.
+
+Это руководство описывает работу с fitter, predictor и отдельным окном `GEANT4 pipeline`, а также типовые пользовательские сценарии.
 
 ## Что считается входными данными
 
@@ -81,6 +88,27 @@ Control-файлы распознаются по слову `control` в име�
 
 Если используется `Legacy skin scale`, приложение само переводит её в `RTOG`.
 
+### 5. GEANT4 dose-map файлы
+
+Для `GEANT4 pipeline` используются:
+
+- `totDoseVoxelMap.pb` — суммарная dose-map для single-field сценария;
+- `fullVoxelMap.pb` — набор component dose maps для mixed-field сценария;
+- `InputVoxelMap.ivz` или `.pb` — геометрия voxel grid.
+
+### 6. Contour-файлы для `GEANT4 pipeline`
+
+Поддерживаются два варианта:
+
+- `ContourMeta.pb`;
+- binary `NIfTI` mask (`.nii` или `.nii.gz`) из 3D Slicer.
+
+Важно:
+
+- пока поддерживается одна binary mask на одну target-структуру;
+- mask должна быть заранее приведена к сетке GEANT4, то есть совпадать с `(xLen, yLen, zLen)`;
+- multi-label `NIfTI` пока не поддерживается.
+
 ## Как модуль определяет тип излучения
 
 Приложение автоматически выводит `family` из имени файла.
@@ -132,6 +160,14 @@ Control-файлы распознаются по слову `control` в име�
 - смоделировать mixed-family расписание;
 - анимировать 3D-эллипсоид.
 
+### Используйте `GEANT4 pipeline`, если нужно
+
+- взять расчётную voxel dose-map из GEANT4 и сразу получить радиобиологический прогноз;
+- применить текущий результат fitter-а, `Summary CSV`, ручные `alpha/beta` или явный `LET`-профиль;
+- рассчитать `DVH`, voxel-level `SF/BED`, `effective alpha/beta`, `EUD`, `BED/EQD2`;
+- прогнать `single-field` или `mixed-field (fullVoxelMap)` сценарий;
+- сохранить результаты в `CSV/JSON` без запуска командной строки.
+
 ## Окно `Survival LQ fitter`
 
 ### Общая логика окна
@@ -140,7 +176,7 @@ Control-файлы распознаются по слову `control` в име�
 
 Слева:
 
-- кнопки `Run fit`, `Inventory`, `Growth predictor`;
+- кнопки `Run fit`, `Inventory`, `Growth predictor`, `GEANT4 pipeline`;
 - вкладки `Files` и `Fit setup`.
 
 Справа:
@@ -155,8 +191,10 @@ Control-файлы распознаются по слову `control` в име�
   - `Inventory`
   - `Summary text`
   - `Analysis`
-  - `TCP`
-  - `NTCP`
+- `TCP`
+- `NTCP`
+
+Кнопка `GEANT4 pipeline` открывает отдельное окно, которое может взять текущие результаты fitter-а как источник радиобиологических параметров без промежуточного ручного экспорта.
 
 ### Вкладка `Files`
 
@@ -1169,6 +1207,281 @@ Control-серию для оценки роста без лечения.
   - регулирует скорость прокрутки;
   - для `Raw timeline` обычно удобнее `8x` или `16x`.
 
+## Окно `GEANT4 prediction pipeline`
+
+Открывается из fitter-а кнопкой:
+
+- `GEANT4 pipeline`
+
+Это отдельное окно для сценария:
+
+- `GEANT4 voxel dose -> radiobiology -> growth prediction`
+
+Его удобно использовать после того, как вы уже сделали fit в `Survival LQ fitter`, но при необходимости можно работать и без fitter-а: через `Summary CSV`, manual `alpha/beta` или явный `LET`-профиль.
+
+## Общая логика `GEANT4 prediction pipeline`
+
+Слева и в центре находятся пять блоков:
+
+- `GEANT4 inputs`
+- `Radiobiology source`
+- `Pipeline options`
+- `Growth model`
+- `Outputs`
+
+Снизу:
+
+- кнопка `Run GEANT4 pipeline`
+
+Внизу окна:
+
+- поле `Run summary`, где после запуска показываются:
+  - источник радиобиологии;
+  - `mean_dose_gy`;
+  - `mean_sf`;
+  - `effective_alpha`;
+  - `effective_beta`;
+  - `equivalent_uniform_dose`;
+  - список сгенерированных файлов.
+
+## Блок `GEANT4 inputs`
+
+Здесь задаются три основных входа:
+
+- `Dose protobuf`
+- `Geometry ivz`
+- `Contour protobuf / NIfTI`
+
+### Что загружать в `Dose protobuf`
+
+Поддерживаются два основных варианта:
+
+- `totDoseVoxelMap.pb` — если у вас один суммарный dose map и single-field расчёт;
+- `fullVoxelMap.pb` — если у вас mixed-field расчёт с отдельными компонентами дозы.
+
+### Что загружать в `Geometry ivz`
+
+Здесь нужен файл геометрии `InputVoxelMap`:
+
+- `.ivz`
+- или `.pb`
+
+Именно он задаёт размер сетки, voxel geometry и привязку индексов.
+
+### Что загружать в `Contour protobuf / NIfTI`
+
+Поддерживаются:
+
+- `ContourMeta.pb`;
+- binary `NIfTI` mask (`.nii` или `.nii.gz`) из 3D Slicer.
+
+Практически это означает:
+
+- если contour уже есть в protobuf-формате, можно использовать его напрямую;
+- если contour был размечен в 3D Slicer, можно экспортировать binary mask и подать её сразу в pipeline;
+- для расчёта по конкретной структуре contour почти всегда нужен.
+
+Ограничения текущей версии:
+
+- поддерживается одна binary mask на одну структуру;
+- mask должна уже совпадать с сеткой GEANT4 по форме `(xLen, yLen, zLen)`;
+- multi-label `NIfTI` сегментации пока не поддерживаются.
+
+## Блок `Radiobiology source`
+
+Здесь выбирается, откуда pipeline берёт радиобиологические параметры.
+
+Поддерживаются режимы:
+
+- `Current fitter results`
+- `Summary CSV`
+- `Manual alpha/beta`
+- `LET profile`
+
+### Когда выбирать `Current fitter results`
+
+Это основной и самый удобный сценарий, если вы только что сделали fit в основном окне.
+
+В этом режиме `GEANT4 pipeline` использует успешные run-ы fitter-а, уже находящиеся в памяти, без отдельного ручного экспорта.
+
+### Когда выбирать `Summary CSV`
+
+Используйте этот режим, если:
+
+- fit был сделан раньше;
+- вы хотите воспроизвести расчёт по уже сохранённым результатам;
+- вы хотите передать в pipeline экспорт fitter-а с другой машины или из другого сеанса.
+
+### Когда выбирать `Manual alpha/beta`
+
+Используйте этот режим, если нужно:
+
+- задать фиксированные `alpha` и `beta` вручную;
+- быстро проверить чувствительность к параметрам;
+- прогнать демонстрационный или тестовый кейс без fitter-а.
+
+### Когда выбирать `LET profile`
+
+Этот режим нужен, если вы хотите задать LET-зависимую параметризацию напрямую через:
+
+- `alpha_0`
+- `lambda_alpha`
+- `beta_0`
+- `lambda_beta`
+
+Это полезно, когда у вас уже есть отдельная LET-модель и вы не хотите брать параметры из `Summary CSV`.
+
+## Блок `Pipeline options`
+
+Основные поля:
+
+- `Structure`
+- `Mixed field (fullVoxelMap)`
+- `Component map`
+- `Schedule days`
+- `N fractions`
+- `Model kind`
+- `Repair T1/2 (h)`
+
+### Что писать в `Structure`
+
+Имя target-структуры, для которой строится расчёт.
+
+Рекомендуемый старт:
+
+- `tumor`
+
+Если в contour или в геометрии структура называется иначе, здесь нужно указать именно это имя.
+
+### Когда включать `Mixed field (fullVoxelMap)`
+
+Включайте этот флаг, если загружен:
+
+- `fullVoxelMap.pb`
+
+То есть когда у вас есть несколько компонент дозы, которые нужно интерпретировать как разные `family`.
+
+### Что писать в `Component map`
+
+Здесь задаётся соответствие:
+
+- `component_name -> family`
+
+Пример:
+
+- `protonDose=p,mainDose=y,midDose=n,stuffDose=e`
+
+Это поле особенно важно для mixed-field расчётов, потому что именно оно определяет, какие `alpha/beta` или LET-параметры будут применены к каждой компоненте.
+
+### Что задавать в `Schedule days` и `N fractions`
+
+Есть два рабочих варианта:
+
+- либо явно указать дни фракций, например `0,1,2,3,4`;
+- либо задать только `N fractions`, если достаточно равномерного упрощённого расписания.
+
+Если заданы `Schedule days`, они имеют приоритет.
+
+### Что выбрать в `Model kind`
+
+Поддерживаются:
+
+- `classic_lq`
+- `repair_lq`
+- `linear`
+- `let_dependent`
+
+Практический старт почти всегда такой:
+
+- `classic_lq`
+
+Переходите к `repair_lq`, если важны интервалы между фракциями и восстановление.
+
+### Когда задавать `Repair T1/2 (h)`
+
+Только если используете repair-aware сценарий и хотите явно учитывать неполное восстановление между фракциями.
+
+## Блок `Growth model`
+
+Здесь настраивается уже не сам voxel radiobiology layer, а последующий прогноз роста.
+
+Основные поля:
+
+- `Initial volume mm^3`
+- `Growth rate`
+- `Carrying capacity`
+- `Clearance rate`
+- `Growth duration (days)`
+- `Time step (days)`
+
+Если `Initial volume mm^3` оставить пустым, программа попытается оценить стартовый объём по числу voxel выбранной структуры и размеру voxel.
+
+## Блок `Outputs`
+
+Здесь задаются:
+
+- `Output directory`
+- `BED/EQD2 fractions`
+
+После запуска pipeline сохраняет, как минимум:
+
+- `dvh_<structure>.csv`
+- `sf_per_voxel.csv`
+- `aggregated_params.json`
+- `growth_curve.csv`
+- `bed_eqd2_table.csv`
+- `summary.json`
+
+Это основной набор файлов для:
+
+- дальнейшего анализа;
+- построения графиков;
+- подготовки таблиц и приложений к диссертации.
+
+## Типовой сценарий работы с `GEANT4 pipeline` через GUI
+
+1. В `Survival LQ fitter` выполните fit или подготовьте `Summary CSV`.
+2. Нажмите `GEANT4 pipeline`.
+3. В `Dose protobuf` загрузите `totDoseVoxelMap.pb` или `fullVoxelMap.pb`.
+4. В `Geometry ivz` загрузите `InputVoxelMap.ivz` или `.pb`.
+5. В `Contour protobuf / NIfTI` загрузите `ContourMeta.pb` или binary `NIfTI` mask из 3D Slicer.
+6. В `Radiobiology source` выберите один из режимов:
+   - `Current fitter results`
+   - `Summary CSV`
+   - `Manual alpha/beta`
+   - `LET profile`
+7. Если используется `fullVoxelMap.pb`, включите `Mixed field (fullVoxelMap)` и проверьте `Component map`.
+8. Заполните `Schedule days` или `N fractions`.
+9. При необходимости скорректируйте параметры блока `Growth model`.
+10. Укажите `Output directory`.
+11. Нажмите `Run GEANT4 pipeline`.
+12. Проверьте `Run summary` и файлы:
+    - `summary.json`
+    - `growth_curve.csv`
+    - `dvh_<structure>.csv`
+    - `sf_per_voxel.csv`
+
+### Если contour приходит из 3D Slicer
+
+Рабочий текущий сценарий такой:
+
+1. В 3D Slicer экспортируйте одну binary mask нужной структуры.
+2. Сохраните её как `.nii` или `.nii.gz`.
+3. Перед подачей в pipeline убедитесь, что mask уже приведена к GEANT4 voxel grid.
+4. После этого используйте её в поле `Contour protobuf / NIfTI`.
+
+Если mask не совпадает с сеткой GEANT4, текущий bridge работать не будет корректно.
+
+### Когда удобнее CLI
+
+Если нужно:
+
+- повторять расчёт пакетно;
+- запускать несколько кейсов подряд;
+- встроить pipeline в внешний скрипт,
+
+то тот же расчёт можно запускать через `run_geant4_pipeline.bat`.
+
 ## Что делать, если в папке очень много файлов
 
 Рекомендуемый рабочий процесс:
@@ -1287,6 +1600,16 @@ Control-серию для оценки роста без лечения.
 11. Выберите `Alpha/Beta source`.
 12. Нажмите `Use treated fractions`.
 13. Нажмите `Simulate`.
+
+Если нужен GEANT4-сценарий, продолжение workflow такое:
+
+14. Вернитесь в `Survival LQ fitter`.
+15. Откройте `GEANT4 pipeline`.
+16. Загрузите `totDoseVoxelMap.pb` или `fullVoxelMap.pb`, `InputVoxelMap.ivz` и contour.
+17. Выберите источник радиобиологии.
+18. При mixed-field включите `Mixed field (fullVoxelMap)` и проверьте `Component map`.
+19. Нажмите `Run GEANT4 pipeline`.
+20. Смотрите `Run summary` и файлы `summary.json`, `growth_curve.csv`, `dvh_<structure>.csv`, `sf_per_voxel.csv`.
 
 ## Где этот гайд особенно полезен
 
