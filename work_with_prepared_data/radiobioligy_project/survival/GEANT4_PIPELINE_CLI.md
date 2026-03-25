@@ -1,7 +1,7 @@
 # GEANT4 Pipeline CLI
 
 This guide covers the command-line wrapper around
-[pipeline_geant4_to_prediction.py](/C:/dev/neuro_stats/work_with_prepared_data/radiobioligy_project/survival/pipeline_geant4_to_prediction.py).
+`pipeline_geant4_to_prediction.py`.
 
 On Windows, the recommended entry point is:
 
@@ -9,43 +9,75 @@ On Windows, the recommended entry point is:
 run_geant4_pipeline.bat
 ```
 
-The launcher lives next to the pipeline script and forwards all CLI arguments.
-It first tries `PYTHON_EXE`, then `.venv`, then Poetry virtualenvs, then `py -3.10`, then `python`.
+The launcher forwards all arguments to the pipeline CLI.
+It first tries `PYTHON_EXE`, then `.venv`, then Poetry virtualenvs, then
+`py -3.10`, then `python`.
 
-If several Python environments are installed, you can pin the interpreter explicitly:
+If several Python environments are installed, you can pin the interpreter
+explicitly:
 
 ```bat
 set PYTHON_EXE=C:\path\to\python.exe
 run_geant4_pipeline.bat --help
 ```
 
-## Required Inputs
+For backend/API details, see [TECHNICAL_REFERENCE.md](TECHNICAL_REFERENCE.md).
 
-Minimal inputs:
+## Supported Input Modes
 
-- `dose.pb`
-  - `totDoseVoxelMap` for single-field mode
-  - `fullVoxelMap` for mixed-field mode
-- `geometry.ivz`
-  - serialized `InputVoxelMap`
+The first positional argument may be one of:
 
-Optional inputs:
+- protobuf single-field dose map
+  - `totDoseVoxelMap.pb`
+- protobuf mixed-field dose map
+  - `fullVoxelMap.pb`
+- DICOM RT Dose file
+  - `RT Dose .dcm`
+- one-animal input directory
+  - a folder that contains one case and can be autodiscovered
 
-- `contour.pb`
-  - serialized `ContourMeta`
-- `tumor_mask.nii` or `tumor_mask.nii.gz`
-  - binary 3D Slicer NIfTI mask already resampled to the GEANT4 voxel grid
-- `fit_results.csv`
-  - summary CSV exported from `fit_alpha_beta_using_processor.py`
+The second positional argument is optional:
 
-## Single-Field Example
+- `geometry.ivz` or `InputVoxelMap.pb`
+- required for explicit protobuf input when geometry cannot be autodiscovered
+- omitted for `RT Dose`
+
+Optional contour inputs:
+
+- `ContourMeta.pb`
+- aligned binary NIfTI mask: `.nii` or `.nii.gz`
+- `RTSTRUCT .dcm`
+
+Optional radiobiology input sources:
+
+- `--fit-results-csv`
+- `--alpha` with `--beta`
+- `--let-alpha0` with `--let-beta0`
+
+## What Autodiscovery Does
+
+If the first argument is a directory, the pipeline tries to find inputs inside it.
+
+Typical folder-mode use case:
+
+- one folder per animal
+- one `RT Dose`
+- one `RTSTRUCT`
+
+Autodiscovery behavior:
+
+- for DICOM mode, it looks for one `RT Dose` and one `RTSTRUCT`
+- for protobuf mode, it looks for one dose input and one geometry input
+- if several candidates are found, the pipeline stops and asks you to pass explicit paths instead
+
+## Protobuf Single-Field Example
 
 Use fixed radiobiological parameters:
 
 ```bat
 run_geant4_pipeline.bat ^
-  C:\path\to\dose.pb ^
-  C:\path\to\geometry.ivz ^
+  C:\path\to\totDoseVoxelMap.pb ^
+  C:\path\to\InputVoxelMap.ivz ^
   --contour-path C:\path\to\tumor_mask.nii.gz ^
   --alpha 0.10 ^
   --beta 0.02 ^
@@ -58,8 +90,8 @@ Use an explicit LET profile instead of constant `alpha/beta`:
 
 ```bat
 run_geant4_pipeline.bat ^
-  C:\path\to\dose.pb ^
-  C:\path\to\geometry.ivz ^
+  C:\path\to\totDoseVoxelMap.pb ^
+  C:\path\to\InputVoxelMap.ivz ^
   --let-alpha0 0.08 ^
   --let-lambda-alpha 0.003 ^
   --let-beta0 0.02 ^
@@ -68,14 +100,55 @@ run_geant4_pipeline.bat ^
   --output-dir C:\path\to\prediction_output
 ```
 
-## Mixed-Field Example
+## RT Dose + RTSTRUCT Example
+
+Use DICOM dose and structure directly:
+
+```bat
+run_geant4_pipeline.bat ^
+  C:\path\to\dose.dcm ^
+  --contour-path C:\path\to\struct.dcm ^
+  --alpha 0.10 ^
+  --beta 0.02 ^
+  --structure-name PTV_High ^
+  --schedule-days 0 ^
+  --output-dir C:\path\to\prediction_output
+```
+
+Notes:
+
+- geometry is omitted for DICOM mode
+- for `RTSTRUCT`, use the exact ROI name in `--structure-name`
+- if no contour is passed for `RT Dose`, the pipeline uses all nonzero dose voxels as a fallback ROI
+
+## Folder-Mode Example
+
+Use one animal folder instead of explicit DICOM files:
+
+```bat
+run_geant4_pipeline.bat ^
+  C:\path\to\animal_folder ^
+  --alpha 0.10 ^
+  --beta 0.02 ^
+  --structure-name PTV_High ^
+  --schedule-days 0 ^
+  --output-dir C:\path\to\animal_folder\prediction_output
+```
+
+This is the preferred DICOM workflow when:
+
+- each animal has its own calculation directory
+- the directory contains exactly one `RT Dose`
+- the directory contains exactly one matching `RTSTRUCT`
+
+## Mixed-Field Protobuf Example
 
 Use `fullVoxelMap` and map each GEANT4 component to a radiobiological family:
 
 ```bat
 run_geant4_pipeline.bat ^
   C:\path\to\fullVoxelMap.pb ^
-  C:\path\to\geometry.ivz ^
+  C:\path\to\InputVoxelMap.ivz ^
   --contour-path C:\path\to\contour.pb ^
   --fit-results-csv C:\path\to\fit_results.csv ^
   --mixed-field ^
@@ -83,12 +156,6 @@ run_geant4_pipeline.bat ^
   --schedule-days 0,1,2,3,4 ^
   --output-dir C:\path\to\prediction_output
 ```
-
-Current limitation:
-
-- NIfTI contour import expects one binary mask per target structure.
-- The mask must already match the GEANT4 grid shape `(xLen, yLen, zLen)`.
-- Multi-label NIfTI segmentations are not supported yet.
 
 If `--component-family-map` is omitted, the pipeline uses the default mapping:
 
@@ -126,6 +193,8 @@ Provide exactly one of these:
 
 ## Useful Options
 
+- `--contour-path`
+- `--structure-name`
 - `--schedule-days 0,1,2,3,4`
 - `--n-fractions 5`
 - `--growth-duration-days 60`
@@ -134,6 +203,15 @@ Provide exactly one of these:
 - `--model-kind repair_lq`
 - `--repair-half-time-hours 1.0`
 - `--bed-eqd2-fractions 1,3,5,10,20,30`
+
+## Current Limitations
+
+- `RT Dose` support is currently single-field only.
+- mixed-field remains protobuf-only.
+- NIfTI import expects one binary mask per target structure.
+- the mask must already match the target voxel grid shape.
+- multi-label NIfTI segmentations are not supported.
+- folder mode assumes one case per directory.
 
 ## Help
 

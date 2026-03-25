@@ -235,6 +235,22 @@ This means:
 - `T1/2 > 0` makes `30 min`, `1 h`, `2.5 h` and similar gaps matter radiobiologically
 - short gaps increase effective kill compared with the same doses delivered far apart
 
+## Pipeline Integration
+
+The predictor is used in two different product contexts:
+
+1. standalone from the predictor GUI with a manual or fitted scalar schedule
+2. as the final stage of `pipeline_geant4_to_prediction.py`
+
+In pipeline mode, the predictor receives:
+
+- a structure-specific `VolumetricSFResult`
+- voxel-aggregated `effective_alpha` and `effective_beta`
+- inferred structure volume from the selected voxel set
+- a schedule resolved from `schedule_days` or `n_fractions`
+
+This is the path used by the current GEANT4 / RT Dose bridge.
+
 ## Geometry Reconstruction Modes
 
 The predictor currently supports two geometry modes.
@@ -323,6 +339,15 @@ In that case, `alpha` and `beta` start as manual values until you enter them.
 
 - `Manual`: use the values currently written in the spin boxes
 - fitted run entry: copy `alpha` and `beta` from a previous fitter result
+
+At the backend level, the predictor also supports a third path that is not typed
+manually into this window:
+
+- `volumetric_sf` override from the voxel pipeline
+
+When this override is present, the predictor uses structure-aggregated
+`effective_alpha`, `effective_beta`, and dose summary values coming from voxel
+radiobiology instead of relying only on scalar manual inputs.
 
 ### `Growth rate r`
 
@@ -572,5 +597,7 @@ Repair-aware mode also uses a single exponential repair half-time, not a full mu
 - `fit_alpha_beta_using_processor.py`: fitter backend
 - `tumor_growth_predictor.py`: mathematical model
 - `tumor_growth_predictor_gui.py`: predictor window
-- `tumor_geometry_processor.py`: parser for `a-b-c`
-- `tumor_3d_viewer.py`: separate 3D viewer for observed geometry only
+- `pipeline_geant4_to_prediction.py`: voxel pipeline that can call the predictor with `volumetric_sf`
+- `radiobiology_analysis.py`: BED/EQD2, TCP/NTCP, and sensitivity helpers around predictor results
+- `../data_processing/tumor_geometry_processor.py`: parser for `a-b-c`
+- `../tumor_3d_viewer.py`: separate 3D viewer for observed geometry only

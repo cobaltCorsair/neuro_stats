@@ -329,7 +329,7 @@
 
   .steps { margin-top: 1rem; display: flex; flex-direction: column; gap: .4rem; }
   .step {
-    display: flex; align-items: flex-start; gap: .8rem;
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem .5rem;
     padding: .5rem .8rem;
     background: var(--bg3);
     border-radius: var(--r);
@@ -362,10 +362,7 @@
     font-size: .72rem; color: var(--text2);
     padding: 0 .2rem; font-style: italic;
   }
-  .cfg-row {
-    display: flex; flex-wrap: wrap; gap: .35rem;
-    margin-top: .45rem; margin-left: 26px;
-  }
+
   .cfg-chip {
     font-family: var(--mono); font-size: .68rem;
     padding: 2px 9px 3px;
@@ -1180,19 +1177,13 @@
         <p class="body">Один control, несколько treated-файлов, одна family, например <code>y</code>.</p>
         <div class="steps">
           <div class="step"><span class="step-n">1</span>Откройте вкладку <kbd>Files</kbd>, нажмите <kbd>Add files</kbd> или <kbd>Folder</kbd>. Убедитесь, что control-файл загружен.</div>
-          <div class="step" style="flex-direction:column;align-items:flex-start;">
-            <div style="display:flex;align-items:flex-start;gap:.8rem;">
-              <span class="step-n">2</span>
-              <span>В <kbd>Fit setup</kbd> установите:</span>
-            </div>
-            <div class="cfg-row">
+          <div class="step"><span class="step-n">2</span>В <kbd>Fit setup</kbd> установите:
               <span class="cfg-chip">SF modes<span class="cfg-val">= absolute</span></span>
               <span class="cfg-chip">Family<span class="cfg-val">= y</span></span>
               <span class="cfg-chip">Fit kind<span class="cfg-val">= all</span></span>
               <span class="cfg-chip">Validate kind<span class="cfg-val">= none</span></span>
               <span class="cfg-chip">Response mode<span class="cfg-val">= scalar</span></span>
               <span class="cfg-chip">Model<span class="cfg-val">= auto</span></span>
-            </div>
           </div>
           <div class="step"><span class="step-n">3</span>Нажмите <kbd>Run fit</kbd>.</div>
           <div class="step"><span class="step-n">4</span>Смотрите <kbd>Run summary</kbd> → <kbd>Training</kbd> → <kbd>Summary text</kbd> → <kbd>Analysis</kbd>.</div>
@@ -1213,25 +1204,14 @@
           <div class="step"><span class="step-n">1</span>Нажмите <kbd>Folder</kbd>.</div>
           <div class="step"><span class="step-n">2</span>Нажмите <kbd>Inventory</kbd>.</div>
           <div class="step"><span class="step-n">3</span>Перейдите во вкладку <kbd>Inventory</kbd> — изучите какие family обнаружены, какие серии <em>fit ready</em>, причины пропуска.</div>
-          <div class="step" style="flex-direction:column;align-items:flex-start;">
-            <div style="display:flex;align-items:flex-start;gap:.8rem;">
-              <span class="step-n">4</span>
-              <span>Запустите fit последовательно по каждой family:</span>
-            </div>
-            <div class="fam-flow" style="margin-left:26px;">
-              <span class="fam-chip">y</span>
-              <span class="fam-arrow">→</span>
-              <span class="fam-chip">p_peak</span>
-              <span class="fam-arrow">→</span>
-              <span class="fam-chip">p_through</span>
-              <span class="fam-arrow">→</span>
-              <span class="fam-chip">n</span>
-              <span class="fam-arrow">·</span>
-              <span class="fam-chip">e</span>
-              <span class="fam-arrow">·</span>
+          <div class="step"><span class="step-n">4</span>Запустите fit последовательно:
+              <span class="fam-chip">y</span><span class="fam-arrow">→</span>
+              <span class="fam-chip">p_peak</span><span class="fam-arrow">→</span>
+              <span class="fam-chip">p_through</span><span class="fam-arrow">→</span>
+              <span class="fam-chip">n</span><span class="fam-arrow">·</span>
+              <span class="fam-chip">e</span><span class="fam-arrow">·</span>
               <span class="fam-chip">c</span>
-              <span class="fam-or">— или включите <kbd>By family</kbd> для batch по всем сразу</span>
-            </div>
+              <span class="fam-or">— или <kbd>By family</kbd> для batch</span>
           </div>
         </div>
         <div class="scenario-note warn">Не стоит сразу делать один общий fit на всём при большом числе файлов. Сначала — <kbd>Inventory</kbd>, потом — по одной family.</div>
@@ -1268,27 +1248,15 @@
       <div class="scenario-body">
         <p class="body">Один из наиболее сильных научных режимов — проверяет, предсказывает ли модель фракционированные режимы.</p>
         <div class="steps">
-          <div class="step" style="flex-direction:column;align-items:flex-start;">
-            <div style="display:flex;align-items:flex-start;gap:.8rem;">
-              <span class="step-n">1</span>
-              <span>Установите:</span>
-            </div>
-            <div class="cfg-row">
+          <div class="step"><span class="step-n">1</span>Установите:
               <span class="cfg-chip">Fit kind<span class="cfg-val">= single</span></span>
               <span class="cfg-chip">Validate kind<span class="cfg-val">= fractionated</span></span>
-            </div>
           </div>
-          <div class="step" style="flex-direction:column;align-items:flex-start;">
-            <div style="display:flex;align-items:flex-start;gap:.8rem;">
-              <span class="step-n">2</span>
-              <span>Обычно:</span>
-            </div>
-            <div class="cfg-row">
+          <div class="step"><span class="step-n">2</span>Обычно:
               <span class="cfg-chip">Response mode<span class="cfg-val">= scalar</span></span>
               <span class="cfg-chip">SF modes<span class="cfg-val">= absolute</span></span>
               <span class="cfg-chip">Model<span class="cfg-val">= classic_lq</span></span>
               <span class="cfg-chip" style="border-color:rgba(0,229,255,.1);color:var(--text2);">или auto</span>
-            </div>
           </div>
           <div class="step"><span class="step-n">3</span>Нажмите <kbd>Run fit</kbd>.</div>
           <div class="step"><span class="step-n">4</span>Смотрите: <kbd>Validation</kbd> · <kbd>Cross-validation</kbd> · <kbd>Summary text</kbd></div>

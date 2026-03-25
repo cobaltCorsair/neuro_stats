@@ -1,15 +1,25 @@
-# `fit_alpha_beta_using_processor.py`
+# Survival Module
 
-This module fits effective radiobiological parameters from in vivo tumor-volume Excel files.
-It is intended for series where:
+This subtree contains the radiobiology fitter, tumor growth predictor, and the
+GEANT4 / RT Dose prediction bridge.
+
+The fitter backend still starts from `fit_alpha_beta_using_processor.py`, but the
+module scope is broader than that single script.
+
+Primary documentation entry points:
+
+- [USER_GUIDE_RU.md](USER_GUIDE_RU.md): full operator guide with GUI workflows.
+- [TECHNICAL_REFERENCE.md](TECHNICAL_REFERENCE.md): current backend/API reference for the module.
+- [TUMOR_GROWTH_PREDICTOR.md](TUMOR_GROWTH_PREDICTOR.md): predictor behavior and model notes.
+- [GEANT4_PIPELINE_CLI.md](GEANT4_PIPELINE_CLI.md): focused CLI guide for the pipeline.
+
+The fitter layer is intended for series where:
 
 - control curves are available for normalization;
 - dose fractions can be parsed from experiment metadata;
 - response is measured through tumor-volume dynamics rather than a clonogenic assay.
 
 The fitter supports both CLI and GUI workflows.
-
-For a full Russian-language user manual with GUI workflows and common use cases, see [USER_GUIDE_RU.md](USER_GUIDE_RU.md).
 
 ## What It Does
 
@@ -326,14 +336,22 @@ Important interpretation notes:
 
 The module [pipeline_geant4_to_prediction.py](/C:/dev/neuro_stats/work_with_prepared_data/radiobioligy_project/survival/pipeline_geant4_to_prediction.py) closes the full bridge:
 
-- GEANT4 voxel dose protobuf -> `DoseMap`
+- GEANT4 voxel dose protobuf or RT Dose DICOM -> `DoseMap`
 - voxel-level `SF/BED` -> structure-level aggregation
 - aggregated `alpha/beta` -> tumor growth prediction
 - CSV/JSON export for downstream analysis
 
 The Windows launcher [run_geant4_pipeline.bat](/C:/dev/neuro_stats/work_with_prepared_data/radiobioligy_project/survival/run_geant4_pipeline.bat) forwards arguments to the CLI entry point.
-The fitter GUI also exposes a `GEANT4 pipeline` button, which opens a dedicated window for selecting `dose.pb`, `geometry.ivz`, radiobiology source, and output directory without leaving the interface.
-`contour_path` may now point either to `ContourMeta.pb` or to a binary 3D Slicer `NIfTI` mask that has already been resampled to the GEANT4 voxel grid.
+The fitter GUI also exposes a `GEANT4 pipeline` button, which opens a dedicated window for selecting either explicit files or a one-animal input directory without leaving the interface.
+The current pipeline supports:
+
+- protobuf single-field: `totDoseVoxelMap` + `InputVoxelMap`
+- protobuf mixed-field: `fullVoxelMap` + `InputVoxelMap`
+- DICOM single-field: `RT Dose` + optional `RTSTRUCT`
+- contour sources: `ContourMeta.pb`, aligned binary NIfTI, or `RTSTRUCT`
+- folder autodiscovery for one-case-per-directory layouts
+
+For backend responsibilities, input contracts, and exported artifacts, see [TECHNICAL_REFERENCE.md](/C:/dev/neuro_stats/work_with_prepared_data/radiobioligy_project/survival/TECHNICAL_REFERENCE.md).
 
 For a focused operator guide with single-field and mixed-field examples, see [GEANT4_PIPELINE_CLI.md](/C:/dev/neuro_stats/work_with_prepared_data/radiobioligy_project/survival/GEANT4_PIPELINE_CLI.md).
 
