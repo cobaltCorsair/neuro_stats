@@ -284,7 +284,8 @@ class TumorDataVisualizer:
                              perform_stat_test: bool = False,
                              control_index: int = 0,
                              control_groups_info: dict = None,
-                             show_separate_legend: bool = False):
+                             show_separate_legend: bool = False,
+                             use_shapiro: bool = False):
         """
         Построение столбчатого графика для сравнения площади под кривой
         объёмов опухоли между экспериментами.
@@ -540,6 +541,31 @@ class TumorDataVisualizer:
                         symbols_used.append(f"{symbol} - {name}")
                     explanation_text += ", ".join(symbols_used)
                     plt.figtext(0.5, 0.02, explanation_text, ha='center', fontsize=10, style='italic')
+
+            # Тест Шапиро–Уилка: аннотация нормальности для каждой группы
+            if use_shapiro:
+                from scipy.stats import shapiro as shapiro_test
+                shapiro_lines = ["Шапиро–Уилк (AUC):"]
+                for d in file_data:
+                    aucs = d['individual_aucs']
+                    lbl = d['label']
+                    lbl_short = lbl[:25] + "…" if len(lbl) > 25 else lbl
+                    if len(aucs) < 3:
+                        shapiro_lines.append(f"{lbl_short}: н/д (n<3)")
+                    else:
+                        try:
+                            _, p = shapiro_test(aucs)
+                            verdict = "норм." if p >= 0.05 else "не норм."
+                            shapiro_lines.append(f"{lbl_short}: p={p:.3f} ({verdict})")
+                        except Exception:
+                            pass
+                if len(shapiro_lines) > 1:
+                    plt.gcf().text(
+                        0.01, 0.01, "\n".join(shapiro_lines),
+                        fontsize=8, verticalalignment='bottom',
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow',
+                                  edgecolor='goldenrod', alpha=0.85),
+                    )
 
             if show_separate_legend:
                 plt.tight_layout()  # Легенда отдельно - не нужно дополнительное место

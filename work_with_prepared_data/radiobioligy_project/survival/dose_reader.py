@@ -14,19 +14,32 @@ import numpy as np
 try:
     from work_with_prepared_data.radiobioligy_project.survival.nifti_contour_bridge import (
         build_structure_assignments_from_nifti,
+        build_structure_assignments_from_nifti_grid,
         is_nifti_contour_path,
+    )
+    from work_with_prepared_data.radiobioligy_project.survival.rtstruct_bridge import (
+        RTDoseGridGeometry,
+        build_structure_assignments_from_rtstruct,
     )
 except ModuleNotFoundError:
     from survival.nifti_contour_bridge import (
         build_structure_assignments_from_nifti,
+        build_structure_assignments_from_nifti_grid,
         is_nifti_contour_path,
     )
+    from survival.rtstruct_bridge import RTDoseGridGeometry, build_structure_assignments_from_rtstruct
+
+try:
+    import pydicom
+except ModuleNotFoundError:  # pragma: no cover - exercised in runtime environments without pydicom
+    pydicom = None
 
 _PROTO_IMPORT_BASES = (
     "work_with_prepared_data.radiobioligy_project.survival.proto",
     "survival.proto",
 )
 _DEFAULT_TUMOR_ALIASES = ("tumor", "target", "gtv", "ctv", "ptv")
+_RT_DOSE_SUFFIXES = (".dcm", ".dicom")
 
 
 @dataclass(frozen=True)
@@ -104,11 +117,20 @@ class DoseMap:
 
 def read_dose_map(
     dose_path: Path,
-    geometry_path: Path,
+    geometry_path: Optional[Path] = None,
     contour_path: Optional[Path] = None,
     contour_structure_name: Optional[str] = None,
 ) -> DoseMap:
-    """Deserialize a totDoseVoxelMap or fullVoxelMap payload into a DoseMap."""
+    """Deserialize either a GEANT4 dose protobuf or RT Dose DICOM into a DoseMap."""
+    dose_path = Path(dose_path)
+    if is_rt_dose_path(dose_path):
+        return _read_rt_dose_map(
+            dose_path,
+            contour_path=contour_path,
+            contour_structure_name=contour_structure_name,
+        )
+    if geometry_path is None:
+        raise ValueError("geometry_path is required for GEANT4 protobuf dose maps.")
     geometry_message = _read_input_voxel_map(geometry_path)
     structure_ids, voxel_structure_ids = _resolve_structure_context(
         geometry_message=geometry_message,
@@ -130,11 +152,16 @@ def read_dose_map(
 
 def read_full_dose_map(
     path: Path,
-    geometry_path: Path,
+    geometry_path: Optional[Path],
     contour_path: Optional[Path] = None,
     contour_structure_name: Optional[str] = None,
 ) -> Dict[str, DoseMap]:
     """Deserialize a fullVoxelMap payload into per-component DoseMap objects."""
+    path = Path(path)
+    if is_rt_dose_path(path):
+        raise ValueError("RT Dose inputs do not support mixed-field component maps.")
+    if geometry_path is None:
+        raise ValueError("geometry_path is required for GEANT4 mixed-field protobuf inputs.")
     geometry_message = _read_input_voxel_map(geometry_path)
     structure_ids, voxel_structure_ids = _resolve_structure_context(
         geometry_message=geometry_message,
@@ -152,6 +179,24 @@ def read_full_dose_map(
         )
         for component_name in component_names
     }
+
+
+def is_rt_dose_path(path: Path) -> bool:
+    """Return True when the path looks like a DICOM RT Dose file."""
+    normalized = str(Path(path)).strip().lower()
+    return normalized.endswith(_RT_DOSE_SUFFIXES)
+
+
+def is_rtstruct_path(path: Path) -> bool:
+    """Return True when the path points to a DICOM RT Structure Set dataset."""
+    if pydicom is None or not is_rt_dose_path(path):
+        return False
+    try:
+        dataset = pydicom.dcmread(str(path), stop_before_pixels=True, specific_tags=["Modality"])
+    except Exception:
+        return False
+    modality = str(getattr(dataset, "Modality", "") or "").strip().upper()
+    return modality == "RTSTRUCT"
 
 
 def _load_proto_modules():
@@ -190,6 +235,205 @@ def _read_full_voxel_map(path: Path):
     message = wise_module.fullVoxelMap()
     message.ParseFromString(Path(path).read_bytes())
     return message
+
+
+def _read_rt_dose_map(
+    path: Path,
+    *,
+    contour_path: Optional[Path],
+    contour_structure_name: Optional[str],
+) -> DoseMap:
+    dataset = _read_rt_dose_dataset(path)
+    dose_grid_zyx = _extract_rt_dose_grid_gy(dataset, path)
+    geometry = _extract_rt_dose_geometry(dataset, dose_grid_zyx=dose_grid_zyx, path=path)
+    frame_count, row_count, column_count = dose_grid_zyx.shape
+    structure_ids, voxel_structure_ids = _resolve_rt_dose_structure_context(
+        geometry=geometry,
+        dose_grid_zyx=dose_grid_zyx,
+        contour_path=contour_path,
+        contour_structure_name=contour_structure_name,
+    )
+
+    voxels: Dict[int, VoxelDose] = {}
+    for z_index in range(frame_count):
+        for y_index in range(row_count):
+            for x_index in range(column_count):
+                voxel_id = x_index + column_count * y_index + column_count * row_count * z_index
+                dose_gy = float(dose_grid_zyx[z_index, y_index, x_index])
+                voxels[voxel_id] = VoxelDose(
+                    voxel_id=voxel_id,
+                    dose_gy=dose_gy,
+                    let_kev_um=0.0,
+                    dep_energy_mev=0.0,
+                    n_events=0,
+                    rel_error=0.0,
+                    scaled_dose=dose_gy,
+                    eqd_gy=dose_gy,
+                    mev2gy=0.0,
+                )
+
+    return DoseMap(
+        voxels=voxels,
+        grid_shape=geometry.grid_shape,
+        voxel_size_mm=geometry.voxel_size_mm,
+        structure_ids=structure_ids,
+        voxel_structure_ids=voxel_structure_ids,
+    )
+
+
+def _read_rt_dose_dataset(path: Path):
+    if pydicom is None:
+        raise ModuleNotFoundError(
+            "RT Dose support requires `pydicom`. Install it in the project environment first."
+        )
+    dataset = pydicom.dcmread(str(path))
+    modality = str(getattr(dataset, "Modality", "") or "").strip().upper()
+    if modality and modality != "RTDOSE":
+        raise ValueError(f"{path} is not an RT Dose dataset; Modality={modality!r}.")
+    return dataset
+
+
+def _extract_rt_dose_grid_gy(dataset, path: Path) -> np.ndarray:
+    dose_units = str(getattr(dataset, "DoseUnits", "") or "").strip().upper()
+    if dose_units and dose_units != "GY":
+        raise ValueError(f"{path} uses DoseUnits={dose_units!r}; only absolute Gy RT Dose is supported.")
+
+    scaling = float(getattr(dataset, "DoseGridScaling", 1.0) or 1.0)
+    dose_grid = np.asarray(dataset.pixel_array, dtype=float)
+    if dose_grid.ndim == 2:
+        dose_grid = dose_grid[np.newaxis, :, :]
+    if dose_grid.ndim != 3:
+        raise ValueError(f"{path} must contain a 3D RT Dose grid; got array shape {tuple(dose_grid.shape)}.")
+
+    rows = int(getattr(dataset, "Rows", dose_grid.shape[-2]) or dose_grid.shape[-2])
+    columns = int(getattr(dataset, "Columns", dose_grid.shape[-1]) or dose_grid.shape[-1])
+    if dose_grid.shape[1] != rows or dose_grid.shape[2] != columns:
+        raise ValueError(
+            f"{path} dose grid shape {tuple(dose_grid.shape)} does not match Rows/Columns ({rows}, {columns})."
+        )
+    return dose_grid.astype(float) * scaling
+
+
+def _extract_rt_dose_geometry(dataset, *, dose_grid_zyx: np.ndarray, path: Path) -> RTDoseGridGeometry:
+    frame_count, row_count, column_count = dose_grid_zyx.shape
+    voxel_size_mm = _extract_rt_dose_voxel_size_mm(dataset, frame_count, path)
+    frame_offsets_mm = _extract_rt_dose_frame_offsets_mm(dataset, frame_count=frame_count, path=path)
+    image_position = getattr(dataset, "ImagePositionPatient", None)
+    if image_position is None or len(image_position) < 3:
+        raise ValueError(f"{path} does not define ImagePositionPatient for the RT Dose grid.")
+    image_orientation = getattr(dataset, "ImageOrientationPatient", None)
+    if image_orientation is None or len(image_orientation) < 6:
+        raise ValueError(f"{path} does not define ImageOrientationPatient for the RT Dose grid.")
+    axis_x_direction = tuple(float(value) for value in image_orientation[:3])
+    axis_y_direction = tuple(float(value) for value in image_orientation[3:6])
+    return RTDoseGridGeometry(
+        grid_shape=(int(column_count), int(row_count), int(frame_count)),
+        origin_mm=tuple(float(value) for value in image_position[:3]),
+        axis_x_direction=axis_x_direction,
+        axis_y_direction=axis_y_direction,
+        frame_offsets_mm=frame_offsets_mm,
+        voxel_size_mm=voxel_size_mm,
+    )
+
+
+def _extract_rt_dose_voxel_size_mm(dataset, frame_count: int, path: Path) -> Tuple[float, float, float]:
+    pixel_spacing = getattr(dataset, "PixelSpacing", None)
+    if pixel_spacing is None or len(pixel_spacing) < 2:
+        raise ValueError(f"{path} does not define PixelSpacing for the RT Dose grid.")
+    row_spacing_mm = float(pixel_spacing[0])
+    column_spacing_mm = float(pixel_spacing[1])
+    slice_spacing_mm = _resolve_rt_dose_slice_spacing_mm(dataset, frame_count=frame_count, path=path)
+    return (column_spacing_mm, row_spacing_mm, slice_spacing_mm)
+
+
+def _extract_rt_dose_frame_offsets_mm(dataset, *, frame_count: int, path: Path) -> Tuple[float, ...]:
+    offsets = getattr(dataset, "GridFrameOffsetVector", None)
+    if offsets is not None:
+        if isinstance(offsets, (str, bytes)):
+            offset_values = np.asarray([float(offsets)], dtype=float)
+        else:
+            raw_values = np.atleast_1d(offsets)
+            offset_values = np.asarray([float(value) for value in raw_values], dtype=float)
+        if offset_values.size == frame_count:
+            return tuple(float(value) for value in offset_values.tolist())
+        if frame_count == 1 and offset_values.size == 1:
+            return (float(offset_values[0]),)
+
+    for attribute_name in ("SliceThickness", "SpacingBetweenSlices"):
+        attribute_value = getattr(dataset, attribute_name, None)
+        if attribute_value is None:
+            continue
+        spacing_mm = float(attribute_value)
+        if spacing_mm > 0.0:
+            return tuple(float(index * spacing_mm) for index in range(frame_count))
+
+    if frame_count == 1:
+        return (0.0,)
+    raise ValueError(
+        f"{path} does not provide enough z-offset information for the RT Dose frames."
+    )
+
+
+def _resolve_rt_dose_slice_spacing_mm(dataset, *, frame_count: int, path: Path) -> float:
+    offset_values = np.asarray(_extract_rt_dose_frame_offsets_mm(dataset, frame_count=frame_count, path=path), dtype=float)
+    if offset_values.size >= 2:
+        diffs = np.abs(np.diff(offset_values))
+        if not np.allclose(diffs, diffs[0], atol=1e-6):
+            raise ValueError(f"{path} uses a non-uniform GridFrameOffsetVector, which is not supported yet.")
+        return float(diffs[0])
+    for attribute_name in ("SliceThickness", "SpacingBetweenSlices"):
+        attribute_value = getattr(dataset, attribute_name, None)
+        if attribute_value is None:
+            continue
+        spacing_mm = float(attribute_value)
+        if spacing_mm > 0.0:
+            return spacing_mm
+    if frame_count <= 1:
+        return 1.0
+    raise ValueError(
+        f"{path} does not provide enough z-spacing information for a multi-frame RT Dose grid."
+    )
+
+
+def _resolve_rt_dose_structure_context(
+    *,
+    geometry: RTDoseGridGeometry,
+    dose_grid_zyx: np.ndarray,
+    contour_path: Optional[Path],
+    contour_structure_name: Optional[str],
+) -> tuple[Dict[int, str], Dict[int, Tuple[int, ...]]]:
+    if contour_path is not None:
+        contour_path = Path(contour_path)
+        if not is_nifti_contour_path(contour_path):
+            if is_rtstruct_path(contour_path):
+                assignments = build_structure_assignments_from_rtstruct(
+                    contour_path,
+                    geometry,
+                    structure_name=contour_structure_name,
+                    base_structure_ids={},
+                    base_voxel_structure_ids={},
+                )
+                return assignments.structure_ids, assignments.voxel_structure_ids
+            raise ValueError(
+                "RT Dose contour support currently accepts aligned NIfTI masks or RTSTRUCT DICOM. "
+                "ContourMeta protobuf requires GEANT4 InputVoxelMap structure membership."
+            )
+        assignments = build_structure_assignments_from_nifti_grid(
+            contour_path,
+            geometry.grid_shape,
+            structure_name=contour_structure_name,
+            base_structure_ids={},
+            base_voxel_structure_ids={},
+        )
+        return assignments.structure_ids, assignments.voxel_structure_ids
+
+    resolved_name = str(contour_structure_name or "tumor").strip() or "tumor"
+    structure_ids = {1: resolved_name}
+    positive_voxel_ids = np.flatnonzero(dose_grid_zyx.ravel(order="C") > 0.0).astype(int)
+    if positive_voxel_ids.size == 0:
+        positive_voxel_ids = np.arange(int(dose_grid_zyx.size), dtype=int)
+    voxel_structure_ids = {int(voxel_id): (1,) for voxel_id in positive_voxel_ids}
+    return structure_ids, voxel_structure_ids
 
 
 def _build_dose_map(

@@ -1,0 +1,1898 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Survival Module — Radiobiology Documentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  /* ─── Reset & Variables ─────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #080c15;
+    --bg2:       #0d1220;
+    --bg3:       #121826;
+    --border:    #1e2a40;
+    --border2:   #253348;
+    --cyan:      #00e5ff;
+    --cyan2:     #00a8c8;
+    --orange:    #ff7043;
+    --orange2:   #e64a19;
+    --green:     #69ff47;
+    --purple:    #aa00ff;
+    --text:      #cdd6f4;
+    --text2:     #8899aa;
+    --text3:     #506070;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Inter', sans-serif;
+    --display:   'Syne', sans-serif;
+    --r:         6px;
+    --r2:        12px;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.65;
+    overflow-x: hidden;
+  }
+
+  /* ─── Scrollbar ─────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--cyan2); }
+
+  /* ─── Header ────────────────────────────────────────────── */
+  .site-header {
+    position: sticky; top: 0; z-index: 200;
+    background: rgba(8,12,21,0.88);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    height: 56px;
+  }
+  .site-header-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 2.5rem;
+    height: 100%;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo {
+    font-family: var(--display);
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #fff;
+    text-decoration: none;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .logo-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--cyan2), var(--purple));
+    border-radius: 6px;
+    font-size: 0.65rem;
+    font-family: var(--mono);
+    font-weight: 700;
+    color: #fff;
+  }
+  .logo-sub { color: var(--text2); font-weight: 400; font-size: 0.75rem; margin-left: 2px; }
+
+  .nav-links {
+    display: flex; gap: 1.5rem; list-style: none;
+  }
+  .nav-links a {
+    color: #c0cfe0;
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    transition: color .2s;
+    text-transform: uppercase;
+  }
+  .nav-links a:hover { color: var(--cyan); }
+  .nav-links a.active { color: var(--cyan); }
+
+  /* ─── Hero ──────────────────────────────────────────────── */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+  }
+  .hero-inner {
+    position: relative; z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 6rem 2.5rem 4.5rem;
+  }
+  .hero-grid {
+    position: absolute; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .hero-glow {
+    position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
+    width: 900px; height: 500px;
+    background: radial-gradient(ellipse at center, rgba(0,100,200,.18) 0%, transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+  .hero-content { max-width: 860px; }
+  .hero-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    border: 1px solid rgba(0,229,255,.25);
+    border-radius: 3px;
+    padding: 3px 10px;
+    margin-bottom: 1.2rem;
+  }
+  .hero h1 {
+    font-family: var(--display);
+    font-size: clamp(2rem, 4vw, 3.4rem);
+    font-weight: 800;
+    line-height: 1.1;
+    color: #fff;
+    margin-bottom: 1.2rem;
+    letter-spacing: -0.01em;
+  }
+  .hero h1 span { color: var(--cyan); }
+  .hero p {
+    font-size: 1rem;
+    color: var(--text2);
+    max-width: 580px;
+    line-height: 1.75;
+    margin-bottom: 2rem;
+  }
+  .hero-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-top: 3rem;
+    max-width: 860px;
+  }
+  .hero-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    padding: 1.4rem 1.5rem;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color .2s, transform .2s, box-shadow .2s;
+    cursor: pointer;
+  }
+  .hero-card:hover {
+    border-color: var(--cyan2);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 40px rgba(0,229,255,.08);
+  }
+  .hero-card-num {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text3);
+    margin-bottom: .6rem;
+    letter-spacing: .1em;
+  }
+  .hero-card-icon {
+    font-size: 1.4rem;
+    margin-bottom: .5rem;
+  }
+  .hero-card h3 {
+    font-family: var(--display);
+    font-size: .95rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: .35rem;
+  }
+  .hero-card p { font-size: .78rem; color: var(--text2); line-height: 1.55; }
+  .hero-card.c1 { border-top: 2px solid var(--cyan); }
+  .hero-card.c2 { border-top: 2px solid var(--orange); }
+  .hero-card.c3 { border-top: 2px solid var(--purple); }
+
+  /* ─── Main Layout ───────────────────────────────────────── */
+  .page { max-width: 1100px; margin: 0 auto; padding: 0 2.5rem; }
+
+  /* ─── Section Headers ───────────────────────────────────── */
+  .section {
+    padding: 4.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-head {
+    display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 2.5rem;
+  }
+  .section-num {
+    font-family: var(--mono);
+    font-size: .65rem;
+    letter-spacing: .1em;
+    color: var(--text3);
+    white-space: nowrap;
+  }
+  .section-title {
+    font-family: var(--display);
+    font-size: 1.7rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.01em;
+  }
+  .section-title span.cy { color: var(--cyan); }
+  .section-title span.or { color: var(--orange); }
+  .section-title span.pu { color: var(--purple); }
+  .section-line {
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, var(--border2), transparent);
+  }
+
+  /* ─── Inputs section ────────────────────────────────────── */
+  .input-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .input-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    padding: 1.2rem 1.4rem;
+  }
+  .input-card-label {
+    font-family: var(--mono);
+    font-size: .68rem;
+    color: var(--cyan2);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: .6rem;
+  }
+  .input-card h4 {
+    font-family: var(--display);
+    font-size: .9rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: .5rem;
+  }
+  .input-card p { font-size: .78rem; color: var(--text2); line-height: 1.6; }
+  .input-card .tag-row {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    margin-top: .6rem;
+  }
+  .tag {
+    font-family: var(--mono);
+    font-size: .65rem;
+    color: var(--cyan);
+    background: rgba(0,229,255,.07);
+    border: 1px solid rgba(0,229,255,.15);
+    border-radius: 3px;
+    padding: 2px 7px;
+  }
+  .tag.or { color: var(--orange); background: rgba(255,112,67,.07); border-color: rgba(255,112,67,.2); }
+  .tag.pu { color: var(--purple); background: rgba(170,0,255,.07); border-color: rgba(170,0,255,.2); }
+  .tag.gr { color: var(--green); background: rgba(105,255,71,.07); border-color: rgba(105,255,71,.2); }
+
+  /* ─── Scenario Accordion ────────────────────────────────── */
+  .scenario-list { display: flex; flex-direction: column; gap: .6rem; }
+  .scenario {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    overflow: hidden;
+    transition: border-color .2s;
+  }
+  .scenario.open { border-color: var(--border2); }
+  .scenario-header {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 1rem 1.4rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s;
+  }
+  .scenario-header:hover { background: rgba(255,255,255,.02); }
+  .scenario-idx {
+    font-family: var(--mono);
+    font-size: .65rem;
+    color: var(--text3);
+    min-width: 28px;
+  }
+  .scenario-title {
+    font-family: var(--display);
+    font-size: .92rem;
+    font-weight: 600;
+    color: #fff;
+    flex: 1;
+  }
+  .scenario-chevron {
+    width: 16px; height: 16px;
+    color: var(--text3);
+    transition: transform .2s;
+    flex-shrink: 0;
+  }
+  .scenario.open .scenario-chevron { transform: rotate(180deg); }
+  .scenario-body {
+    display: none;
+    padding: 1rem 1.4rem 1.4rem 1.4rem;
+    border-top: 1px solid var(--border);
+  }
+  .scenario.open .scenario-body { display: block; }
+
+  .steps { margin-top: 1rem; display: flex; flex-direction: column; gap: .4rem; }
+  .step {
+    display: flex; align-items: flex-start; gap: .8rem;
+    padding: .5rem .8rem;
+    background: var(--bg3);
+    border-radius: var(--r);
+    font-size: .8rem;
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .step-n {
+    font-family: var(--mono);
+    font-size: .62rem;
+    color: var(--cyan);
+    min-width: 18px;
+    padding-top: 1px;
+  }
+  .fam-flow {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+    margin-top: .45rem;
+  }
+  .fam-chip {
+    font-family: var(--mono); font-size: .7rem;
+    padding: 2px 9px 3px;
+    border-radius: 3px;
+    background: rgba(0,229,255,.08);
+    border: 1px solid rgba(0,229,255,.22);
+    color: var(--cyan);
+    line-height: 1;
+  }
+  .fam-arrow { color: var(--text2); font-size: .75rem; }
+  .fam-or {
+    font-size: .72rem; color: var(--text2);
+    padding: 0 .2rem; font-style: italic;
+  }
+  .cfg-row {
+    display: flex; flex-wrap: wrap; gap: .35rem;
+    margin-top: .45rem; margin-left: 26px;
+  }
+  .cfg-chip {
+    font-family: var(--mono); font-size: .68rem;
+    padding: 2px 9px 3px;
+    border-radius: 3px; line-height: 1;
+    background: rgba(0,229,255,.06);
+    border: 1px solid rgba(0,229,255,.18);
+    color: var(--cyan);
+  }
+  .cfg-chip .cfg-val {
+    color: var(--text);
+    margin-left: 2px;
+  }
+  .step kbd {
+    font-family: var(--mono);
+    font-size: .72rem;
+    background: rgba(255,255,255,.06);
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    padding: 1px 6px;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .scenario-badge {
+    font-family: var(--mono);
+    font-size: .6rem;
+    line-height: 1;
+    padding: 4px 8px 3px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .badge-y  { background: rgba(0,229,255,.1);  color: var(--cyan);   border: 1px solid rgba(0,229,255,.2); }
+  .badge-or { background: rgba(255,112,67,.1); color: var(--orange); border: 1px solid rgba(255,112,67,.2); }
+  .badge-gr { background: rgba(105,255,71,.1); color: var(--green);  border: 1px solid rgba(105,255,71,.2); }
+
+  .scenario-note {
+    margin-top: .8rem;
+    font-size: .76rem;
+    color: var(--text2);
+    background: rgba(0,229,255,.04);
+    border-left: 2px solid var(--cyan2);
+    padding: .6rem .9rem;
+    border-radius: 0 var(--r) var(--r) 0;
+    line-height: 1.6;
+  }
+  .scenario-note.warn {
+    background: rgba(255,112,67,.04);
+    border-left-color: var(--orange);
+  }
+
+  /* ─── Parameter Table ───────────────────────────────────── */
+  .param-table-wrap {
+    overflow-x: auto;
+    border-radius: var(--r2);
+    border: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+  }
+  .param-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .8rem;
+  }
+  .param-table thead tr {
+    background: rgba(255,255,255,.03);
+    border-bottom: 1px solid var(--border2);
+  }
+  .param-table th {
+    text-align: left;
+    padding: .7rem 1rem;
+    font-family: var(--mono);
+    font-size: .65rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text3);
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  .param-table td {
+    padding: .65rem 1rem;
+    color: var(--text);
+    vertical-align: top;
+    border-bottom: 1px solid var(--border);
+  }
+  .param-table tr:last-child td { border-bottom: none; }
+  .param-table tr:hover td { background: rgba(255,255,255,.015); }
+  .param-table td.name {
+    font-family: var(--mono);
+    font-size: .75rem;
+    color: var(--cyan);
+    white-space: nowrap;
+  }
+  .param-table td.name.or { color: var(--orange); }
+  .param-table td.name.pu { color: var(--purple); }
+  .param-table td.values { color: var(--text2); font-size: .75rem; }
+  .param-table td.desc { color: var(--text2); font-size: .78rem; line-height: 1.6; }
+  .param-table td.rec {
+    font-size: .72rem;
+    color: var(--green);
+    font-family: var(--mono);
+  }
+
+  /* ─── Two column ────────────────────────────────────────── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+
+  /* ─── Info Box ──────────────────────────────────────────── */
+  .info-box {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1rem;
+  }
+  .info-box h4 {
+    font-family: var(--display);
+    font-size: .9rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: .6rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .info-box p { font-size: .8rem; color: var(--text2); line-height: 1.65; }
+  .info-box ul { margin-top: .5rem; padding-left: 1.2rem; }
+  .info-box li { font-size: .79rem; color: var(--text2); margin-bottom: .3rem; line-height: 1.55; }
+  .info-box li code, .info-box p code, .step code {
+    font-family: var(--mono);
+    font-size: .72rem;
+    color: var(--cyan);
+    background: rgba(0,229,255,.07);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ─── Workflow diagram ──────────────────────────────────── */
+  .flow-diagram { display: flex; flex-direction: column; gap: 0; margin: 1rem 0; }
+  .flow-row { display: flex; align-items: center; gap: 1rem; }
+  .flow-label {
+    font-family: var(--mono);
+    font-size: .6rem;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    min-width: 80px;
+  }
+  .flow-down {
+    font-size: 1rem;
+    color: var(--text3);
+    padding: .15rem 0 .15rem 7.2rem;
+  }
+  .flow { display: flex; align-items: center; flex-wrap: nowrap; gap: .4rem; }
+  .flow-box {
+    font-family: var(--mono);
+    font-size: .72rem;
+    padding: .35rem .9rem;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .flow-box.hl { border-color: var(--cyan2); color: var(--cyan); background: rgba(0,229,255,.05); }
+  .flow-box.or { border-color: var(--orange2); color: var(--orange); background: rgba(255,112,67,.05); }
+  .flow-box.pu { border-color: #7700cc; color: var(--purple); background: rgba(170,0,255,.05); }
+  .flow-arrow { color: var(--text3); font-size: .8rem; }
+
+  /* ─── Tabs ──────────────────────────────────────────────── */
+  .tabs-nav {
+    display: flex; gap: .3rem; flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+  }
+  .tab-btn {
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .05em;
+    padding: .5rem 1.1rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text2);
+    cursor: pointer;
+    transition: color .2s, border-color .2s;
+    margin-bottom: -1px;
+    text-transform: uppercase;
+  }
+  .tab-btn:hover { color: #fff; }
+  .tab-btn.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ─── Callout ───────────────────────────────────────────── */
+  .callout {
+    display: flex; gap: 1rem;
+    padding: 1rem 1.2rem;
+    border-radius: var(--r);
+    margin-bottom: 1.2rem;
+    font-size: .8rem;
+    line-height: 1.65;
+  }
+  .callout.info { background: rgba(0,229,255,.05); border: 1px solid rgba(0,229,255,.15); }
+  .callout.warn { background: rgba(255,112,67,.05); border: 1px solid rgba(255,112,67,.15); }
+  .callout-icon { font-size: 1rem; flex-shrink: 0; padding-top: 1px; }
+  .callout p { color: var(--text2); }
+  .callout strong { color: #fff; }
+  .callout code {
+    font-family: var(--mono);
+    font-size: .7rem;
+    color: var(--cyan);
+    background: rgba(0,229,255,.07);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ─── Results reference ─────────────────────────────────── */
+  .results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: .8rem;
+    margin-top: 1rem;
+  }
+  .result-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: .9rem 1rem;
+  }
+  .result-card-name {
+    font-family: var(--mono);
+    font-size: .72rem;
+    color: var(--cyan);
+    margin-bottom: .4rem;
+  }
+  .result-card p { font-size: .75rem; color: var(--text2); line-height: 1.55; }
+
+  /* ─── Radiation families ────────────────────────────────── */
+  .family-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: .6rem;
+    margin-top: 1rem;
+  }
+  .family-chip {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: .75rem .6rem .65rem;
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center; gap: .4rem;
+    transition: border-color .2s;
+  }
+  .family-chip:hover { border-color: var(--cyan2); }
+  .family-key {
+    font-family: var(--mono);
+    font-size: .82rem;
+    font-weight: 700;
+    color: var(--cyan);
+    white-space: nowrap;
+  }
+  .family-label {
+    font-size: .7rem;
+    color: var(--text2);
+    line-height: 1.3;
+  }
+
+  /* ─── Footer ────────────────────────────────────────────── */
+  footer {
+    padding: 2.5rem 2.5rem;
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 1rem;
+  }
+  .footer-left {
+    font-family: var(--mono);
+    font-size: .7rem;
+    color: var(--text3);
+  }
+  .footer-left span { color: var(--text2); }
+  .status-row {
+    display: flex; gap: .6rem; flex-wrap: wrap;
+  }
+  .status-pill {
+    display: flex; align-items: center; gap: .4rem;
+    font-family: var(--mono);
+    font-size: .65rem;
+    color: var(--text2);
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+  }
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    flex-shrink: 0;
+  }
+  .status-dot.partial { background: var(--orange); }
+
+  /* ─── Responsive ────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .hero-cards { grid-template-columns: 1fr; }
+    .two-col { grid-template-columns: 1fr; }
+    .three-col { grid-template-columns: 1fr; }
+    .family-grid { grid-template-columns: repeat(4, 1fr); }
+    .nav-links { display: none; }
+    .site-header-inner { padding: 0 1.2rem; }
+    .hero-inner { padding: 3.5rem 1.2rem 3rem; }
+    .page { padding: 0 1.2rem; }
+    footer { padding: 2rem 1.2rem; }
+  }
+
+  /* ─── Animations ────────────────────────────────────────── */
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .hero-tag    { animation: fade-up .5s ease both; }
+  .hero h1     { animation: fade-up .55s .08s ease both; }
+  .hero p      { animation: fade-up .55s .16s ease both; }
+  .hero-cards  { animation: fade-up .55s .24s ease both; }
+
+  /* pulse for dot */
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+  .status-dot { animation: pulse 2.5s ease-in-out infinite; }
+
+  /* ─── Section anchors ───────────────────────────────────── */
+  a { color: var(--cyan2); text-decoration: none; }
+  a:hover { color: var(--cyan); }
+
+  .sep { margin: 1.5rem 0; border: none; border-top: 1px solid var(--border); }
+
+  h2.sub {
+    font-family: var(--display);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 1rem;
+    margin-top: 2rem;
+  }
+  h3.sub {
+    font-family: var(--display);
+    font-size: .88rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: .5rem;
+    margin-top: 1.2rem;
+  }
+  p.body { font-size: .82rem; color: var(--text2); line-height: 1.7; margin-bottom: .7rem; }
+
+  .pill-row { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+
+  /* ─── Theme Toggle Button ───────────────────────────────── */
+  .theme-toggle {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    padding: 5px 12px 4px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: .62rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--text2);
+    transition: border-color .2s, color .2s, background .2s;
+    flex-shrink: 0;
+    margin-left: 1.2rem;
+  }
+  .theme-toggle:hover { border-color: var(--cyan2); color: var(--text); }
+  .theme-toggle-icon { font-size: 1rem; line-height: 1; display: inline-block; transition: transform .35s ease; }
+  .theme-toggle:hover .theme-toggle-icon { transform: rotate(20deg); }
+
+  /* ─── LIGHT THEME ───────────────────────────────────────── */
+  [data-theme="light"] {
+    --bg:      #f5f3ef;
+    --bg2:     #eceae5;
+    --bg3:     #e2e0da;
+    --border:  #d0ccc4;
+    --border2: #bfbbb2;
+    --cyan:    #0a5c8a;
+    --cyan2:   #1478b0;
+    --orange:  #be4010;
+    --orange2: #9a3410;
+    --green:   #1a7a3a;
+    --purple:  #6623c8;
+    --text:    #1c2534;
+    --text2:   #465468;
+    --text3:   #8898aa;
+  }
+  [data-theme="light"] body         { background: var(--bg); color: var(--text); }
+  [data-theme="light"] a            { color: var(--cyan2); }
+  [data-theme="light"] a:hover      { color: var(--cyan); }
+
+  /* scrollbar */
+  [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg2); }
+  [data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--border2); }
+
+  /* header */
+  [data-theme="light"] .site-header { background: rgba(245,243,239,0.92); border-bottom-color: var(--border); }
+  [data-theme="light"] .logo        { color: var(--text); }
+  [data-theme="light"] .nav-links a { color: var(--text2); }
+  [data-theme="light"] .nav-links a:hover  { color: var(--cyan); }
+  [data-theme="light"] .nav-links a.active { color: var(--cyan); }
+  [data-theme="light"] .theme-toggle { background: #fff; border-color: var(--border); color: var(--text3); }
+  [data-theme="light"] .theme-toggle:hover { border-color: var(--cyan2); color: var(--text); }
+
+  /* hero */
+  [data-theme="light"] .hero           { border-bottom-color: var(--border); background: var(--bg); }
+  [data-theme="light"] .hero-grid      {
+    background-image:
+      radial-gradient(circle, rgba(10,92,138,.15) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+  [data-theme="light"] .hero-glow      { background: radial-gradient(ellipse at center, rgba(10,92,138,.07) 0%, transparent 70%); }
+  [data-theme="light"] .hero h1        { color: var(--text); }
+  [data-theme="light"] .hero h1 span   { color: var(--cyan); }
+  [data-theme="light"] .hero p         { color: var(--text2); }
+  [data-theme="light"] .hero-tag       { color: var(--cyan); border-color: rgba(10,92,138,.25); }
+  [data-theme="light"] .hero-card      { background: #fff; border-color: var(--border); box-shadow: 0 1px 6px rgba(0,0,0,.06); }
+  [data-theme="light"] .hero-card:hover{ box-shadow: 0 4px 18px rgba(10,92,138,.1); border-color: var(--cyan2); }
+  [data-theme="light"] .hero-card h3   { color: var(--text); }
+  [data-theme="light"] .hero-card-num  { color: var(--text3); }
+
+  /* sections */
+  [data-theme="light"] .section       { border-bottom-color: var(--border); }
+  [data-theme="light"] .section-title { color: var(--text); }
+  [data-theme="light"] .section-num   { color: var(--text3); }
+  [data-theme="light"] .section-line  { background: linear-gradient(90deg, var(--border), transparent); }
+  [data-theme="light"] h2.sub         { color: var(--text); }
+  [data-theme="light"] h3.sub         { color: var(--text2); }
+  [data-theme="light"] p.body         { color: var(--text2); }
+  [data-theme="light"] .sep           { border-top-color: var(--border); }
+
+  /* input cards */
+  [data-theme="light"] .input-card          { background: #fff; border-color: var(--border); box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  [data-theme="light"] .input-card h4       { color: var(--text); }
+  [data-theme="light"] .input-card p        { color: var(--text2); }
+  [data-theme="light"] .input-card-label    { color: var(--cyan2); }
+  [data-theme="light"] .tag                 { color: var(--cyan);   background: rgba(10,92,138,.07);   border-color: rgba(10,92,138,.18); }
+  [data-theme="light"] .tag.or              { color: var(--orange); background: rgba(190,64,16,.07);   border-color: rgba(190,64,16,.2); }
+  [data-theme="light"] .tag.gr              { color: var(--green);  background: rgba(26,122,58,.07);   border-color: rgba(26,122,58,.2); }
+  [data-theme="light"] .tag.pu              { color: var(--purple); background: rgba(102,35,200,.07);  border-color: rgba(102,35,200,.2); }
+
+  /* scenarios */
+  [data-theme="light"] .scenario            { background: #fff; border-color: var(--border); box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  [data-theme="light"] .scenario.open       { border-color: var(--border2); }
+  [data-theme="light"] .scenario-header:hover { background: rgba(0,0,0,.02); }
+  [data-theme="light"] .scenario-title      { color: var(--text); }
+  [data-theme="light"] .scenario-idx        { color: var(--text3); }
+  [data-theme="light"] .scenario-body       { border-top-color: var(--border); }
+  [data-theme="light"] .scenario-chevron    { color: var(--text3); }
+  [data-theme="light"] .scenario-note       { background: rgba(10,92,138,.04); border-left-color: var(--cyan2); }
+  [data-theme="light"] .scenario-note.warn  { background: rgba(190,64,16,.04); border-left-color: var(--orange); }
+  [data-theme="light"] .badge-y             { background: rgba(10,92,138,.1);  color: var(--cyan);   border-color: rgba(10,92,138,.22); }
+  [data-theme="light"] .badge-or            { background: rgba(190,64,16,.1);  color: var(--orange); border-color: rgba(190,64,16,.22); }
+  [data-theme="light"] .badge-gr            { background: rgba(26,122,58,.1);  color: var(--green);  border-color: rgba(26,122,58,.22); }
+
+  /* steps */
+  [data-theme="light"] .step                { background: var(--bg3); }
+  [data-theme="light"] .step-n              { color: var(--cyan); }
+  [data-theme="light"] .step kbd            { background: rgba(0,0,0,.05); border-color: var(--border2); color: var(--text); }
+  [data-theme="light"] .step code,
+  [data-theme="light"] .info-box li code,
+  [data-theme="light"] .info-box p code     { color: var(--cyan); background: rgba(10,92,138,.07); }
+  [data-theme="light"] .fam-chip            { background: rgba(10,92,138,.08); border-color: rgba(10,92,138,.22); color: var(--cyan); }
+  [data-theme="light"] .fam-arrow          { color: var(--text2); }
+  [data-theme="light"] .fam-or             { color: var(--text2); }
+  [data-theme="light"] .cfg-chip           { background: rgba(10,92,138,.06); border-color: rgba(10,92,138,.18); color: var(--cyan); }
+  [data-theme="light"] .cfg-chip .cfg-val  { color: var(--text); }
+
+  /* param table */
+  [data-theme="light"] .param-table-wrap              { border-color: var(--border); }
+  [data-theme="light"] .param-table thead tr          { background: rgba(0,0,0,.03); border-bottom-color: var(--border2); }
+  [data-theme="light"] .param-table th                { color: var(--text3); }
+  [data-theme="light"] .param-table td                { color: var(--text); border-bottom-color: var(--border); }
+  [data-theme="light"] .param-table tr:hover td       { background: rgba(0,0,0,.015); }
+  [data-theme="light"] .param-table td.name           { color: var(--cyan); }
+  [data-theme="light"] .param-table td.name.or        { color: var(--orange); }
+  [data-theme="light"] .param-table td.name.pu        { color: var(--purple); }
+  [data-theme="light"] .param-table td.values         { color: var(--text2); }
+  [data-theme="light"] .param-table td.desc           { color: var(--text2); }
+  [data-theme="light"] .param-table td.rec            { color: var(--green); }
+
+  /* tabs */
+  [data-theme="light"] .tabs-nav           { border-bottom-color: var(--border); }
+  [data-theme="light"] .tab-btn            { color: var(--text2); }
+  [data-theme="light"] .tab-btn:hover      { color: var(--text); }
+  [data-theme="light"] .tab-btn.active     { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+  /* info box */
+  [data-theme="light"] .info-box           { background: #fff; border-color: var(--border); box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  [data-theme="light"] .info-box h4        { color: var(--text); }
+  [data-theme="light"] .info-box p         { color: var(--text2); }
+  [data-theme="light"] .info-box li        { color: var(--text2); }
+
+  /* callout */
+  [data-theme="light"] .callout.info       { background: rgba(10,92,138,.05); border-color: rgba(10,92,138,.15); }
+  [data-theme="light"] .callout.warn       { background: rgba(190,64,16,.05); border-color: rgba(190,64,16,.15); }
+  [data-theme="light"] .callout p          { color: var(--text2); }
+  [data-theme="light"] .callout strong     { color: var(--text); }
+  [data-theme="light"] .callout code       { color: var(--cyan); background: rgba(10,92,138,.07); }
+
+  /* flow diagram */
+  [data-theme="light"] .flow-box           { background: #fff; border-color: var(--border2); color: var(--text); }
+  [data-theme="light"] .flow-box.hl        { border-color: var(--cyan2);   color: var(--cyan);   background: rgba(10,92,138,.05); }
+  [data-theme="light"] .flow-box.or        { border-color: var(--orange2); color: var(--orange); background: rgba(190,64,16,.05); }
+  [data-theme="light"] .flow-box.pu        { border-color: #5415a8;        color: var(--purple); background: rgba(102,35,200,.05); }
+  [data-theme="light"] .flow-arrow         { color: var(--text3); }
+  [data-theme="light"] .flow-label         { color: var(--text3); }
+  [data-theme="light"] .flow-down          { color: var(--text3); }
+
+  /* results */
+  [data-theme="light"] .result-card        { background: #fff; border-color: var(--border); box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+  [data-theme="light"] .result-card-name   { color: var(--cyan); }
+  [data-theme="light"] .result-card p      { color: var(--text2); }
+
+  /* family chips */
+  [data-theme="light"] .family-chip        { background: #fff; border-color: var(--border); }
+  [data-theme="light"] .family-chip:hover  { border-color: var(--cyan2); }
+  [data-theme="light"] .family-label       { color: var(--text2); }
+  [data-theme="light"] .family-key         { color: var(--cyan); }
+
+  /* footer */
+  [data-theme="light"] footer              { border-top-color: var(--border); }
+  [data-theme="light"] .footer-left        { color: var(--text3); }
+  [data-theme="light"] .footer-left span   { color: var(--text2); }
+  [data-theme="light"] .status-pill        { background: #fff; border-color: var(--border); color: var(--text2); }
+  [data-theme="light"] .status-dot         { background: var(--green); }
+  [data-theme="light"] .status-dot.partial { background: var(--orange); }
+
+  /* hero inline code */
+  [data-theme="light"] .hero p code        { color: var(--cyan); background: rgba(10,92,138,.07); border: none; }
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══════════════════════════════════════════════ -->
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="#" class="logo">
+      <span class="logo-badge">RB</span>
+      survival
+      <span class="logo-sub">/ docs</span>
+    </a>
+    <div style="display:flex;align-items:center;">
+      <nav>
+        <ul class="nav-links">
+          <li><a href="#inputs">Данные</a></li>
+          <li><a href="#fitter">LQ Fitter</a></li>
+          <li><a href="#predictor">Predictor</a></li>
+          <li><a href="#geant4">GEANT4</a></li>
+          <li><a href="#reference">Справка</a></li>
+        </ul>
+      </nav>
+      <button class="theme-toggle" id="themeToggle" aria-label="Переключить тему">
+        <span class="theme-toggle-icon" id="themeIcon">☀</span>
+        <span id="themeLabel">LIGHT</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ HERO ═════════════════════════════════════════════════ -->
+<div class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-glow"></div>
+  <div class="hero-inner">
+  <div class="hero-content">
+    <div class="hero-tag">survival · radiobiology module</div>
+    <h1>Радиобиологический<br /><span>анализ выживаемости</span></h1>
+    <p>Документация по модулю <code style="font-family:var(--mono);color:var(--cyan);font-size:.85em;background:rgba(0,229,255,.07);padding:2px 7px;border-radius:3px;">survival</code> — подбор параметров ЛКМ, прогноз роста опухоли и пайплайн из GEANT4 в биологический прогноз.</p>
+    <div class="hero-cards">
+      <a href="#fitter" class="hero-card c1">
+        <div class="hero-card-num">01 / LQ FITTER</div>
+        <div class="hero-card-icon">⚛</div>
+        <h3>Survival LQ Fitter</h3>
+        <p>Подбор α и β по динамике объёма опухоли. RBE, TCP, NTCP, сравнение моделей.</p>
+      </a>
+      <a href="#predictor" class="hero-card c2">
+        <div class="hero-card-num">02 / PREDICTOR</div>
+        <div class="hero-card-icon">📈</div>
+        <h3>Tumor Growth Predictor</h3>
+        <p>Моделирование динамики опухоли, 3D-эллипсоид, sensitivity, сравнение сценариев.</p>
+      </a>
+      <a href="#geant4" class="hero-card c3">
+        <div class="hero-card-num">03 / PIPELINE</div>
+        <div class="hero-card-icon">🔬</div>
+        <h3>GEANT4 Pipeline</h3>
+        <p>GEANT4 voxel dose или RT Dose → DVH / SF / BED / EQD2 → прогноз роста. CSV/JSON экспорт и режим папки.</p>
+      </a>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ═══ MAIN ══════════════════════════════════════════════════ -->
+<div class="page">
+
+<!-- ─── ВХОДНЫЕ ДАННЫЕ ──────────────────────────────────── -->
+<section class="section" id="inputs">
+  <div class="section-head">
+    <span class="section-num">00 //</span>
+    <h2 class="section-title">Входные <span class="cy">данные</span></h2>
+    <span class="section-line"></span>
+  </div>
+
+  <div class="input-grid">
+    <div class="input-card">
+      <div class="input-card-label">Тип 1</div>
+      <h4>Excel опухолевых серий</h4>
+      <p>Файл <code>.xlsx</code>. Первая строка — параметры эксперимента (фракции, интервалы). Вторая строка — временны́е точки. Далее — данные животных.</p>
+      <div class="tag-row">
+        <span class="tag">.xlsx</span>
+        <span class="tag">a-b-c triplets</span>
+        <span class="tag">volume</span>
+      </div>
+    </div>
+    <div class="input-card">
+      <div class="input-card-label">Тип 2</div>
+      <h4>Control-файлы</h4>
+      <p>Распознаются автоматически по слову <code>control</code> в имени файла. При нескольких control-файлах нужно вручную назначить через <kbd>Experiment to control mapping</kbd>.</p>
+      <div class="tag-row">
+        <span class="tag">control_2016.xlsx</span>
+        <span class="tag">control.xlsx</span>
+      </div>
+    </div>
+    <div class="input-card">
+      <div class="input-card-label">Тип 3</div>
+      <h4>Метаданные облучения</h4>
+      <p>Фракции и интервалы в первой строке Excel. Поддерживаются смешанные единицы времени через <code>/</code>.</p>
+      <div class="tag-row">
+        <span class="tag">t=30 min</span>
+        <span class="tag">t=1 hr</span>
+        <span class="tag">t=1 ч./1 сут.</span>
+      </div>
+    </div>
+    <div class="input-card">
+      <div class="input-card-label">Тип 4</div>
+      <h4>Skin / RTOG файлы</h4>
+      <p>Excel с кожными реакциями для подгонки NTCP. Два режима: <code>Legacy skin scale</code> (автоперевод в RTOG) и <code>RTOG grades</code>.</p>
+      <div class="tag-row">
+        <span class="tag or">NTCP</span>
+        <span class="tag">LKB model</span>
+      </div>
+    </div>
+    <div class="input-card">
+      <div class="input-card-label">Тип 5</div>
+      <h4>GEANT4 / RT Dose / Folder</h4>
+      <p>Протобаф dose-map из GEANT4, RT Dose из планирующей системы или целиком папка расчёта одного животного.</p>
+      <div class="tag-row">
+        <span class="tag pu">totDoseVoxelMap.pb</span>
+        <span class="tag pu">fullVoxelMap.pb</span>
+        <span class="tag pu">InputVoxelMap.ivz</span>
+        <span class="tag pu">RT Dose .dcm</span>
+        <span class="tag pu">Folder</span>
+      </div>
+    </div>
+    <div class="input-card">
+      <div class="input-card-label">Тип 6</div>
+      <h4>Contour / NIfTI / RTSTRUCT</h4>
+      <p>Контуры структур: <code>ContourMeta.pb</code>, бинарная NIfTI-маска из 3D Slicer или <code>RTSTRUCT .dcm</code>. Для RTSTRUCT выбирайте точное имя ROI в поле <code>Structure</code>.</p>
+      <div class="tag-row">
+        <span class="tag pu">ContourMeta.pb</span>
+        <span class="tag pu">.nii / .nii.gz</span>
+        <span class="tag pu">RTSTRUCT .dcm</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sub">Определение типа излучения (family)</h2>
+  <p class="body">Программа автоматически определяет family из имени файла. Если family определена неверно — проблема в имени файла.</p>
+  <div class="family-grid">
+    <div class="family-chip"><span class="family-key">y</span><span class="family-label">Гамма / фотоны</span></div>
+    <div class="family-chip"><span class="family-key">p</span><span class="family-label">Протоны</span></div>
+    <div class="family-chip"><span class="family-key">p_peak</span><span class="family-label">Протоны в пике</span></div>
+    <div class="family-chip"><span class="family-key">p_through</span><span class="family-label">Протоны, прострел</span></div>
+    <div class="family-chip"><span class="family-key">n</span><span class="family-label">Нейтроны</span></div>
+    <div class="family-chip"><span class="family-key">e</span><span class="family-label">Электроны</span></div>
+    <div class="family-chip"><span class="family-key">c</span><span class="family-label">Ионы углерода</span></div>
+  </div>
+  <div class="callout info" style="margin-top:1rem">
+    <span class="callout-icon">ℹ</span>
+    <p>Примеры: <code>22.10.2025_p40_in_peak.xlsx</code> → <strong>p_peak</strong> · <code>08.10.2021_p_32_прострел.xlsx</code> → <strong>p_through</strong> · <code>05.12.2018_c_12.xlsx</code> → <strong>c</strong></p>
+  </div>
+</section>
+
+<!-- ─── SURVIVAL LQ FITTER ───────────────────────────────── -->
+<section class="section" id="fitter">
+  <div class="section-head">
+    <span class="section-num">01 //</span>
+    <h2 class="section-title">Survival LQ <span class="cy">Fitter</span></h2>
+    <span class="section-line"></span>
+  </div>
+
+  <div class="callout info">
+    <span class="callout-icon">⚛</span>
+    <p>Используйте если нужно <strong>оценить α и β</strong>, сравнить модели (<code>classic_lq</code>, <code>repair_lq</code>, <code>glq</code>, <code>lq_l</code>, <code>let_dependent</code>…), рассчитать <strong>RBE, TCP, NTCP</strong>, экспортировать результаты в CSV для диссертации.</p>
+  </div>
+
+  <!-- Layout description -->
+  <div class="two-col" style="margin-bottom:2rem">
+    <div class="info-box">
+      <h4>⬅ Левая панель</h4>
+      <ul>
+        <li>Кнопки: <strong>Run fit</strong>, <strong>Inventory</strong>, <strong>Growth predictor</strong>, <strong>GEANT4 pipeline</strong></li>
+        <li>Вкладка <strong>Files</strong> — управление файлами и mapping control→treated</li>
+        <li>Вкладка <strong>Fit setup</strong> — все настройки подгонки</li>
+      </ul>
+    </div>
+    <div class="info-box">
+      <h4>➡ Правая панель (результаты)</h4>
+      <ul>
+        <li><strong>Run summary</strong> — таблица всех run'ов</li>
+        <li>Вкладки: <strong>Training · Validation · Bootstrap · Cross-validation · Inventory · Summary text · Analysis · TCP · NTCP</strong></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Params tabs -->
+  <h2 class="sub">Параметры подгонки</h2>
+  <div class="tabs-nav" id="fitter-tabs">
+    <button class="tab-btn active" data-tab="sf">SF modes</button>
+    <button class="tab-btn" data-tab="models">Модели</button>
+    <button class="tab-btn" data-tab="repair">Repair</button>
+    <button class="tab-btn" data-tab="other">Прочее</button>
+  </div>
+
+  <div class="tab-content active" id="tab-sf">
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Параметр</th><th>Варианты</th><th>Описание</th><th>Рекомендация</th></tr></thead>
+        <tbody>
+          <tr><td class="name">SF modes</td><td class="values">absolute · absindex:1 · absindex:2…</td><td class="desc"><code>absolute</code> — минимум нормированной кривой. <code>absindex:N</code> — значение SF в N-й временной точке.</td><td class="rec">absolute</td></tr>
+          <tr><td class="name">Family</td><td class="values">all · y · p · p_peak · p_through · n · e · c</td><td class="desc">Ограничить fit одной family. При работе с одной серией — выбирайте конкретную.</td><td class="rec">конкретная</td></tr>
+          <tr><td class="name">By family</td><td class="values">on / off</td><td class="desc">Разобрать все найденные family по отдельности (batch-режим).</td><td class="rec">—</td></tr>
+          <tr><td class="name">Fit kind</td><td class="values">all · single · fractionated</td><td class="desc">Какие режимы идут в обучение. <code>single</code> — только разовые дозы.</td><td class="rec">all</td></tr>
+          <tr><td class="name">Validate kind</td><td class="values">none · all · single · fractionated</td><td class="desc">Holdout-набор. Наиболее сильный режим: <code>fit=single, validate=fractionated</code>.</td><td class="rec">fractionated</td></tr>
+          <tr><td class="name">Response mode</td><td class="values">scalar · curve</td><td class="desc"><code>scalar</code> — один SF на режим. <code>curve</code> — вся нормированная кривая объёма.</td><td class="rec">scalar</td></tr>
+          <tr><td class="name">Min SF</td><td class="values">float</td><td class="desc">Нижний порог SF — режимы ниже порога исключаются из fit.</td><td class="rec">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-models">
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Модель</th><th>Когда использовать</th></tr></thead>
+        <tbody>
+          <tr><td class="name">classic_lq</td><td class="desc">Стартовая базовая модель. Если timing не критичен.</td></tr>
+          <tr><td class="name">repair_lq</td><td class="desc">Когда интервалы между фракциями важны и есть <code>t=…</code>.</td></tr>
+          <tr><td class="name">repair_biexp</td><td class="desc">Более сложная repair-модель с fast/slow компонентами.</td></tr>
+          <tr><td class="name">glq</td><td class="desc">Для больших доз, когда обычный LQ ведёт себя слишком жёстко.</td></tr>
+          <tr><td class="name">lq_l</td><td class="desc">Ещё один high-dose вариант с линейным хвостом.</td></tr>
+          <tr><td class="name">lq_repop</td><td class="desc">Учитывает поздний regrowth/repopulation.</td></tr>
+          <tr><td class="name">repair_repop</td><td class="desc">Когда нужны и timing, и repopulation.</td></tr>
+          <tr><td class="name">linear</td><td class="desc">Простой baseline.</td></tr>
+          <tr><td class="name">let_dependent</td><td class="desc">Одна непрерывная модель LET → α. Не отдельные family-fit'ы, а общий LET-тренд.</td></tr>
+          <tr><td class="name">auto</td><td class="desc">Программа выбирает подходящую модель автоматически.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-repair">
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Параметр</th><th>Значение</th><th>Описание</th></tr></thead>
+        <tbody>
+          <tr><td class="name">Repair T1/2 (h)</td><td class="values">0 или > 0</td><td class="desc">Главная настройка для timing-aware анализа. <code>0</code> — классическая логика без учёта интервалов. <code>&gt;0</code> — модель различает интервалы 30 мин / 1 ч / 2.5 ч / 24 ч.</td></tr>
+          <tr><td class="name">Fast repair T1/2 (h)</td><td class="values">float</td><td class="desc">Быстрая компонента для <code>repair_biexp</code>.</td></tr>
+          <tr><td class="name">Slow repair T1/2 (h)</td><td class="values">float</td><td class="desc">Медленная компонента для <code>repair_biexp</code>.</td></tr>
+          <tr><td class="name">Fast fraction</td><td class="values">0…1</td><td class="desc">Доля быстрой компоненты. Только для <code>repair_biexp</code>.</td></tr>
+          <tr><td class="name">Fix alpha</td><td class="values">on / off</td><td class="desc">Зафиксировать α вручную, fitter оценивает только β. Полезно при малом числе данных.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-other">
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Параметр</th><th>Описание</th></tr></thead>
+        <tbody>
+          <tr><td class="name">Compare models</td><td class="desc">Сравнить несколько моделей на одном train-наборе. Полезно для диссертации.</td></tr>
+          <tr><td class="name">Bootstrap</td><td class="desc">Оценка устойчивости параметров через bootstrap-выборки.</td></tr>
+          <tr><td class="name">Bootstrap seed</td><td class="desc">Зерно генератора для воспроизводимости bootstrap.</td></tr>
+          <tr><td class="name">Aggregate repeats</td><td class="desc">Усреднить повторные режимы. Хранит кол-во повторов и SF std.</td></tr>
+          <tr><td class="name">Deduplicate</td><td class="desc">Оставить один файл на одинаковый regimen. Использовать осторожно.</td></tr>
+          <tr><td class="name">Summary CSV</td><td class="desc">Путь для автоматического сохранения summary результатов.</td></tr>
+          <tr><td class="name">Verbose terminal log</td><td class="desc">Подробный лог в консоль.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <hr class="sep" />
+
+  <!-- Scenarios -->
+  <h2 class="sub">Типовые сценарии работы</h2>
+  <div class="scenario-list">
+
+    <div class="scenario open">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">01</span>
+        <span class="scenario-title">Быстрый fit одной family</span>
+        <span class="scenario-badge badge-y">START</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <p class="body">Один control, несколько treated-файлов, одна family, например <code>y</code>.</p>
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>Откройте вкладку <kbd>Files</kbd>, нажмите <kbd>Add files</kbd> или <kbd>Folder</kbd>. Убедитесь, что control-файл загружен.</div>
+          <div class="step" style="flex-direction:column;align-items:flex-start;">
+            <div style="display:flex;align-items:flex-start;gap:.8rem;">
+              <span class="step-n">2</span>
+              <span>В <kbd>Fit setup</kbd> установите:</span>
+            </div>
+            <div class="cfg-row">
+              <span class="cfg-chip">SF modes<span class="cfg-val">= absolute</span></span>
+              <span class="cfg-chip">Family<span class="cfg-val">= y</span></span>
+              <span class="cfg-chip">Fit kind<span class="cfg-val">= all</span></span>
+              <span class="cfg-chip">Validate kind<span class="cfg-val">= none</span></span>
+              <span class="cfg-chip">Response mode<span class="cfg-val">= scalar</span></span>
+              <span class="cfg-chip">Model<span class="cfg-val">= auto</span></span>
+            </div>
+          </div>
+          <div class="step"><span class="step-n">3</span>Нажмите <kbd>Run fit</kbd>.</div>
+          <div class="step"><span class="step-n">4</span>Смотрите <kbd>Run summary</kbd> → <kbd>Training</kbd> → <kbd>Summary text</kbd> → <kbd>Analysis</kbd>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">02</span>
+        <span class="scenario-title">Много файлов разных типов излучения</span>
+        <span class="scenario-badge badge-y">MULTI</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <p class="body">Один из самых важных практических кейсов — папка с файлами разных family.</p>
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>Нажмите <kbd>Folder</kbd>.</div>
+          <div class="step"><span class="step-n">2</span>Нажмите <kbd>Inventory</kbd>.</div>
+          <div class="step"><span class="step-n">3</span>Перейдите во вкладку <kbd>Inventory</kbd> — изучите какие family обнаружены, какие серии <em>fit ready</em>, причины пропуска.</div>
+          <div class="step" style="flex-direction:column;align-items:flex-start;">
+            <div style="display:flex;align-items:flex-start;gap:.8rem;">
+              <span class="step-n">4</span>
+              <span>Запустите fit последовательно по каждой family:</span>
+            </div>
+            <div class="fam-flow" style="margin-left:26px;">
+              <span class="fam-chip">y</span>
+              <span class="fam-arrow">→</span>
+              <span class="fam-chip">p_peak</span>
+              <span class="fam-arrow">→</span>
+              <span class="fam-chip">p_through</span>
+              <span class="fam-arrow">→</span>
+              <span class="fam-chip">n</span>
+              <span class="fam-arrow">·</span>
+              <span class="fam-chip">e</span>
+              <span class="fam-arrow">·</span>
+              <span class="fam-chip">c</span>
+              <span class="fam-or">— или включите <kbd>By family</kbd> для batch по всем сразу</span>
+            </div>
+          </div>
+        </div>
+        <div class="scenario-note warn">Не стоит сразу делать один общий fit на всём при большом числе файлов. Сначала — <kbd>Inventory</kbd>, потом — по одной family.</div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">03</span>
+        <span class="scenario-title">Мало control-файлов, много treated-серий</span>
+        <span class="scenario-badge badge-or">MAPPING</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>Загрузите все treated и control файлы.</div>
+          <div class="step"><span class="step-n">2</span>В <kbd>Default control</kbd> выберите самый частый control.</div>
+          <div class="step"><span class="step-n">3</span>Нажмите <kbd>Apply to all</kbd>.</div>
+          <div class="step"><span class="step-n">4</span>В таблице <kbd>Experiment to control mapping</kbd> вручную поменяйте control там, где нужен другой.</div>
+          <div class="step"><span class="step-n">5</span>Нажмите <kbd>Inventory</kbd> для проверки.</div>
+          <div class="step"><span class="step-n">6</span>Только после этого — <kbd>Run fit</kbd>.</div>
+        </div>
+        <div class="scenario-note">После <kbd>Apply to all</kbd> сводка Inventory не пересчитывается автоматически — нужен явный клик на <kbd>Inventory</kbd>. Это не ошибка.</div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">04</span>
+        <span class="scenario-title">Обучение на однократных дозах, проверка на фракционированных</span>
+        <span class="scenario-badge badge-gr">SCIENCE</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <p class="body">Один из наиболее сильных научных режимов — проверяет, предсказывает ли модель фракционированные режимы.</p>
+        <div class="steps">
+          <div class="step" style="flex-direction:column;align-items:flex-start;">
+            <div style="display:flex;align-items:flex-start;gap:.8rem;">
+              <span class="step-n">1</span>
+              <span>Установите:</span>
+            </div>
+            <div class="cfg-row">
+              <span class="cfg-chip">Fit kind<span class="cfg-val">= single</span></span>
+              <span class="cfg-chip">Validate kind<span class="cfg-val">= fractionated</span></span>
+            </div>
+          </div>
+          <div class="step" style="flex-direction:column;align-items:flex-start;">
+            <div style="display:flex;align-items:flex-start;gap:.8rem;">
+              <span class="step-n">2</span>
+              <span>Обычно:</span>
+            </div>
+            <div class="cfg-row">
+              <span class="cfg-chip">Response mode<span class="cfg-val">= scalar</span></span>
+              <span class="cfg-chip">SF modes<span class="cfg-val">= absolute</span></span>
+              <span class="cfg-chip">Model<span class="cfg-val">= classic_lq</span></span>
+              <span class="cfg-chip" style="border-color:rgba(0,229,255,.1);color:var(--text2);">или auto</span>
+            </div>
+          </div>
+          <div class="step"><span class="step-n">3</span>Нажмите <kbd>Run fit</kbd>.</div>
+          <div class="step"><span class="step-n">4</span>Смотрите: <kbd>Validation</kbd> · <kbd>Cross-validation</kbd> · <kbd>Summary text</kbd></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">05</span>
+        <span class="scenario-title">Важны интервалы между фракциями</span>
+        <span class="scenario-badge badge-or">TIMING</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <p class="body">Если в серии есть схемы 30 мин / 1 ч / 2.5 ч — timing влияет на результат.</p>
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>Установите <code>Repair T1/2 (h) &gt; 0</code> (например, 1.5).</div>
+          <div class="step"><span class="step-n">2</span>Для сложной repair-модели: <code>Model = repair_biexp</code>, задайте Fast/Slow T1/2 и Fast fraction.</div>
+          <div class="step"><span class="step-n">3</span>Нажмите <kbd>Run fit</kbd>.</div>
+          <div class="step"><span class="step-n">4</span>Смотрите: <kbd>Training</kbd> · <kbd>Validation</kbd> · <kbd>Summary text</kbd> · вкладку G · <kbd>Cross-validation</kbd></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">06</span>
+        <span class="scenario-title">LET-зависимый fit</span>
+        <span class="scenario-badge badge-gr">LET</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <p class="body">Несколько family разного качества излучения → единый LET-тренд вместо отдельных fit'ов.</p>
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>Установите <code>Model = let_dependent</code>, <code>Family = all</code>.</div>
+          <div class="step"><span class="step-n">2</span>Нажмите <kbd>Run fit</kbd>.</div>
+          <div class="step"><span class="step-n">3</span>Перейдите во вкладку <kbd>Analysis</kbd>.</div>
+          <div class="step"><span class="step-n">4</span>Выберите <code>RBE mode = LET model</code>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">07</span>
+        <span class="scenario-title">Большой batch-анализ по всем family</span>
+        <span class="scenario-badge badge-or">BATCH</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>Включите <kbd>By family</kbd>. При необходимости: <code>Aggregate repeats</code> · <code>Compare models</code> · <code>Bootstrap</code> · укажите <code>Summary CSV</code>.</div>
+          <div class="step"><span class="step-n">2</span>Нажмите <kbd>Run fit</kbd>.</div>
+          <div class="step"><span class="step-n">3</span>В <kbd>Run summary</kbd> переключайтесь через <kbd>Selected run</kbd>.</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /scenario-list -->
+
+  <hr class="sep" />
+
+  <!-- Results reference -->
+  <h2 class="sub">Что читать в результатах</h2>
+  <div class="results-grid">
+    <div class="result-card"><div class="result-card-name">Run summary</div><p>Верхняя таблица: SF mode, Model, Family, α, β, α/β, BED, EQD2, G, R², Adj R², BIC, CV RMSE, Status.</p></div>
+    <div class="result-card"><div class="result-card-name">Training</div><p>Обучающие режимы: Fractions, Schedule, D, D², SF, BED, EQD2, G, Pred TCP, Repeats, SF std.</p></div>
+    <div class="result-card"><div class="result-card-name">Validation</div><p>Holdout-режимы и ошибки предсказания. Смотрите сюда для оценки реальной предсказательной силы.</p></div>
+    <div class="result-card"><div class="result-card-name">Bootstrap</div><p>Устойчивость параметров по bootstrap-выборкам.</p></div>
+    <div class="result-card"><div class="result-card-name">Cross-validation</div><p>LOO cross-validation. CLI: <code>--no-cross-validate-loo</code> для отключения.</p></div>
+    <div class="result-card"><div class="result-card-name">Inventory</div><p>Предварительная инвентаризация до fit: family, режимы, <em>recommended / possible / not_ready</em>.</p></div>
+    <div class="result-card"><div class="result-card-name">Summary text</div><p>Итоговая интерпретация: параметры, timing diagnostics, LOO, train-метрики, holdout, сравнение моделей.</p></div>
+    <div class="result-card"><div class="result-card-name">Analysis (RBE)</div><p>RBE, Compare SF modes, Export CSV (<code>_rbe.csv</code>, <code>_sf_metrics.csv</code>, <code>_alpha_let.csv</code>).</p></div>
+    <div class="result-card"><div class="result-card-name">TCP</div><p>Кривая TCP по fitted-модели. Поля: Initial volume, Cell density, Dose grid, Fractions, Interval.</p></div>
+    <div class="result-card"><div class="result-card-name">NTCP</div><p>Ручной LKB (TD50, m) или автоматический fit из skin/RTOG файлов. Binary endpoint: peak RTOG ≥ Threshold.</p></div>
+  </div>
+</section>
+
+<!-- ─── TUMOR GROWTH PREDICTOR ──────────────────────────── -->
+<section class="section" id="predictor">
+  <div class="section-head">
+    <span class="section-num">02 //</span>
+    <h2 class="section-title">Tumor Growth <span class="or">Predictor</span></h2>
+    <span class="section-line"></span>
+  </div>
+
+  <div class="callout info">
+    <span class="callout-icon">📈</span>
+    <p>Открывается из fitter кнопкой <kbd>Growth predictor</kbd>. Используйте для <strong>прогноза динамики опухоли</strong>, 3D-эллипсоида, sensitivity analysis, сравнения сценариев, mixed-family расписаний.</p>
+  </div>
+
+  <div class="two-col" style="margin-bottom:2rem">
+    <div class="info-box">
+      <h4>⬅ Левая панель</h4>
+      <ul>
+        <li>Кнопка <strong>Simulate</strong></li>
+        <li>Вкладки: <strong>Files · Model · Schedule</strong></li>
+      </ul>
+    </div>
+    <div class="info-box">
+      <h4>➡ Правая панель (результаты)</h4>
+      <ul>
+        <li>Вкладки: <strong>Curves · Sensitivity · Comparison · 3D</strong></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Flow -->
+  <h2 class="sub">Поток данных</h2>
+  <div class="flow">
+    <span class="flow-box hl">Treated .xlsx</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-box hl">Control .xlsx</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-box">Fit growth from control</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-box">α/β source</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-box">Dose schedule</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-box or">Simulate</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-box">Curves / 3D</span>
+  </div>
+
+  <!-- Parameters -->
+  <h2 class="sub">Параметры модели (вкладка Model)</h2>
+  <div class="param-table-wrap">
+    <table class="param-table">
+      <thead><tr><th>Параметр</th><th>Описание</th><th>Рекомендация</th></tr></thead>
+      <tbody>
+        <tr><td class="name or">alpha, beta</td><td class="desc">Берутся из <kbd>Alpha/Beta source</kbd> или вводятся вручную.</td><td class="rec">из fitter</td></tr>
+        <tr><td class="name or">Growth rate r</td><td class="desc">Скорость роста модели Гомперца. Лучше подгонять через <kbd>Fit growth from control</kbd>.</td><td class="rec">Fit from control</td></tr>
+        <tr><td class="name or">Carrying capacity K</td><td class="desc">Предельный объём опухоли (несущая ёмкость Гомперца).</td><td class="rec">Fit from control</td></tr>
+        <tr><td class="name or">Clearance rate</td><td class="desc">Скорость выведения мёртвых клеток (экспоненциальный клиренс).</td><td class="rec">—</td></tr>
+        <tr><td class="name or">Repair T1/2 (h)</td><td class="desc">Включить, если расписание содержит короткие интервалы. Иначе фракции считаются независимыми.</td><td class="rec">при коротких инт.</td></tr>
+        <tr><td class="name or">Geometry mode</td><td class="desc"><code>Fixed ratios</code> — стабильная геометрия. <code>Fit from observed shape</code> — подстройка под наблюдаемую анизотропию a-b-c.</td><td class="rec">Fixed ratios</td></tr>
+        <tr><td class="name or">Horizon (days)</td><td class="desc">Горизонт прогноза в днях.</td><td class="rec">—</td></tr>
+        <tr><td class="name or">TCP cell density</td><td class="desc">Плотность клеток для расчёта TCP в рамках прогноза.</td><td class="rec">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Scenarios -->
+  <h2 class="sub">Типовые сценарии</h2>
+  <div class="scenario-list">
+
+    <div class="scenario open">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">01</span>
+        <span class="scenario-title">Стандартный прогноз по одному treated-файлу</span>
+        <span class="scenario-badge badge-y">STANDARD</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>Откройте <kbd>Growth predictor</kbd> из fitter.</div>
+          <div class="step"><span class="step-n">2</span>В <kbd>Files</kbd>: загрузите <kbd>Open treated file</kbd> и <kbd>Open control file</kbd>.</div>
+          <div class="step"><span class="step-n">3</span>В <kbd>Tumor</kbd>: выберите <code>Mean across rats</code>.</div>
+          <div class="step"><span class="step-n">4</span>В <kbd>Alpha/Beta source</kbd>: выберите нужный fitter run.</div>
+          <div class="step"><span class="step-n">5</span>Нажмите <kbd>Fit growth from control</kbd> → <kbd>Use treated fractions</kbd>.</div>
+          <div class="step"><span class="step-n">6</span>Нажмите <kbd>Simulate</kbd>.</div>
+          <div class="step"><span class="step-n">7</span>Смотрите вкладки <kbd>Curves</kbd> и <kbd>3D</kbd>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">02</span>
+        <span class="scenario-title">Полностью ручной прогноз</span>
+        <span class="scenario-badge badge-or">MANUAL</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>Загрузите только <kbd>Treated tumor</kbd>.</div>
+          <div class="step"><span class="step-n">2</span>В <kbd>Alpha/Beta source</kbd>: оставьте <code>Manual</code>.</div>
+          <div class="step"><span class="step-n">3</span>Вручную задайте: <code>alpha</code>, <code>beta</code>, <code>Growth rate r</code>, <code>Carrying capacity K</code>, <code>Clearance rate</code>.</div>
+          <div class="step"><span class="step-n">4</span>Заполните <kbd>Dose schedule</kbd>.</div>
+          <div class="step"><span class="step-n">5</span>Нажмите <kbd>Simulate</kbd>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">03</span>
+        <span class="scenario-title">Короткие интервалы между фракциями</span>
+        <span class="scenario-badge badge-or">TIMING</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <p class="body">Программа автоматически конвертирует: <code>1 h → 1/24 day</code> · <code>30 min → 0.5/24 day</code>. В таблице времена показаны в днях.</p>
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>Загрузите treated-файл с <code>t=…</code>, либо задайте времена вручную в <kbd>Schedule</kbd>.</div>
+          <div class="step"><span class="step-n">2</span>Поставьте <code>Repair T1/2 (h) &gt; 0</code>.</div>
+          <div class="step"><span class="step-n">3</span>Нажмите <kbd>Simulate</kbd>.</div>
+        </div>
+        <div class="scenario-note warn">Без <code>Repair T1/2 &gt; 0</code> predictor считает фракции независимыми по kill.</div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">04</span>
+        <span class="scenario-title">Mixed-family расписание</span>
+        <span class="scenario-badge badge-gr">MIXED</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <p class="body">Например, сравнить <code>p_peak + n</code> против <code>c</code>.</p>
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>В <kbd>Schedule</kbd> заполните строки с нужными <code>Family</code> для каждой фракции.</div>
+          <div class="step"><span class="step-n">2</span>Убедитесь, что в fitter уже есть результаты для этих family.</div>
+          <div class="step"><span class="step-n">3</span>Выберите разумный baseline в <kbd>Alpha/Beta source</kbd>.</div>
+          <div class="step"><span class="step-n">4</span>Нажмите <kbd>Simulate</kbd>.</div>
+        </div>
+        <div class="scenario-note">Если для family fitter-result не найден — predictor использует текущие manual/base параметры и отметит это в summary.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <hr class="sep" />
+
+  <!-- Tabs reference -->
+  <h2 class="sub">Вкладки результатов</h2>
+  <div class="two-col">
+    <div>
+      <div class="info-box">
+        <h4>Curves</h4>
+        <p>Predicted total / live / dead volume, observed volume, predicted a/b/c, observed a/b/c. Если модель плохо попадает — проверьте: правильный treated/control файл, Alpha/Beta source, Schedule, Repair T1/2, Geometry mode.</p>
+      </div>
+      <div class="info-box">
+        <h4>Sensitivity</h4>
+        <p>Устойчивость прогноза к вариации параметров. Поля: <code>Perturbations (%)</code>, <code>Intervals (h)</code>. Таблицы: Parameters, Influence, Intervals. Полезно для диссертационного sensitivity-анализа.</p>
+      </div>
+    </div>
+    <div>
+      <div class="info-box">
+        <h4>Comparison</h4>
+        <p>Сравнение текущей схемы с альтернативной. Workflow: настройте основной Schedule → <kbd>Copy current schedule</kbd> → измените альтернативу → <kbd>Compare scenarios</kbd>. Строка <code>Alternative intervals: …</code> помогает проверить правильность схемы.</p>
+      </div>
+      <div class="info-box">
+        <h4>3D — эллипсоид</h4>
+        <p>Анимация осей <code>a-b-c</code> во времени. Режимы: <code>Daily snapshots</code> (суточные кадры, основной) · <code>Raw timeline</code> (плотная внутренняя сетка, для коротких интервалов). Speed: <code>8x</code>/<code>16x</code> для Raw timeline.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── GEANT4 PIPELINE ──────────────────────────────────── -->
+<section class="section" id="geant4">
+  <div class="section-head">
+    <span class="section-num">03 //</span>
+    <h2 class="section-title">GEANT4 <span class="pu">Pipeline</span></h2>
+    <span class="section-line"></span>
+  </div>
+
+  <div class="callout info">
+    <span class="callout-icon">🔬</span>
+    <p>Открывается кнопкой <kbd>GEANT4 pipeline</kbd> в fitter. Сценарий: <strong>GEANT4 voxel dose или RT Dose → DVH / SF / BED / EQD2 → прогноз роста</strong>. Работает и без fitter: через Summary CSV, manual α/β или LET-профиль. Для DICOM-сценария поддержаны <code>RT Dose</code>, <code>RTSTRUCT</code> и режим выбора папки одного животного.</p>
+  </div>
+
+  <!-- Flow -->
+  <h2 class="sub">Общий поток</h2>
+  <div class="flow-diagram">
+    <div class="flow-row">
+      <span class="flow-label">Входные файлы</span>
+      <div class="flow">
+        <span class="flow-box pu">totDoseVoxelMap.pb</span>
+        <span class="flow-arrow">+</span>
+        <span class="flow-box pu">InputVoxelMap.ivz</span>
+        <span class="flow-arrow">+</span>
+        <span class="flow-box pu">ContourMeta.pb / .nii</span>
+      </div>
+    </div>
+    <div class="flow-down">↓</div>
+    <div class="flow-row">
+      <span class="flow-label">Обработка</span>
+      <div class="flow">
+        <span class="flow-box">Radiobiology source</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-box">Pipeline options</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-box or">Run pipeline</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-box">CSV / JSON</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sub" style="margin-top:2rem">Блоки интерфейса</h2>
+  <div class="two-col">
+    <div>
+      <div class="info-box">
+        <h4>GEANT4 inputs</h4>
+        <ul>
+          <li><strong>Dose protobuf / RT Dose / Folder</strong> — <code>totDoseVoxelMap.pb</code>, <code>fullVoxelMap.pb</code>, <code>RT Dose .dcm</code> или папка расчёта одного животного</li>
+          <li><strong>Geometry ivz</strong> — <code>InputVoxelMap.ivz</code> или <code>.pb</code> — размер сетки и voxel geometry; для RT Dose и folder-mode часто не нужен вручную</li>
+          <li><strong>Contour</strong> — <code>ContourMeta.pb</code>, бинарная NIfTI-маска из 3D Slicer или <code>RTSTRUCT .dcm</code></li>
+        </ul>
+      </div>
+      <div class="info-box">
+        <h4>Pipeline options</h4>
+        <ul>
+          <li><strong>Structure</strong> — название структуры (опухоли)</li>
+          <li><strong>Mixed field (fullVoxelMap)</strong> — включить для mixed-field расчёта</li>
+          <li><strong>Component map</strong> — соответствие компонент → family</li>
+          <li><strong>Schedule days / N fractions</strong></li>
+          <li><strong>Model kind</strong>, <strong>Repair T1/2 (h)</strong></li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="info-box">
+        <h4>Radiobiology source</h4>
+        <div class="param-table-wrap" style="margin-top:.5rem">
+          <table class="param-table">
+            <thead><tr><th>Режим</th><th>Когда использовать</th></tr></thead>
+            <tbody>
+              <tr><td class="name pu">Current fitter results</td><td class="desc">Только что сделали fit в основном окне. Без ручного экспорта.</td></tr>
+              <tr><td class="name pu">Summary CSV</td><td class="desc">Fit был раньше. Другая машина или другой сеанс.</td></tr>
+              <tr><td class="name pu">Manual alpha/beta</td><td class="desc">Фиксированные α и β. Тест или демо без fitter.</td></tr>
+              <tr><td class="name pu">LET profile</td><td class="desc">Явная LET-параметризация: α₀, λ_α, β₀, λ_β.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="info-box">
+        <h4>Outputs (Run summary)</h4>
+        <ul>
+          <li>Источник радиобиологии</li>
+          <li><code>mean_dose_gy</code>, <code>mean_sf</code>, <code>effective_alpha/beta</code></li>
+          <li><code>equivalent_uniform_dose</code></li>
+          <li>Список сгенерированных CSV/JSON файлов</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout info" style="margin-top:1.2rem">
+    <span class="callout-icon">📁</span>
+    <p><strong>Folder mode:</strong> если у вас одна папка на одно животное, можно выбрать её целиком в поле <kbd>Dose protobuf / RT Dose / Folder</kbd>. Pipeline сам попытается найти один <code>RT Dose</code>, один <code>RTSTRUCT</code> и, для protobuf-сценария, один <code>InputVoxelMap</code>. Если подходящих файлов несколько, лучше выбрать их вручную.</p>
+  </div>
+
+  <!-- GEANT4 scenarios -->
+  <h2 class="sub">Типовые сценарии GEANT4 pipeline</h2>
+  <div class="scenario-list">
+
+    <div class="scenario open">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">01</span>
+        <span class="scenario-title">Single-field расчёт после fitter</span>
+        <span class="scenario-badge badge-y">STANDARD</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>В fitter выполните fit.</div>
+          <div class="step"><span class="step-n">2</span>Откройте <kbd>GEANT4 pipeline</kbd>.</div>
+          <div class="step"><span class="step-n">3</span>В <kbd>Dose protobuf</kbd>: загрузите <code>totDoseVoxelMap.pb</code>.</div>
+          <div class="step"><span class="step-n">4</span>В <kbd>Geometry ivz</kbd>: загрузите <code>InputVoxelMap.ivz</code>.</div>
+          <div class="step"><span class="step-n">5</span>В <kbd>Contour</kbd>: загрузите <code>ContourMeta.pb</code> или <code>.nii</code> маску.</div>
+          <div class="step"><span class="step-n">6</span>В <kbd>Radiobiology source</kbd>: выберите <code>Current fitter results</code>.</div>
+          <div class="step"><span class="step-n">7</span>Задайте <kbd>Structure</kbd>, <kbd>N fractions</kbd>, <kbd>Schedule days</kbd>.</div>
+          <div class="step"><span class="step-n">8</span>Нажмите <kbd>Run GEANT4 pipeline</kbd>.</div>
+          <div class="step"><span class="step-n">9</span>Смотрите <kbd>Run summary</kbd>, забирайте CSV/JSON из <kbd>Outputs</kbd>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">02</span>
+        <span class="scenario-title">Mixed-field расчёт (fullVoxelMap)</span>
+        <span class="scenario-badge badge-pu" style="background:rgba(170,0,255,.1);color:#aa00ff;border:1px solid rgba(170,0,255,.2);">MIXED</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>В <kbd>Dose protobuf</kbd>: загрузите <code>fullVoxelMap.pb</code>.</div>
+          <div class="step"><span class="step-n">2</span>Включите флаг <kbd>Mixed field (fullVoxelMap)</kbd>.</div>
+          <div class="step"><span class="step-n">3</span>В <kbd>Component map</kbd>: проверьте/задайте соответствие компонент → family (напр. <code>proton → p</code>).</div>
+          <div class="step"><span class="step-n">4</span>Остальные шаги — как в стандартном сценарии.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">03</span>
+        <span class="scenario-title">RT Dose + RTSTRUCT / одна папка</span>
+        <span class="scenario-badge badge-or">DICOM</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>В поле <kbd>Dose / RT Dose / Folder</kbd> загрузите <code>RT Dose .dcm</code> — или нажмите <kbd>Folder</kbd> и выберите директорию животного.</div>
+          <div class="step"><span class="step-n">2</span>Поле <kbd>Geometry ivz</kbd> оставьте пустым.</div>
+          <div class="step"><span class="step-n">3</span>Если <code>RTSTRUCT</code> не нашёлся автоматически, загрузите его вручную в <kbd>Contour</kbd>.</div>
+          <div class="step"><span class="step-n">4</span>В <kbd>Structure</kbd> укажите точное имя ROI, например <code>PTV_High</code>.</div>
+          <div class="step"><span class="step-n">5</span>Не включайте <kbd>Mixed field (fullVoxelMap)</kbd>.</div>
+          <div class="step"><span class="step-n">6</span>Нажмите <kbd>Run GEANT4 pipeline</kbd> и проверьте <kbd>Run summary</kbd> и CSV/JSON.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-header" onclick="toggleScenario(this)">
+        <span class="scenario-idx">04</span>
+        <span class="scenario-title">Использование LET-профиля</span>
+        <span class="scenario-badge badge-gr">LET</span>
+        <svg class="scenario-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="scenario-body">
+        <p class="body">Если есть отдельная LET-модель и не нужен Summary CSV.</p>
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span>В <kbd>Radiobiology source</kbd>: выберите <code>LET profile</code>.</div>
+          <div class="step"><span class="step-n">2</span>Задайте: <code>alpha_0</code>, <code>lambda_alpha</code>, <code>beta_0</code>, <code>lambda_beta</code>.</div>
+          <div class="step"><span class="step-n">3</span>Нажмите <kbd>Run GEANT4 pipeline</kbd>.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="callout warn" style="margin-top:1.5rem">
+    <span class="callout-icon">⚠</span>
+    <p><strong>Ограничения текущей версии:</strong> поддерживается одна binary NIfTI mask на одну структуру · маска должна совпадать с сеткой GEANT4 по форме (xLen, yLen, zLen) · multi-label NIfTI не поддерживается · RT Dose сейчас single-field only · в folder-mode ожидается один кейс на папку, иначе входы нужно выбрать вручную.</p>
+  </div>
+</section>
+
+<!-- ─── СПРАВОЧНИК ───────────────────────────────────────── -->
+<section class="section" id="reference">
+  <div class="section-head">
+    <span class="section-num">04 //</span>
+    <h2 class="section-title">Быстрая <span class="cy">справка</span></h2>
+    <span class="section-line"></span>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <h3 class="sub">Модели ЛКМ</h3>
+      <div class="param-table-wrap">
+        <table class="param-table">
+          <thead><tr><th>Модель</th><th>Параметры</th></tr></thead>
+          <tbody>
+            <tr><td class="name">classic_lq</td><td class="desc">α, β</td></tr>
+            <tr><td class="name">repair_lq</td><td class="desc">α, β + repair T1/2 (single exp)</td></tr>
+            <tr><td class="name">repair_biexp</td><td class="desc">α, β + fast T1/2, slow T1/2, fast fraction</td></tr>
+            <tr><td class="name">glq</td><td class="desc">α, β + saturation dose</td></tr>
+            <tr><td class="name">lq_l</td><td class="desc">α, β + transition dose</td></tr>
+            <tr><td class="name">lq_repop</td><td class="desc">α, β + repopulation</td></tr>
+            <tr><td class="name">repair_repop</td><td class="desc">α, β + repair + repopulation</td></tr>
+            <tr><td class="name">let_dependent</td><td class="desc">α₀, λ_α + β₀ (LET → α/β)</td></tr>
+            <tr><td class="name">linear</td><td class="desc">α только</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h3 class="sub">Экспортируемые файлы</h3>
+      <div class="info-box">
+        <h4>Из fitter (Analysis → Export CSV)</h4>
+        <ul>
+          <li><code>..._rbe.csv</code> — RBE по family</li>
+          <li><code>..._sf_metrics.csv</code> — сравнение SF modes</li>
+          <li><code>..._alpha_let.csv</code> — LET-зависимость α</li>
+        </ul>
+      </div>
+      <div class="info-box">
+        <h4>Из GEANT4 pipeline</h4>
+        <ul>
+          <li>Per-voxel SF + BED (CSV)</li>
+          <li>Volumetric aggregates (CSV)</li>
+          <li>Growth prediction — volume vs time (CSV)</li>
+          <li>JSON summary (mean_sf, D90, EUD, effective α/β…)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <hr class="sep" />
+
+  <h2 class="sub">Когда нажимать Inventory</h2>
+  <div class="callout info">
+    <span class="callout-icon">ℹ</span>
+    <p><kbd>Inventory</kbd> нужна <strong>до fit</strong>, не после. Нажимайте: после загрузки большой папки · после изменения control mapping · после добавления файлов · если сомневаетесь, что family/regimen распарсились правильно. После ручной смены control или <kbd>Apply to all</kbd> — Inventory <strong>не</strong> пересчитывается автоматически.</p>
+  </div>
+
+  <h2 class="sub">Ошибки fit — первые шаги диагностики</h2>
+  <div class="three-col">
+    <div class="info-box">
+      <h4>Кривые плохо совпадают</h4>
+      <ul>
+        <li>Правильный treated/control файл?</li>
+        <li>Правильный Alpha/Beta source?</li>
+        <li>Правильный Schedule?</li>
+        <li>Включён Repair T1/2?</li>
+        <li>Geometry mode подходит?</li>
+      </ul>
+    </div>
+    <div class="info-box">
+      <h4>Family определена неверно</h4>
+      <ul>
+        <li>Проблема всегда в имени файла.</li>
+        <li>Переименуйте файл: добавьте правильный маркер (<code>_in_peak</code>, <code>прострел</code>, <code>c_12</code>…).</li>
+      </ul>
+    </div>
+    <div class="info-box">
+      <h4>Мало данных для fit</h4>
+      <ul>
+        <li>Используйте <code>Fix alpha</code> с внешним значением.</li>
+        <li>Попробуйте <code>Aggregate repeats</code>.</li>
+        <li>Проверьте <kbd>Inventory</kbd> — статус <em>not_ready</em>?</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</div><!-- /page -->
+
+<!-- ═══ FOOTER ════════════════════════════════════════════════ -->
+<footer>
+  <div class="footer-left">
+    <div>survival module · <span>radiobiology_project</span></div>
+    <div style="margin-top:4px;font-size:.62rem;">PyQt6 · Python · LQ model · Gompertz growth · GEANT4 pipeline</div>
+  </div>
+  <div class="status-row">
+    <div class="status-pill"><span class="status-dot"></span>LQ Fitter — реализован</div>
+    <div class="status-pill"><span class="status-dot"></span>Growth Predictor — реализован</div>
+    <div class="status-pill"><span class="status-dot"></span>GEANT4 Pipeline — реализован</div>
+    <div class="status-pill"><span class="status-dot partial"></span>Multi-label NIfTI — не поддерживается</div>
+  </div>
+</footer>
+
+<!-- ═══ JS ════════════════════════════════════════════════════ -->
+<script>
+/* Accordion */
+function toggleScenario(header) {
+  const sc = header.closest('.scenario');
+  sc.classList.toggle('open');
+}
+
+/* Tabs */
+document.querySelectorAll('.tabs-nav').forEach(nav => {
+  nav.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tabId = btn.dataset.tab;
+      nav.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const section = nav.closest('.section') || document.body;
+      section.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+      const target = section.querySelector(`#tab-${tabId}`);
+      if (target) target.classList.add('active');
+    });
+  });
+});
+
+/* Theme toggle */
+(function () {
+  const html    = document.documentElement;
+  const btn     = document.getElementById('themeToggle');
+  const icon    = document.getElementById('themeIcon');
+  const label   = document.getElementById('themeLabel');
+
+  function apply(theme) {
+    if (theme === 'light') {
+      html.setAttribute('data-theme', 'light');
+      icon.textContent  = '☽';
+      label.textContent = 'DARK';
+    } else {
+      html.removeAttribute('data-theme');
+      icon.textContent  = '☀';
+      label.textContent = 'LIGHT';
+    }
+  }
+
+  const saved = localStorage.getItem('rb-theme') || 'dark';
+  apply(saved);
+
+  btn.addEventListener('click', () => {
+    const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    localStorage.setItem('rb-theme', next);
+    apply(next);
+  });
+})();
+
+/* Nav active highlight on scroll */
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav-links a');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id);
+      });
+    }
+  });
+}, { rootMargin: '-30% 0px -60% 0px' });
+sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>

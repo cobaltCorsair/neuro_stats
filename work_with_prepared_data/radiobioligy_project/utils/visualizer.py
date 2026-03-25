@@ -5,6 +5,7 @@ from matplotlib import pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.stats import mannwhitneyu
 from scipy.stats import ttest_ind
+from scipy.stats import shapiro as shapiro_test
 
 from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import SupportingFunctions
@@ -81,7 +82,8 @@ class GraphVisualizer:
     @staticmethod
     def prepare_and_add_data_to_graph(visualizers, value_extractor_func, graph_visualizer, label_prefix,
                                       calculate_auc=False, perform_stat_test=False, experiments_to_compare=None,
-                                      annotation_offset_direction='up', annotation_multiplier=0.0, use_ttest=False):
+                                      annotation_offset_direction='up', annotation_multiplier=0.0, use_ttest=False,
+                                      use_shapiro=False):
         """
         Подготавливает данные от нескольких экспериментов и добавляет их на график.
 
@@ -98,6 +100,8 @@ class GraphVisualizer:
             annotation_offset_direction (str): Направление для сдвига аннотаций ('up' или 'down').
             annotation_multiplier (float): Множитель для сдвига аннотаций.
             use_ttest (bool, optional): Если True, выполняется t-тест, иначе используется тест Манна-Уитни.
+            use_shapiro (bool, optional): Если True, добавляет на график аннотацию теста Шапиро–Уилка
+                для каждой группы (на основе AUC индивидуальных животных).
 
         Примечание:
             Для расчета стандартного отклонения и погрешности используются функции `calculate_std_dev` и
@@ -151,6 +155,49 @@ class GraphVisualizer:
             GraphVisualizer.add_significance_annotation(
                 experiments_to_compare, p_values, x_positions_for_annotations, upper_bounds_dict,
                 annotation_visualizer=experiments_to_compare[0]  # Указываем визуализатор для аннотаций
+            )
+
+        # Тест Шапиро–Уилка: аннотация нормальности для каждой группы
+        if use_shapiro:
+            GraphVisualizer._add_shapiro_annotation(visualizers)
+
+    @staticmethod
+    def _add_shapiro_annotation(visualizers):
+        """
+        Добавляет текстовую аннотацию теста Шапиро–Уилка на текущий matplotlib-график.
+
+        Для каждой группы вычисляет AUC по индивидуальным кривым животных и проверяет
+        нормальность распределения этих AUC. Требует не менее 3 животных в группе.
+
+        Args:
+            visualizers: Список объектов визуализаторов с атрибутами tumor_volumes,
+                         time_data и experiment_params.
+        """
+        lines = ["Шапиро–Уилк (AUC):"]
+        for viz in visualizers:
+            try:
+                vols = np.array(viz.tumor_volumes, dtype=float)   # (n_animals, n_timepoints)
+                time_pts = np.array(viz.time_data, dtype=float)
+                individual_aucs = [np.trapz(row, time_pts) for row in vols]
+                label = format_experiment_params(viz.experiment_params)
+                # Обрезаем метку, чтобы не переполнять аннотацию
+                label_short = label[:25] + "…" if len(label) > 25 else label
+                if len(individual_aucs) < 3:
+                    lines.append(f"{label_short}: н/д (n<3)")
+                else:
+                    _, p = shapiro_test(individual_aucs)
+                    verdict = "норм." if p >= 0.05 else "не норм."
+                    lines.append(f"{label_short}: p={p:.3f} ({verdict})")
+            except Exception:
+                pass
+
+        if len(lines) > 1:
+            text = "\n".join(lines)
+            plt.gcf().text(
+                0.01, 0.01, text,
+                fontsize=8, verticalalignment='bottom',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow',
+                          edgecolor='goldenrod', alpha=0.85),
             )
 
     @staticmethod

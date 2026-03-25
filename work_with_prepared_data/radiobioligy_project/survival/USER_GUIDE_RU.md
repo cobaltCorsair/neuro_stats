@@ -19,6 +19,7 @@
 
 3. `GEANT4 prediction pipeline`
    - принимает `totDoseVoxelMap.pb` или `fullVoxelMap.pb` вместе с геометрией `InputVoxelMap`;
+   - может брать целиком папку расчёта, если в ней лежит один кейс одного животного;
    - использует fitted/manual/LET-зависимые радиобиологические параметры;
    - считает `DVH`, voxel-level `SF/BED`, агрегированные `alpha/beta`, `EUD`, `BED/EQD2`;
    - передаёт volumetric SF в прогноз роста;
@@ -88,25 +89,31 @@ Control-файлы распознаются по слову `control` в име�
 
 Если используется `Legacy skin scale`, приложение само переводит её в `RTOG`.
 
-### 5. GEANT4 dose-map файлы
+### 5. GEANT4 dose-map и RT Dose файлы
 
 Для `GEANT4 pipeline` используются:
 
 - `totDoseVoxelMap.pb` — суммарная dose-map для single-field сценария;
 - `fullVoxelMap.pb` — набор component dose maps для mixed-field сценария;
-- `InputVoxelMap.ivz` или `.pb` — геометрия voxel grid.
+- `InputVoxelMap.ivz` или `.pb` — геометрия voxel grid;
+- `RT Dose .dcm` — если dose приходит из планирующей системы в DICOM-формате.
+- папка расчёта одного животного — если внутри лежит один `RT Dose` и один `RTSTRUCT`, либо один набор protobuf-входов.
 
 ### 6. Contour-файлы для `GEANT4 pipeline`
 
-Поддерживаются два варианта:
+Поддерживаются три варианта:
 
 - `ContourMeta.pb`;
 - binary `NIfTI` mask (`.nii` или `.nii.gz`) из 3D Slicer.
+- `RTSTRUCT .dcm`
 
 Важно:
 
+- `ContourMeta.pb` работает в protobuf-сценарии вместе с `InputVoxelMap`;
+- `NIfTI` mask можно использовать и с protobuf, и с `RT Dose`, если она уже приведена к текущей dose grid;
+- `RTSTRUCT` сейчас поддержан для `RT Dose`-сценария и выбирается по имени ROI через поле `Structure`;
+- если в pipeline передана папка и внутри есть ровно один `RTSTRUCT`, он может быть найден автоматически;
 - пока поддерживается одна binary mask на одну target-структуру;
-- mask должна быть заранее приведена к сетке GEANT4, то есть совпадать с `(xLen, yLen, zLen)`;
 - multi-label `NIfTI` пока не поддерживается.
 
 ## Как модуль определяет тип излучения
@@ -163,6 +170,8 @@ Control-файлы распознаются по слову `control` в име�
 ### Используйте `GEANT4 pipeline`, если нужно
 
 - взять расчётную voxel dose-map из GEANT4 и сразу получить радиобиологический прогноз;
+- взять `RT Dose` и `RTSTRUCT` из планов для крыс и прогнать тот же радиобиологический контур без промежуточного protobuf;
+- просто указать папку расчёта одного животного вместо ручного выбора отдельных DICOM-файлов;
 - применить текущий результат fitter-а, `Summary CSV`, ручные `alpha/beta` или явный `LET`-профиль;
 - рассчитать `DVH`, voxel-level `SF/BED`, `effective alpha/beta`, `EUD`, `BED/EQD2`;
 - прогнать `single-field` или `mixed-field (fullVoxelMap)` сценарий;
@@ -1248,16 +1257,43 @@ Control-серию для оценки роста без лечения.
 
 Здесь задаются три основных входа:
 
-- `Dose protobuf`
-- `Geometry ivz`
-- `Contour protobuf / NIfTI`
+- `Dose protobuf / RT Dose / Folder`
+- `Geometry ivz (protobuf only)`
+- `Contour protobuf / NIfTI / RTSTRUCT`
 
-### Что загружать в `Dose protobuf`
+### Что загружать в `Dose protobuf / RT Dose / Folder`
 
-Поддерживаются два основных варианта:
+Поддерживаются четыре основных варианта:
 
 - `totDoseVoxelMap.pb` — если у вас один суммарный dose map и single-field расчёт;
-- `fullVoxelMap.pb` — если у вас mixed-field расчёт с отдельными компонентами дозы.
+- `fullVoxelMap.pb` — если у вас mixed-field расчёт с отдельными компонентами дозы;
+- `RT Dose .dcm` — если расчёт приходит из планирующей системы в DICOM-формате.
+- папка расчёта одного животного — если внутри лежит ровно один подходящий dose input.
+
+Практически это означает:
+
+- protobuf-варианты нужны для GEANT4/NPLibrary сценария;
+- `RT Dose` подходит для планов, где доза уже выгружена как DICOM;
+- папка особенно удобна для крысиных планов, когда на одно животное у вас обычно одна директория расчёта;
+- текущая DICOM-поддержка рассчитана на single-field импорт, а не на protobuf mixed-field.
+
+### Когда удобно указывать папку целиком
+
+Это хороший базовый сценарий, если:
+
+- у вас одна папка на одно животное;
+- в ней лежит один `RT Dose`;
+- в ней лежит один соответствующий `RTSTRUCT`;
+- или в ней лежит один набор protobuf-входов.
+
+В этом режиме pipeline сам пытается найти:
+
+- `RT Dose`;
+- `RTSTRUCT`;
+- `totDoseVoxelMap.pb` или `fullVoxelMap.pb`;
+- `InputVoxelMap.ivz/.pb`.
+
+Если подходящих файлов найдено несколько, программа остановится и попросит указать нужные файлы явно.
 
 ### Что загружать в `Geometry ivz`
 
@@ -1268,24 +1304,36 @@ Control-серию для оценки роста без лечения.
 
 Именно он задаёт размер сетки, voxel geometry и привязку индексов.
 
-### Что загружать в `Contour protobuf / NIfTI`
+Важно:
+
+- для protobuf dose map это обязательное поле;
+- для `RT Dose .dcm` это поле не нужно, его можно оставить пустым;
+- если вы указали папку и внутри найден один `InputVoxelMap`, поле тоже можно не заполнять вручную.
+
+### Что загружать в `Contour protobuf / NIfTI / RTSTRUCT`
 
 Поддерживаются:
 
 - `ContourMeta.pb`;
 - binary `NIfTI` mask (`.nii` или `.nii.gz`) из 3D Slicer.
+- `RTSTRUCT .dcm`
 
 Практически это означает:
 
-- если contour уже есть в protobuf-формате, можно использовать его напрямую;
+- если contour уже есть в protobuf-формате, можно использовать его напрямую в protobuf-сценарии;
 - если contour был размечен в 3D Slicer, можно экспортировать binary mask и подать её сразу в pipeline;
+- если contour приходит как `RTSTRUCT`, его можно использовать напрямую вместе с `RT Dose`;
+- если вы указали папку расчёта, pipeline сначала попробует сам найти в ней один `RTSTRUCT`;
 - для расчёта по конкретной структуре contour почти всегда нужен.
 
 Ограничения текущей версии:
 
+- `ContourMeta.pb` не подходит для `RT Dose` без `InputVoxelMap`;
 - поддерживается одна binary mask на одну структуру;
-- mask должна уже совпадать с сеткой GEANT4 по форме `(xLen, yLen, zLen)`;
+- mask должна уже совпадать с текущей dose grid по форме;
 - multi-label `NIfTI` сегментации пока не поддерживаются.
+- `RTSTRUCT` выбирается по имени ROI через поле `Structure`, например `PTV_High`;
+- если для `RT Dose` contour не задан, программа использует как fallback всю область ненулевой дозы, но для оценки именно опухоли это обычно плохой сценарий.
 
 ## Блок `Radiobiology source`
 
@@ -1353,6 +1401,12 @@ Control-серию для оценки роста без лечения.
 
 Если в contour или в геометрии структура называется иначе, здесь нужно указать именно это имя.
 
+Для `RTSTRUCT` это особенно важно:
+
+- здесь лучше писать точное имя ROI, например `PTV_High`
+
+Не стоит рассчитывать, что поле `tumor` всегда угадает нужную структуру в DICOM-плане.
+
 ### Когда включать `Mixed field (fullVoxelMap)`
 
 Включайте этот флаг, если загружен:
@@ -1360,6 +1414,8 @@ Control-серию для оценки роста без лечения.
 - `fullVoxelMap.pb`
 
 То есть когда у вас есть несколько компонент дозы, которые нужно интерпретировать как разные `family`.
+
+Для `RT Dose` этот флаг сейчас не нужен и не должен включаться.
 
 ### Что писать в `Component map`
 
@@ -1442,20 +1498,22 @@ Control-серию для оценки роста без лечения.
 
 1. В `Survival LQ fitter` выполните fit или подготовьте `Summary CSV`.
 2. Нажмите `GEANT4 pipeline`.
-3. В `Dose protobuf` загрузите `totDoseVoxelMap.pb` или `fullVoxelMap.pb`.
-4. В `Geometry ivz` загрузите `InputVoxelMap.ivz` или `.pb`.
-5. В `Contour protobuf / NIfTI` загрузите `ContourMeta.pb` или binary `NIfTI` mask из 3D Slicer.
+3. В `Dose protobuf / RT Dose / Folder` либо загрузите конкретный файл, либо выберите папку расчёта через кнопку `Folder`.
+4. Если используется protobuf и геометрия не находится автоматически, в `Geometry ivz` загрузите `InputVoxelMap.ivz` или `.pb`.
+5. Если contour не находится автоматически, в `Contour protobuf / NIfTI / RTSTRUCT` загрузите `ContourMeta.pb`, binary `NIfTI` mask или `RTSTRUCT .dcm`.
 6. В `Radiobiology source` выберите один из режимов:
    - `Current fitter results`
    - `Summary CSV`
    - `Manual alpha/beta`
    - `LET profile`
 7. Если используется `fullVoxelMap.pb`, включите `Mixed field (fullVoxelMap)` и проверьте `Component map`.
-8. Заполните `Schedule days` или `N fractions`.
-9. При необходимости скорректируйте параметры блока `Growth model`.
-10. Укажите `Output directory`.
-11. Нажмите `Run GEANT4 pipeline`.
-12. Проверьте `Run summary` и файлы:
+8. В поле `Structure` укажите target-структуру.
+9. Для `RTSTRUCT` лучше писать точное имя ROI, например `PTV_High`.
+10. Заполните `Schedule days` или `N fractions`.
+11. При необходимости скорректируйте параметры блока `Growth model`.
+12. Укажите `Output directory`.
+13. Нажмите `Run GEANT4 pipeline`.
+14. Проверьте `Run summary` и файлы:
     - `summary.json`
     - `growth_curve.csv`
     - `dvh_<structure>.csv`
@@ -1471,6 +1529,39 @@ Control-серию для оценки роста без лечения.
 4. После этого используйте её в поле `Contour protobuf / NIfTI`.
 
 Если mask не совпадает с сеткой GEANT4, текущий bridge работать не будет корректно.
+
+### Если contour приходит как `RTSTRUCT`
+
+Рабочий сценарий такой:
+
+1. Либо в `Dose protobuf / RT Dose / Folder` загрузите `RT Dose .dcm`, либо выберите всю папку расчёта через `Folder`.
+2. Поле `Geometry ivz` оставьте пустым.
+3. Если `RTSTRUCT` не нашёлся автоматически, в `Contour protobuf / NIfTI / RTSTRUCT` загрузите `RTSTRUCT .dcm`.
+4. В `Structure` укажите точное имя ROI, например `PTV_High`.
+5. Не включайте `Mixed field (fullVoxelMap)`.
+6. После этого запускайте pipeline как обычно.
+
+Это сейчас основной DICOM-сценарий для крысиных планов.
+
+### Если вы обычно храните одно животное в одной папке
+
+Это теперь самый удобный рабочий режим:
+
+1. Нажмите `Folder` рядом с полем `Dose protobuf / RT Dose / Folder`.
+2. Выберите директорию конкретного животного.
+3. Если в ней найден один `RT Dose` и один `RTSTRUCT`, дополнительные DICOM-поля можно не заполнять.
+4. В `Structure` укажите нужный ROI, например `PTV_High`.
+5. Запустите pipeline.
+
+Если программа сообщает, что нашла несколько подходящих файлов, значит в папке лежит не один кейс или есть дубликаты. В этом случае лучше выбрать нужные файлы вручную.
+
+### Если dose приходит как `RT Dose`
+
+Имейте в виду:
+
+- `RT Dose` сейчас поддержан как single-field сценарий;
+- mixed-field логика остаётся protobuf-only;
+- если contour не задан, программа возьмёт всю область ненулевой дозы, что подходит только для технического smoke-test, а не для нормальной оценки target-volume.
 
 ### Когда удобнее CLI
 
@@ -1605,11 +1696,13 @@ Control-серию для оценки роста без лечения.
 
 14. Вернитесь в `Survival LQ fitter`.
 15. Откройте `GEANT4 pipeline`.
-16. Загрузите `totDoseVoxelMap.pb` или `fullVoxelMap.pb`, `InputVoxelMap.ivz` и contour.
-17. Выберите источник радиобиологии.
-18. При mixed-field включите `Mixed field (fullVoxelMap)` и проверьте `Component map`.
-19. Нажмите `Run GEANT4 pipeline`.
-20. Смотрите `Run summary` и файлы `summary.json`, `growth_curve.csv`, `dvh_<structure>.csv`, `sf_per_voxel.csv`.
+16. Либо загрузите protobuf-входы (`totDoseVoxelMap.pb` или `fullVoxelMap.pb` + `InputVoxelMap.ivz`), либо укажите `RT Dose .dcm`, либо сразу выберите папку расчёта животного.
+17. Если contour не находится автоматически, загрузите его вручную: `ContourMeta.pb`, aligned `NIfTI` или `RTSTRUCT .dcm`.
+18. Выберите источник радиобиологии.
+19. Для `RTSTRUCT` укажите точное имя ROI в `Structure`, например `PTV_High`.
+20. При mixed-field включите `Mixed field (fullVoxelMap)` и проверьте `Component map`.
+21. Нажмите `Run GEANT4 pipeline`.
+22. Смотрите `Run summary` и файлы `summary.json`, `growth_curve.csv`, `dvh_<structure>.csv`, `sf_per_voxel.csv`.
 
 ## Где этот гайд особенно полезен
 

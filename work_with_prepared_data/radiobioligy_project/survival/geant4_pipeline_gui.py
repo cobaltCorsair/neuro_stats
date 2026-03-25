@@ -1,5 +1,5 @@
 # coding: utf-8
-"""PyQt6 window for running the GEANT4 -> prediction pipeline."""
+"""PyQt6 window for running the GEANT4 / RT Dose -> prediction pipeline."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
 )
 
 try:
+    from work_with_prepared_data.radiobioligy_project.survival.dose_reader import is_rt_dose_path
     from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor import (
         AnalysisRunResult,
         Fitter,
@@ -39,13 +40,16 @@ try:
     )
     from work_with_prepared_data.radiobioligy_project.survival.pipeline_geant4_to_prediction import (
         DEFAULT_COMPONENT_FAMILY_MAP,
+        resolve_pipeline_input_paths,
         run_prediction_pipeline,
     )
 except ModuleNotFoundError:
+    from survival.dose_reader import is_rt_dose_path
     from survival.fit_alpha_beta_using_processor import AnalysisRunResult, Fitter
     from survival.let_parametrization import LETDependentParams
     from survival.pipeline_geant4_to_prediction import (
         DEFAULT_COMPONENT_FAMILY_MAP,
+        resolve_pipeline_input_paths,
         run_prediction_pipeline,
     )
 
@@ -288,7 +292,7 @@ class Geant4PipelineWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self.setStatusBar(QStatusBar(self))
-        self.statusBar().showMessage("Select GEANT4 files and radiobiology source, then run the pipeline.")
+        self.statusBar().showMessage("Select GEANT4 files or an input folder, then run the pipeline.")
 
     def _build_input_group(self) -> QGroupBox:
         group = QGroupBox("GEANT4 inputs", self)
@@ -296,25 +300,28 @@ class Geant4PipelineWindow(QMainWindow):
         layout.setHorizontalSpacing(8)
         layout.setVerticalSpacing(6)
 
-        layout.addWidget(QLabel("Dose protobuf"), 0, 0)
+        layout.addWidget(QLabel("Dose protobuf / RT Dose / Folder"), 0, 0)
         self.dose_pb_edit = QLineEdit(self)
-        self.dose_pb_edit.setPlaceholderText("totDoseVoxelMap.pb or fullVoxelMap.pb")
+        self.dose_pb_edit.setPlaceholderText("totDoseVoxelMap.pb, fullVoxelMap.pb, RT Dose .dcm, or an input folder")
         layout.addWidget(self.dose_pb_edit, 0, 1)
         dose_button = QPushButton("Browse")
         dose_button.clicked.connect(self.choose_dose_pb)
         layout.addWidget(dose_button, 0, 2)
+        dose_folder_button = QPushButton("Folder")
+        dose_folder_button.clicked.connect(self.choose_dose_input_dir)
+        layout.addWidget(dose_folder_button, 0, 3)
 
-        layout.addWidget(QLabel("Geometry ivz"), 1, 0)
+        layout.addWidget(QLabel("Geometry ivz (protobuf only)"), 1, 0)
         self.geometry_ivz_edit = QLineEdit(self)
-        self.geometry_ivz_edit.setPlaceholderText("InputVoxelMap .ivz/.pb")
+        self.geometry_ivz_edit.setPlaceholderText("InputVoxelMap .ivz/.pb; leave empty for RT Dose")
         layout.addWidget(self.geometry_ivz_edit, 1, 1)
         geometry_button = QPushButton("Browse")
         geometry_button.clicked.connect(self.choose_geometry_ivz)
         layout.addWidget(geometry_button, 1, 2)
 
-        layout.addWidget(QLabel("Contour protobuf / NIfTI"), 2, 0)
+        layout.addWidget(QLabel("Contour protobuf / NIfTI / RTSTRUCT"), 2, 0)
         self.contour_pb_edit = QLineEdit(self)
-        self.contour_pb_edit.setPlaceholderText("Optional ContourMeta .pb or Slicer mask .nii/.nii.gz")
+        self.contour_pb_edit.setPlaceholderText("Optional ContourMeta .pb, Slicer mask .nii/.nii.gz, or RTSTRUCT .dcm")
         layout.addWidget(self.contour_pb_edit, 2, 1)
         contour_button = QPushButton("Browse")
         contour_button.clicked.connect(self.choose_contour_pb)
@@ -505,14 +512,26 @@ class Geant4PipelineWindow(QMainWindow):
     def choose_dose_pb(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select GEANT4 dose protobuf",
+            "Select dose input",
             str(Path.cwd()),
-            "Protocol buffers (*.pb *.ivz);;All files (*)",
+            "Dose files (*.pb *.dcm *.dicom);;All files (*)",
         )
         if path:
             self.dose_pb_edit.setText(path)
             if not self.output_dir_edit.text().strip():
                 self.output_dir_edit.setText(str(Path(path).resolve().parent / "prediction_output"))
+
+    def choose_dose_input_dir(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Select input directory",
+            self.dose_pb_edit.text().strip() or str(Path.cwd()),
+        )
+        if path:
+            resolved = Path(path).resolve()
+            self.dose_pb_edit.setText(str(resolved))
+            if not self.output_dir_edit.text().strip():
+                self.output_dir_edit.setText(str(resolved / "prediction_output"))
 
     def choose_geometry_ivz(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -527,9 +546,9 @@ class Geant4PipelineWindow(QMainWindow):
     def choose_contour_pb(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select contour protobuf or NIfTI mask",
+            "Select contour protobuf, NIfTI mask, or RTSTRUCT",
             str(Path.cwd()),
-            "Contour files (*.pb *.nii *.nii.gz);;All files (*)",
+            "Contour files (*.pb *.nii *.nii.gz *.dcm *.dicom);;All files (*)",
         )
         if path:
             self.contour_pb_edit.setText(path)
@@ -605,21 +624,32 @@ class Geant4PipelineWindow(QMainWindow):
     def run_pipeline(self) -> None:
         cursor_set = False
         try:
-            dose_pb_path = _parse_required_existing_path(
+            dose_input_path = _parse_required_existing_path(
                 self.dose_pb_edit.text(),
-                label="Dose protobuf",
+                label="Dose input",
             )
-            geometry_ivz_path = _parse_required_existing_path(
-                self.geometry_ivz_edit.text(),
-                label="Geometry ivz",
+            geometry_text = self.geometry_ivz_edit.text().strip()
+            geometry_ivz_path = (
+                None
+                if (dose_input_path.is_dir() or is_rt_dose_path(dose_input_path)) and not geometry_text
+                else _parse_required_existing_path(
+                    geometry_text,
+                    label="Geometry ivz",
+                )
             )
             contour_path = _parse_optional_existing_path(self.contour_pb_edit.text())
+            dose_pb_path, geometry_ivz_path, contour_path = resolve_pipeline_input_paths(
+                dose_input_path,
+                geometry_ivz_path,
+                contour_path,
+                mixed_field=self.mixed_field_check.isChecked(),
+            )
 
             output_dir_raw = self.output_dir_edit.text().strip()
             output_dir = (
                 Path(output_dir_raw).expanduser().resolve()
                 if output_dir_raw
-                else (dose_pb_path.parent / "prediction_output").resolve()
+                else ((dose_input_path if dose_input_path.is_dir() else dose_pb_path.parent) / "prediction_output").resolve()
             )
             output_dir.mkdir(parents=True, exist_ok=True)
 

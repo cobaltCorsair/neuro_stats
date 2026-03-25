@@ -12,8 +12,14 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 try:
+    import pydicom
+except ModuleNotFoundError:  # pragma: no cover - exercised in runtime environments without pydicom
+    pydicom = None
+
+try:
     from work_with_prepared_data.radiobioligy_project.survival.dose_reader import (
         DoseMap,
+        is_rtstruct_path,
         read_dose_map,
         read_full_dose_map,
     )
@@ -37,7 +43,7 @@ try:
         compute_voxel_sf,
     )
 except ModuleNotFoundError:
-    from survival.dose_reader import DoseMap, read_dose_map, read_full_dose_map
+    from survival.dose_reader import DoseMap, is_rtstruct_path, read_dose_map, read_full_dose_map
     from survival.fit_alpha_beta_using_processor import FAMILY_LET_DEFAULTS, LQFitResult
     from survival.let_parametrization import LETDependentParams, fit_let_dependence
     from survival.tumor_growth_predictor import (
@@ -59,11 +65,15 @@ DEFAULT_COMPONENT_FAMILY_MAP: Dict[str, str] = {
     "mainDose": "y",
     "stuffDose": "e",
 }
+_DICOM_SUFFIXES = (".dcm", ".dicom")
+_NIFTI_SUFFIXES = (".nii", ".nii.gz")
+_PROTOBUF_SUFFIXES = (".pb",)
+_GEOMETRY_SUFFIXES = (".ivz", ".pb")
 
 
 def run_prediction_pipeline(
     dose_pb_path: Path,
-    geometry_ivz_path: Path,
+    geometry_ivz_path: Optional[Path] = None,
     *,
     contour_path: Optional[Path] = None,
     fit_results_csv: Optional[Path] = None,
@@ -87,8 +97,14 @@ def run_prediction_pipeline(
 ) -> dict:
     """Run the voxel-to-growth prediction pipeline and export CSV/JSON artifacts."""
     dose_pb_path = Path(dose_pb_path)
-    geometry_ivz_path = Path(geometry_ivz_path)
+    geometry_ivz_path = None if geometry_ivz_path is None else Path(geometry_ivz_path)
     contour_path = None if contour_path is None else Path(contour_path)
+    dose_pb_path, geometry_ivz_path, contour_path = resolve_pipeline_input_paths(
+        dose_pb_path,
+        geometry_ivz_path,
+        contour_path,
+        mixed_field=mixed_field,
+    )
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -185,6 +201,174 @@ def run_prediction_pipeline(
         "dvh": dvh,
         "output_files": output_files,
     }
+
+
+def resolve_pipeline_input_paths(
+    dose_input_path: Path,
+    geometry_ivz_path: Optional[Path] = None,
+    contour_path: Optional[Path] = None,
+    *,
+    mixed_field: bool = False,
+) -> Tuple[Path, Optional[Path], Optional[Path]]:
+    """Resolve either explicit file paths or an input directory into pipeline inputs."""
+    dose_input_path = Path(dose_input_path)
+    geometry_ivz_path = None if geometry_ivz_path is None else Path(geometry_ivz_path)
+    contour_path = None if contour_path is None else Path(contour_path)
+    if not dose_input_path.is_dir():
+        return dose_input_path, geometry_ivz_path, contour_path
+
+    input_dir = dose_input_path
+    resolved_dose_path = _resolve_input_directory_dose_path(input_dir, mixed_field=mixed_field)
+    resolved_geometry_path = geometry_ivz_path
+    if resolved_geometry_path is None and not _is_dicom_file_path(resolved_dose_path):
+        resolved_geometry_path = _autodiscover_geometry_path(input_dir)
+        if resolved_geometry_path is None:
+            raise ValueError(
+                f"Input directory {input_dir} contains a protobuf dose map but no unique geometry "
+                "InputVoxelMap (.ivz/.pb). Specify the geometry file explicitly."
+            )
+    resolved_contour_path = contour_path
+    if resolved_contour_path is None:
+        resolved_contour_path = _autodiscover_contour_path(input_dir, resolved_dose_path)
+    return resolved_dose_path, resolved_geometry_path, resolved_contour_path
+
+
+def _resolve_input_directory_dose_path(input_dir: Path, *, mixed_field: bool) -> Path:
+    dicom_dose_candidates = _find_dicom_candidates(input_dir, modality="RTDOSE")
+    if dicom_dose_candidates:
+        if mixed_field:
+            raise ValueError(
+                f"Input directory {input_dir} contains RT Dose DICOM data, but mixed-field mode requires "
+                "a protobuf fullVoxelMap input."
+            )
+        return _select_single_candidate(dicom_dose_candidates, label="RT Dose file", input_dir=input_dir)
+
+    protobuf_candidates = _find_protobuf_dose_candidates(input_dir, mixed_field=mixed_field)
+    return _select_single_candidate(
+        protobuf_candidates,
+        label=("fullVoxelMap protobuf" if mixed_field else "dose protobuf"),
+        input_dir=input_dir,
+    )
+
+
+def _autodiscover_geometry_path(input_dir: Path) -> Optional[Path]:
+    exact_names = {"inputvoxelmap.ivz", "inputvoxelmap.pb"}
+    candidates = [
+        path
+        for path in _iter_input_files(input_dir)
+        if path.name.lower() in exact_names
+    ]
+    if not candidates:
+        candidates = [
+            path
+            for path in _iter_input_files(input_dir)
+            if _path_has_suffix(path, _GEOMETRY_SUFFIXES) and "inputvoxel" in path.name.lower()
+        ]
+    if not candidates:
+        candidates = [
+            path
+            for path in _iter_input_files(input_dir)
+            if str(path).lower().endswith(".ivz")
+        ]
+    if not candidates:
+        return None
+    return _select_single_candidate(candidates, label="geometry InputVoxelMap", input_dir=input_dir)
+
+
+def _autodiscover_contour_path(input_dir: Path, dose_path: Path) -> Optional[Path]:
+    if _is_dicom_file_path(dose_path):
+        candidates = _find_dicom_candidates(input_dir, modality="RTSTRUCT")
+        if not candidates:
+            return None
+        return _select_single_candidate(candidates, label="RTSTRUCT contour", input_dir=input_dir)
+
+    exact_names = {"contour.pb", "contourmeta.pb", "tumor_mask.nii", "tumor_mask.nii.gz"}
+    candidates = [
+        path
+        for path in _iter_input_files(input_dir)
+        if path.name.lower() in exact_names
+    ]
+    if not candidates:
+        candidates = [
+            path
+            for path in _iter_input_files(input_dir)
+            if (
+                (_path_has_suffix(path, _PROTOBUF_SUFFIXES) and "contour" in path.name.lower())
+                or _path_has_suffix(path, _NIFTI_SUFFIXES)
+                or is_rtstruct_path(path)
+            )
+        ]
+    if not candidates:
+        return None
+    return _select_single_candidate(candidates, label="contour input", input_dir=input_dir)
+
+
+def _find_protobuf_dose_candidates(input_dir: Path, *, mixed_field: bool) -> List[Path]:
+    preferred_names = {"fullvoxelmap.pb"} if mixed_field else {"totdosevoxelmap.pb", "dose.pb"}
+    candidates = [
+        path
+        for path in _iter_input_files(input_dir)
+        if path.name.lower() in preferred_names
+    ]
+    if candidates:
+        return sorted(candidates)
+    keywords = ("fullvoxelmap",) if mixed_field else ("totdosevoxelmap", "dose")
+    return sorted(
+        path
+        for path in _iter_input_files(input_dir)
+        if _path_has_suffix(path, _PROTOBUF_SUFFIXES)
+        and any(keyword in path.name.lower() for keyword in keywords)
+        and "contour" not in path.name.lower()
+        and "inputvoxel" not in path.name.lower()
+    )
+
+
+def _find_dicom_candidates(input_dir: Path, *, modality: str) -> List[Path]:
+    modality_upper = str(modality).strip().upper()
+    return sorted(
+        path
+        for path in _iter_input_files(input_dir)
+        if _read_dicom_modality(path) == modality_upper
+    )
+
+
+def _iter_input_files(input_dir: Path) -> List[Path]:
+    return sorted(path for path in input_dir.iterdir() if path.is_file())
+
+
+def _path_has_suffix(path: Path, suffixes: Sequence[str]) -> bool:
+    normalized = str(path).strip().lower()
+    return normalized.endswith(tuple(str(suffix).lower() for suffix in suffixes))
+
+
+def _is_dicom_file_path(path: Path) -> bool:
+    return _path_has_suffix(path, _DICOM_SUFFIXES)
+
+
+def _read_dicom_modality(path: Path) -> Optional[str]:
+    if pydicom is None or not _is_dicom_file_path(path):
+        return None
+    try:
+        dataset = pydicom.dcmread(str(path), stop_before_pixels=True, specific_tags=["Modality"])
+    except Exception:
+        return None
+    modality = str(getattr(dataset, "Modality", "") or "").strip().upper()
+    return modality or None
+
+
+def _select_single_candidate(candidates: Sequence[Path], *, label: str, input_dir: Path) -> Path:
+    if not candidates:
+        raise ValueError(
+            f"Could not find a {label} in input directory {input_dir}. "
+            "Specify the file explicitly instead of the directory."
+        )
+    if len(candidates) > 1:
+        candidate_names = ", ".join(path.name for path in candidates)
+        raise ValueError(
+            f"Found multiple {label} candidates in {input_dir}: {candidate_names}. "
+            "Specify the file explicitly instead of the directory."
+        )
+    return Path(candidates[0])
 
 
 def _resolve_schedule_days(
@@ -577,11 +761,18 @@ def build_cli_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the GEANT4 -> voxel SF -> tumor growth prediction pipeline."
     )
-    parser.add_argument("dose_pb_path", help="Path to GEANT4 dose protobuf (.pb).")
-    parser.add_argument("geometry_ivz_path", help="Path to geometry InputVoxelMap protobuf (.ivz/.pb).")
+    parser.add_argument(
+        "dose_pb_path",
+        help="Path to dose input (.pb protobuf, RT Dose .dcm, or an input directory with one animal).",
+    )
+    parser.add_argument(
+        "geometry_ivz_path",
+        nargs="?",
+        help="Path to geometry InputVoxelMap protobuf (.ivz/.pb). Required for explicit protobuf input; optional when an input directory is used.",
+    )
     parser.add_argument(
         "--contour-path",
-        help="Optional ContourMeta protobuf or 3D Slicer NIfTI mask path.",
+        help="Optional ContourMeta protobuf, aligned 3D Slicer NIfTI mask, or RTSTRUCT DICOM path. When an input directory is provided, a unique RTSTRUCT is autodiscovered.",
     )
     parser.add_argument("--fit-results-csv", help="Optional fitter summary CSV used to derive alpha/beta or LET params.")
     parser.add_argument("--alpha", type=float, help="Manual alpha value (Gy^-1).")
@@ -633,7 +824,7 @@ def cli_main(argv: Optional[Sequence[str]] = None) -> dict:
     component_family_map = _parse_component_family_map(args.component_family_map)
     result = run_prediction_pipeline(
         dose_pb_path=Path(args.dose_pb_path),
-        geometry_ivz_path=Path(args.geometry_ivz_path),
+        geometry_ivz_path=(None if args.geometry_ivz_path is None else Path(args.geometry_ivz_path)),
         contour_path=(None if args.contour_path is None else Path(args.contour_path)),
         fit_results_csv=(None if args.fit_results_csv is None else Path(args.fit_results_csv)),
         let_params=let_params,

@@ -47,12 +47,58 @@ def build_structure_assignments_from_nifti(
             "NIfTI contour support requires `nibabel`. Install it in the project environment first."
         )
 
-    image = nib.load(str(mask_path))
     expected_shape = (
         int(geometry_message.xLen),
         int(geometry_message.yLen),
         int(geometry_message.zLen),
     )
+    geometry_voxel_ids = {int(voxel_id) for voxel_id in geometry_message.voxData.keys()}
+    return _build_structure_assignments_from_mask(
+        mask_path=mask_path,
+        expected_shape=expected_shape,
+        geometry_voxel_ids=geometry_voxel_ids,
+        structure_name=structure_name,
+        base_structure_ids=base_structure_ids,
+        base_voxel_structure_ids=base_voxel_structure_ids,
+    )
+
+
+def build_structure_assignments_from_nifti_grid(
+    mask_path: Path,
+    grid_shape: Sequence[int],
+    *,
+    structure_name: Optional[str] = None,
+    base_structure_ids: Optional[Mapping[int, str]] = None,
+    base_voxel_structure_ids: Optional[Mapping[int, Sequence[int]]] = None,
+) -> StructureAssignments:
+    """Convert a binary NIfTI label map into voxel assignments for an arbitrary aligned grid."""
+    if nib is None:
+        raise ModuleNotFoundError(
+            "NIfTI contour support requires `nibabel`. Install it in the project environment first."
+        )
+    expected_shape = tuple(int(item) for item in grid_shape)
+    if len(expected_shape) != 3:
+        raise ValueError(f"grid_shape must contain exactly three dimensions; got {grid_shape}.")
+    return _build_structure_assignments_from_mask(
+        mask_path=mask_path,
+        expected_shape=expected_shape,
+        geometry_voxel_ids=None,
+        structure_name=structure_name,
+        base_structure_ids=base_structure_ids,
+        base_voxel_structure_ids=base_voxel_structure_ids,
+    )
+
+
+def _build_structure_assignments_from_mask(
+    *,
+    mask_path: Path,
+    expected_shape: tuple[int, int, int],
+    geometry_voxel_ids: Optional[set[int]],
+    structure_name: Optional[str],
+    base_structure_ids: Optional[Mapping[int, str]],
+    base_voxel_structure_ids: Optional[Mapping[int, Sequence[int]]],
+) -> StructureAssignments:
+    image = nib.load(str(mask_path))
     data = np.asarray(image.get_fdata())
     if data.ndim == 2 and expected_shape[2] == 1:
         data = data[:, :, np.newaxis]
@@ -80,8 +126,11 @@ def build_structure_assignments_from_nifti(
         )
 
     linear_ids = np.flatnonzero(positive_mask.ravel(order="F")).astype(int)
-    geometry_voxel_ids = {int(voxel_id) for voxel_id in geometry_message.voxData.keys()}
-    resolved_offset = _resolve_voxel_id_offset(linear_ids, geometry_voxel_ids)
+    resolved_offset = (
+        _resolve_voxel_id_offset(linear_ids, geometry_voxel_ids)
+        if geometry_voxel_ids is not None
+        else 0
+    )
 
     merged_structure_ids = {
         int(structure_id): str(name)

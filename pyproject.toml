@@ -20,6 +20,7 @@ matplotlib = "^3.7.0"
 pandas = "^2.0.0"
 protobuf = "5.29.3"
 nibabel = "^5.3.2"
+pydicom = "^3.0.1"
 
 [tool.poetry.group.ml]
 optional = true

@@ -35,6 +35,7 @@ class TumorDataComparatorAdvanced:
         self._perform_stat_test = False  # Значение по умолчанию
         self._annotation_multiplier = 0
         self._use_ttest = False
+        self._use_shapiro = False
         self._use_AUC = False
 
     @property
@@ -60,6 +61,14 @@ class TumorDataComparatorAdvanced:
     @use_ttest.setter
     def use_ttest(self, value: int):
         self._use_ttest = value
+
+    @property
+    def use_shapiro(self):
+        return self._use_shapiro
+
+    @use_shapiro.setter
+    def use_shapiro(self, value: bool):
+        self._use_shapiro = value
 
     @property
     def use_AUC(self):
@@ -110,7 +119,8 @@ class TumorDataComparatorAdvanced:
             [self.visualizers[0], self.visualizers[1]],
             'up',
             self.annotation_multiplier,
-            self.use_ttest
+            self.use_ttest,
+            self.use_shapiro,
             )
 
         drawgraph.finalize_figure('', legend_fontsize=18)
@@ -163,7 +173,8 @@ class TumorDataComparatorAdvanced:
             [self.visualizers[0], self.visualizers[1]],
             'down',
             self.annotation_multiplier,
-            self.use_ttest
+            self.use_ttest,
+            self.use_shapiro,
         )
         # Добавляем легенду с интервалами (при необходимости)
         time_labels = [f"Интервал: {interval}" for interval in time_intervals]
@@ -230,7 +241,8 @@ class TumorDataComparatorAdvanced:
             visualizers_to_pass,  # <-- передаём уже проверенный список
             'up',
             self.annotation_multiplier,
-            self.use_ttest
+            self.use_ttest,
+            self.use_shapiro,
         )
 
         drawgraph.finalize_figure('', legend_fontsize=18)

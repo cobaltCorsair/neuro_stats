@@ -1,11 +1,18 @@
 import io
+import subprocess
+import sys
+import os
+
+# Добавляем директорию radiobioligy_project/ в sys.path, чтобы модули
+# с голыми импортами (controls.py, draw_base_graphs.py и др.) находили друг друга
+_project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_dir not in sys.path:
+    sys.path.insert(0, _project_dir)
+
 from PyQt6.QtCore import QFileInfo, Qt
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel, \
     QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup, QComboBox
-import subprocess
-import sys
-import os
 
 # Импорт сгенерированного класса из gui.py
 from work_with_prepared_data.radiobioligy_project.gui.gui import Ui_MainWindow
@@ -151,6 +158,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.saved_checked_items = []
         self.perform_stat_test = False
         self.use_ttest = False
+        self.use_shapiro = False
         self.use_AUC = False
         self.annotation_multiplier = 0
         self.data_processor = DataProcessor()
@@ -193,6 +201,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.checkBox_2.setDisabled(True)
         self.checkBox_7.setDisabled(True)
         self.checkBox.setDisabled(True)
+        self.checkBox_shapiro.setDisabled(True)
         self.pushButton_4.setCheckable(False)
         self.pushButton_8.setCheckable(False)
         # Биндинг кнопок
@@ -217,6 +226,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.checkBox_6.stateChanged.connect(lambda: self.on_checkbox_pair_changed(self.checkBox_6, self.checkBox_5))
         self.checkBox_7.stateChanged.connect(lambda: self.on_checkbox_tests_changed(self.checkBox_7, self.checkBox))
         self.checkBox.stateChanged.connect(lambda: self.on_checkbox_tests_changed(self.checkBox, self.checkBox_7))
+        self.checkBox_shapiro.stateChanged.connect(self.on_shapiro_changed)
         self.checkBox_2.stateChanged.connect(self.set_auc_checkbox)
         self.model.itemChanged.connect(self.update_first_button_state)
         self.model.itemChanged.connect(self.update_second_button_state)
@@ -373,26 +383,32 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.checkBox_2.setEnabled(True)
             self.checkBox_7.setEnabled(True)
             self.checkBox.setEnabled(True)
+            self.checkBox_shapiro.setEnabled(True)
         elif self.pushButton_4.isEnabled() and self.checkBox_6.isChecked():
             self.checkBox_2.setEnabled(True)
             self.checkBox_7.setEnabled(True)
             #self.checkBox.setEnabled(True)
+            self.checkBox_shapiro.setEnabled(True)
         elif self.pushButton.isEnabled() and self.checkBox_6.isChecked():
             # Для одной группы опухолей также можно вычислить AUC
             self.checkBox_2.setEnabled(True)
-            # Но статистические тесты не имеют смысла для одной группы
+            # Статистические тесты сравнения не имеют смысла для одной группы,
+            # но Шапиро–Уилк можно применить к одной группе
             self.checkBox_7.setEnabled(False)
             self.checkBox_7.setChecked(False)
             self.checkBox.setEnabled(False)
             self.checkBox.setChecked(False)
+            self.checkBox_shapiro.setEnabled(True)
         elif self.pushButton_2.isEnabled() and self.checkBox_6.isChecked():
             # Для одной группы кожных реакций также можно вычислить AUC
             self.checkBox_2.setEnabled(True)
-            # Но статистические тесты не имеют смысла для одной группы
+            # Статистические тесты сравнения не имеют смысла для одной группы,
+            # но Шапиро–Уилк можно применить к одной группе
             self.checkBox_7.setEnabled(False)
             self.checkBox_7.setChecked(False)
             self.checkBox.setEnabled(False)
             self.checkBox.setChecked(False)
+            self.checkBox_shapiro.setEnabled(True)
         else:
             self.checkBox_2.setEnabled(False)
             self.checkBox_2.setChecked(False)
@@ -402,6 +418,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             self.checkBox.setEnabled(False)
             self.checkBox.setChecked(False)
+
+            self.checkBox_shapiro.setEnabled(False)
+            self.checkBox_shapiro.setChecked(False)
 
     def on_legend_position_changed(self):
         selected_position = self.comboBox_3.currentText()
@@ -1007,6 +1026,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.perform_stat_test = self.checkBox_7.isChecked()
         self.use_ttest = self.checkBox.isChecked()
 
+    def on_shapiro_changed(self):
+        """Обновляет флаг теста Шапиро–Уилка."""
+        self.use_shapiro = self.checkBox_shapiro.isChecked()
+
     def handle_all_of_rats(self):
         """
         Обрабатывает запрос на создание графика на основе выбранных экспериментов и условий выбора чекбоксов.
@@ -1282,7 +1305,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 # Получить информацию о контрольных группах
                 control_groups_info = self._get_control_groups_info()
                 control_idx = self._find_control_index()  # для обратной совместимости
-                TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test, control_index=control_idx, control_groups_info=control_groups_info, show_separate_legend=self.show_legend_separately)
+                TumorDataVisualizer.plot_auc_comparison(self.current_selected_paths, perform_stat_test=self.perform_stat_test, control_index=control_idx, control_groups_info=control_groups_info, show_separate_legend=self.show_legend_separately, use_shapiro=self.use_shapiro)
             else:
                 # Для других случаев, когда используется один файл или другие типы визуализаторов
                 if self.current_control is not None and plotting_func == TumorDataComparatorAdvanced.compare_control_and_experiment:
@@ -1292,6 +1315,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     plotting_func(visualizer, self.current_control, experiment_visualizers)
                 else:
                     plotting_func(visualizer)
+                    # Шапиро–Уилк для одиночного эксперимента
+                    if isinstance(visualizer, TumorDataVisualizer) and getattr(visualizer, 'use_shapiro', False):
+                        from work_with_prepared_data.radiobioligy_project.utils.visualizer import GraphVisualizer
+                        GraphVisualizer._add_shapiro_annotation([visualizer])
 
             # Очищаем предыдущую фигуру, если она есть
             if self.figure is not None:
@@ -1422,6 +1449,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 visualizer_instance = self.apply_selected_outlier_method(visualizer_instance)
             # Устанавливаем параметры для одного эксперимента
             visualizer_instance.use_AUC = self.use_AUC
+            visualizer_instance.use_shapiro = self.use_shapiro
         elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is None:
             # Случай для сравнения нескольких экспериментов
             visualizer_instances = [TumorDataVisualizer(path) for path in self.current_selected_paths]
@@ -1431,6 +1459,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instance.perform_stat_test = self.perform_stat_test
             visualizer_instance.annotation_multiplier = self.annotation_multiplier
             visualizer_instance.use_ttest = self.use_ttest
+            visualizer_instance.use_shapiro = self.use_shapiro
             visualizer_instance.use_AUC = self.use_AUC
         elif self.current_visualizer is TumorDataComparatorAdvanced and self.current_control is not None:
             # Случай для сравнения нескольких экспериментов с контрольной группой
@@ -1441,6 +1470,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             visualizer_instance.perform_stat_test = self.perform_stat_test
             visualizer_instance.annotation_multiplier = self.annotation_multiplier
             visualizer_instance.use_ttest = self.use_ttest
+            visualizer_instance.use_shapiro = self.use_shapiro
             visualizer_instance.use_AUC = self.use_AUC
         elif self.current_visualizer is SkinReactionsVisualizer:
             # ВАЖНО: Для кожных реакций НЕ используем кеш при методе ручного исключения
