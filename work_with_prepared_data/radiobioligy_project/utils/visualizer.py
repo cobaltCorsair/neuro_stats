@@ -59,6 +59,7 @@ class GraphVisualizer:
         self.max_y = None
         self.legend_info = []
         self.legend_position = 'best'
+        self.shapiro_labels = []  # список строк "p=... (норм./не норм.)" по порядку групп
         graph_manager.register_visualizer(self)
 
     def update_legend_position(self, position):
@@ -164,41 +165,37 @@ class GraphVisualizer:
     @staticmethod
     def _add_shapiro_annotation(visualizers):
         """
-        Добавляет текстовую аннотацию теста Шапиро–Уилка на текущий matplotlib-график.
+        Добавляет результаты теста Шапиро–Уилка: на график или в отдельную легенду.
 
         Для каждой группы вычисляет AUC по индивидуальным кривым животных и проверяет
         нормальность распределения этих AUC. Требует не менее 3 животных в группе.
+
+        Если активен режим "Легенда отдельно" (legend_position=None), результаты
+        добавляются в легенду через visualizer.add_legend(); иначе — как текстовая
+        аннотация на графике.
 
         Args:
             visualizers: Список объектов визуализаторов с атрибутами tumor_volumes,
                          time_data и experiment_params.
         """
-        lines = ["Шапиро–Уилк (AUC):"]
+        shapiro_labels = []
         for viz in visualizers:
             try:
-                vols = np.array(viz.tumor_volumes, dtype=float)   # (n_animals, n_timepoints)
+                vols = np.array(viz.tumor_volumes, dtype=float)
                 time_pts = np.array(viz.time_data, dtype=float)
                 individual_aucs = [np.trapz(row, time_pts) for row in vols]
-                label = format_experiment_params(viz.experiment_params)
-                # Обрезаем метку, чтобы не переполнять аннотацию
-                label_short = label[:25] + "…" if len(label) > 25 else label
                 if len(individual_aucs) < 3:
-                    lines.append(f"{label_short}: н/д (n<3)")
+                    shapiro_labels.append("н/д (n<3)")
                 else:
                     _, p = shapiro_test(individual_aucs)
                     verdict = "норм." if p >= 0.05 else "не норм."
-                    lines.append(f"{label_short}: p={p:.3f} ({verdict})")
+                    shapiro_labels.append(f"p={p:.3f} ({verdict}, кр. Шапиро-Уилка)")
             except Exception:
-                pass
+                shapiro_labels.append("")
 
-        if len(lines) > 1:
-            text = "\n".join(lines)
-            plt.gcf().text(
-                0.01, 0.01, text,
-                fontsize=8, verticalalignment='bottom',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow',
-                          edgecolor='goldenrod', alpha=0.85),
-            )
+        visualizer = graph_manager.get_last_visualizer()
+        if visualizer and shapiro_labels:
+            visualizer.shapiro_labels = shapiro_labels
 
     @staticmethod
     def prepare_mann_whitney_test_interpolated(experiments_to_compare, perform_stat_test):
@@ -583,16 +580,18 @@ class GraphVisualizer:
         # Только если legend_position не равно None
         if self.lines and self.legend_position is not None:
             labels = []
-            for line in self.lines:
+            for i, line in enumerate(self.lines):
                 original_label = line.get_label()
                 if original_label.startswith("Контроль: без облучения"):
-                    labels.append("Контроль: без облучения")
+                    base = "Контроль: без облучения"
                 elif ", Интервал:" in original_label:
                     main_part, time_part = original_label.split(", Интервал:", 1)
-                    wrapped_label = f"{main_part.strip()}\nИнтервал: {time_part.strip()}"
-                    labels.append(wrapped_label)
+                    base = f"{main_part.strip()}\nИнтервал: {time_part.strip()}"
                 else:
-                    labels.append(original_label)
+                    base = original_label
+                if self.shapiro_labels and i < len(self.shapiro_labels) and self.shapiro_labels[i]:
+                    base = f"{base}\n{self.shapiro_labels[i]}"
+                labels.append(base)
 
             # Создаём основную легенду с новыми метками
             legend_kwargs = dict(handles=self.lines, labels=labels, loc=self.legend_position,
@@ -616,8 +615,11 @@ class GraphVisualizer:
             for extra_legend_data in self.legend_info:
                 labels, title, loc, display_marker = extra_legend_data
                 if display_marker:
-                    extra_handles = [plt.Line2D([], [], color=line.get_color(), marker=line.get_marker()) for line in
-                                     self.lines[:len(labels)]]
+                    extra_handles = [
+                        plt.Line2D([], [], color=line.get_color(), marker=line.get_marker(),
+                                   linestyle=line.get_linestyle(), linewidth=line.get_linewidth())
+                        for line in self.lines[:len(labels)]
+                    ]
                 else:
                     # Если маркер не нужен, создаем элементы легенды без маркера
                     extra_handles = [plt.Line2D([], [], color="none", marker=None, linestyle="None", label=label) for label

@@ -545,7 +545,8 @@ class TumorDataVisualizer:
             # Тест Шапиро–Уилка: аннотация нормальности для каждой группы
             if use_shapiro:
                 from scipy.stats import shapiro as shapiro_test
-                shapiro_lines = ["Шапиро–Уилк (AUC):"]
+                import matplotlib.lines as mlines
+                shapiro_lines = ["Критерий Шапиро-Уилка (AUC):"]
                 for d in file_data:
                     aucs = d['individual_aucs']
                     lbl = d['label']
@@ -556,16 +557,33 @@ class TumorDataVisualizer:
                         try:
                             _, p = shapiro_test(aucs)
                             verdict = "норм." if p >= 0.05 else "не норм."
-                            shapiro_lines.append(f"{lbl_short}: p={p:.3f} ({verdict})")
+                            shapiro_lines.append(f"{lbl_short}: p={p:.3f} ({verdict}, кр. Шапиро-Уилка)")
                         except Exception:
                             pass
                 if len(shapiro_lines) > 1:
-                    plt.gcf().text(
-                        0.01, 0.01, "\n".join(shapiro_lines),
-                        fontsize=8, verticalalignment='bottom',
-                        bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow',
-                                  edgecolor='goldenrod', alpha=0.85),
-                    )
+                    if show_separate_legend:
+                        # Режим "Легенда отдельно" — добавляем как невидимую легенду,
+                        # чтобы она попала в окно предпросмотра через extract_legend_from_figure
+                        ax = plt.gca()
+                        handles = [
+                            mlines.Line2D([], [], color='none', linestyle='', marker='', label=line)
+                            for line in shapiro_lines[1:]
+                        ]
+                        shapiro_legend = ax.legend(
+                            handles=handles, title="Шапиро–Уилк (AUC)",
+                            loc='upper left', bbox_to_anchor=(0.0, -0.05),
+                            fontsize=9, frameon=False
+                        )
+                        ax.add_artist(shapiro_legend)
+                    else:
+                        ax_current = plt.gca()
+                        ax_current.text(
+                            0.02, 0.03, "\n".join(shapiro_lines),
+                            transform=ax_current.transAxes,
+                            fontsize=12, verticalalignment='bottom',
+                            bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
+                                      edgecolor='lightgray', alpha=0.9),
+                        )
 
             if show_separate_legend:
                 plt.tight_layout()  # Легенда отдельно - не нужно дополнительное место

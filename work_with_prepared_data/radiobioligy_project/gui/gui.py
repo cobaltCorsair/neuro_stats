@@ -316,7 +316,7 @@ class Ui_MainWindow(object):
         self.checkBox_2.setText(_translate("MainWindow", "Площадь под кривой"))
         self.checkBox_7.setText(_translate("MainWindow", "Критерий Манна-Уитни"))
         self.checkBox.setText(_translate("MainWindow", "Критерий Стьюдента"))
-        self.checkBox_shapiro.setText(_translate("MainWindow", "Шапиро–Уилк"))
+        self.checkBox_shapiro.setText(_translate("MainWindow", "Критерий Шапиро-Уилка"))
         self.label_3.setText(_translate("MainWindow", "Сдвиг критерия"))
         self.label_4.setText(_translate("MainWindow", "Коэффициент"))
         self.label.setText(_translate("MainWindow", "Контроль:"))

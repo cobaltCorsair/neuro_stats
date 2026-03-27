@@ -2,6 +2,7 @@ import io
 import subprocess
 import sys
 import os
+from pathlib import Path
 
 # Добавляем директорию radiobioligy_project/ в sys.path, чтобы модули
 # с голыми импортами (controls.py, draw_base_graphs.py и др.) находили друг друга
@@ -9,8 +10,8 @@ _project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_dir not in sys.path:
     sys.path.insert(0, _project_dir)
 
-from PyQt6.QtCore import QFileInfo, Qt
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QPixmap
+from PyQt6.QtCore import QFileInfo, Qt, QUrl
+from PyQt6.QtGui import QAction, QDesktopServices, QStandardItemModel, QStandardItem, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel, \
     QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup, QComboBox
 
@@ -163,6 +164,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.annotation_multiplier = 0
         self.data_processor = DataProcessor()
         self.legend_manager = LegendManager()
+        self.fit_alpha_beta_window = None
+        self.growth_predictor_window = None
+        self.geant4_pipeline_window = None
+        self.tumor_3d_viewer_window = None
         self.cached_visualizer = None  # Кеш для модифицированного визуализатора
         self.cache_key = None  # Ключ для проверки актуальности кеша
         self.show_legend_separately = False  # Флаг для отображения легенды отдельно
@@ -175,6 +180,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Вставляем чекбокс перед label_6 (положение основной легенды)
         label_index = self.horizontalLayout_7.indexOf(self.label_6)
         self.horizontalLayout_7.insertWidget(label_index, self.checkBox_separate_legend)
+        self.tools_menu = self.menubar.addMenu("Инструменты")
+        self.action_open_survival_fitter = QAction("LQ fitter и радиобиология", self)
+        self.action_open_survival_fitter.triggered.connect(self.open_survival_fitter)
+        self.tools_menu.addAction(self.action_open_survival_fitter)
+        self.action_open_growth_predictor = QAction("Предсказание роста опухоли", self)
+        self.action_open_growth_predictor.triggered.connect(self.open_growth_predictor)
+        self.tools_menu.addAction(self.action_open_growth_predictor)
+        self.action_open_geant4_pipeline = QAction("GEANT4 / RT Dose pipeline", self)
+        self.action_open_geant4_pipeline.triggered.connect(self.open_geant4_pipeline)
+        self.tools_menu.addAction(self.action_open_geant4_pipeline)
+        self.action_open_tumor_3d_viewer = QAction("3D геометрия опухоли", self)
+        self.action_open_tumor_3d_viewer.triggered.connect(self.open_tumor_3d_viewer)
+        self.tools_menu.addAction(self.action_open_tumor_3d_viewer)
+        self.action_about_docs = QAction("О программе", self)
+        self.action_about_docs.triggered.connect(self.open_project_documentation)
+        self.menubar.addAction(self.action_about_docs)
         self.action.triggered.connect(self.open_files)
         self.action_2.triggered.connect(self.save_graph)
 
@@ -1641,6 +1662,74 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.information(self, title, message)
+
+    def _show_child_window(self, attr_name, window_factory):
+        window = getattr(self, attr_name)
+        if window is None:
+            window = window_factory()
+            setattr(self, attr_name, window)
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    def _show_tool_open_error(self, tool_name, error):
+        QMessageBox.critical(
+            self,
+            "Ошибка",
+            f"Не удалось открыть окно «{tool_name}».\n{error}",
+        )
+
+    def open_survival_fitter(self):
+        try:
+            from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_gui import (
+                FitAlphaBetaWindow,
+            )
+            self._show_child_window("fit_alpha_beta_window", FitAlphaBetaWindow)
+        except Exception as error:
+            self._show_tool_open_error("LQ fitter и радиобиология", error)
+
+    def open_growth_predictor(self):
+        try:
+            from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predictor_gui import (
+                TumorGrowthPredictorWindow,
+            )
+            self._show_child_window("growth_predictor_window", TumorGrowthPredictorWindow)
+        except Exception as error:
+            self._show_tool_open_error("Предсказание роста опухоли", error)
+
+    def open_geant4_pipeline(self):
+        try:
+            from work_with_prepared_data.radiobioligy_project.survival.geant4_pipeline_gui import (
+                Geant4PipelineWindow,
+            )
+            self._show_child_window("geant4_pipeline_window", Geant4PipelineWindow)
+        except Exception as error:
+            self._show_tool_open_error("GEANT4 / RT Dose pipeline", error)
+
+    def open_tumor_3d_viewer(self):
+        try:
+            from work_with_prepared_data.radiobioligy_project.tumor_3d_viewer import (
+                Tumor3DViewerWindow,
+            )
+            self._show_child_window("tumor_3d_viewer_window", Tumor3DViewerWindow)
+        except Exception as error:
+            self._show_tool_open_error("3D геометрия опухоли", error)
+
+    def open_project_documentation(self):
+        """Open the project overview HTML page in the default browser."""
+        docs_path = Path(__file__).resolve().parent.parent / "docs" / "index.html"
+        if not docs_path.exists():
+            self.show_message(
+                f"Не найден файл документации:\n{docs_path}",
+                "Ошибка",
+            )
+            return
+
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(docs_path))):
+            self.show_message(
+                "Не удалось открыть документацию в браузере по умолчанию.",
+                "Ошибка",
+            )
 
     def save_graph(self):
         """

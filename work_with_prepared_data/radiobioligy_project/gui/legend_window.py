@@ -261,9 +261,12 @@ class LegendPreviewWindow(QDialog):
             # Группа 1: Основная легенда из self.lines
             main_elements = []
             if visualizer.lines:
-                for line in visualizer.lines:
+                shapiro_labels = getattr(visualizer, 'shapiro_labels', [])
+                for i, line in enumerate(visualizer.lines):
                     label = line.get_label()
                     if label and not label.startswith('_'):
+                        if shapiro_labels and i < len(shapiro_labels) and shapiro_labels[i]:
+                            label = f"{label}\n{shapiro_labels[i]}"
                         main_elements.append(
                             plt.Line2D([], [],
                                      color=line.get_color(),
@@ -287,14 +290,14 @@ class LegendPreviewWindow(QDialog):
                     # Добавляем элементы легенды
                     for i, label in enumerate(labels):
                         if display_marker and i < len(visualizer.lines):
-                            # С маркером
+                            # С маркером и стилем линии
                             line = visualizer.lines[i]
                             info_elements.append(
                                 plt.Line2D([], [],
                                          color=line.get_color(),
                                          marker=line.get_marker(),
-                                         linestyle='',
-                                         linewidth=0,
+                                         linestyle=line.get_linestyle(),
+                                         linewidth=line.get_linewidth(),
                                          markersize=8,
                                          label=label)
                             )
