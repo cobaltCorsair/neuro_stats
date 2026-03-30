@@ -10,10 +10,11 @@ _project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_dir not in sys.path:
     sys.path.insert(0, _project_dir)
 
-from PyQt6.QtCore import QFileInfo, Qt, QUrl
-from PyQt6.QtGui import QAction, QDesktopServices, QStandardItemModel, QStandardItem, QPixmap
+from PyQt6.QtCore import QFileInfo, Qt, QUrl, QTimer
+from PyQt6.QtGui import QAction, QDesktopServices, QStandardItemModel, QStandardItem, QPixmap, QPalette, QColor, QBrush
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel, \
-    QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup, QComboBox
+    QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup, QComboBox, QListView, QStyledItemDelegate, \
+    QStyle, QStyleOptionViewItem
 
 # Импорт сгенерированного класса из gui.py
 from work_with_prepared_data.radiobioligy_project.gui.gui import Ui_MainWindow
@@ -129,6 +130,42 @@ class DataProcessor:
             raise ValueError("Invalid checkbox state")
 
         return plotting_func, selected_paths, control_visualizer
+
+
+class ComboPopupItemDelegate(QStyledItemDelegate):
+    """РёСЃРєР»СЋС‡Р°РµС‚ РЅР°С‚РёРІРЅСѓСЋ С‡С‘СЂРЅСѓСЋ РїРѕРґСЃРІРµС‚РєСѓ РІ popup-СЃРїРёСЃРєР°С… QComboBox."""
+
+    _base_color = QColor('#F0F5FA')
+    _text_color = QColor('#243040')
+    _highlight_color = QColor('#C5D9EE')
+    _highlight_text_color = QColor('#1A3050')
+
+    def paint(self, painter, option, index):
+        item_option = QStyleOptionViewItem(option)
+        self.initStyleOption(item_option, index)
+
+        is_highlighted = bool(
+            item_option.state & QStyle.StateFlag.State_MouseOver
+            or item_option.state & QStyle.StateFlag.State_Selected
+        )
+        background = self._highlight_color if is_highlighted else self._base_color
+        foreground = self._highlight_text_color if is_highlighted else self._text_color
+
+        painter.fillRect(item_option.rect, background)
+        item_option.backgroundBrush = QBrush(background)
+        item_option.palette.setColor(QPalette.ColorRole.Base, background)
+        item_option.palette.setColor(QPalette.ColorRole.Window, background)
+        item_option.palette.setColor(QPalette.ColorRole.Text, foreground)
+        item_option.palette.setColor(QPalette.ColorRole.WindowText, foreground)
+        item_option.state &= ~QStyle.StateFlag.State_Selected
+        item_option.state &= ~QStyle.StateFlag.State_MouseOver
+        item_option.state &= ~QStyle.StateFlag.State_HasFocus
+        super().paint(painter, item_option, index)
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setHeight(max(size.height() + 8, 30))
+        return size
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -277,6 +314,387 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.action_3.triggered.connect(self.edit_experiment_files)
 
+        self._apply_stylesheet()
+
+    @staticmethod
+    def _fix_combo_palette(combo: QComboBox):
+        """Устанавливает правильные цвета выпадающего списка через палитру (QSS не работает для hover)."""
+        combo.setView(QListView(combo))
+        view = combo.view()
+        view.setMouseTracking(True)
+        view.setSpacing(0)
+        view.setUniformItemSizes(True)
+        view.setAutoFillBackground(True)
+        view.viewport().setAutoFillBackground(True)
+        view.viewport().setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        view.setItemDelegate(ComboPopupItemDelegate(view))
+        palette = view.palette()
+        combo_colors = {
+            QPalette.ColorRole.Base: QColor('#F0F5FA'),
+            QPalette.ColorRole.AlternateBase: QColor('#F0F5FA'),
+            QPalette.ColorRole.Window: QColor('#F0F5FA'),
+            QPalette.ColorRole.Text: QColor('#243040'),
+            QPalette.ColorRole.WindowText: QColor('#243040'),
+            QPalette.ColorRole.ButtonText: QColor('#243040'),
+            QPalette.ColorRole.Highlight: QColor('#C5D9EE'),
+            QPalette.ColorRole.HighlightedText: QColor('#1A3050'),
+        }
+        for color_group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+            for color_role, color in combo_colors.items():
+                palette.setColor(color_group, color_role, color)
+        view.setPalette(palette)
+        view.viewport().setPalette(palette)
+        view.setStyleSheet("""
+            QAbstractItemView {
+                background-color: #F0F5FA;
+                color: #243040;
+                border: 1px solid #AABBCC;
+                outline: 0;
+                selection-background-color: #C5D9EE;
+                selection-color: #1A3050;
+            }
+            QAbstractItemView::item {
+                background-color: #F0F5FA;
+                color: #243040;
+                padding: 4px 8px;
+                min-height: 30px;
+            }
+            QAbstractItemView::item:hover,
+            QAbstractItemView::item:selected,
+            QAbstractItemView::item:selected:active,
+            QAbstractItemView::item:selected:!active {
+                background-color: #C5D9EE;
+                color: #1A3050;
+            }
+        """)
+
+    def _apply_stylesheet(self):
+        """Применяет строгий стеклянный стиль ко всему главному окну."""
+        self.setStyleSheet("""
+            /* ── Фон окна — холодный нейтральный ── */
+            QMainWindow {
+                background-color: #CDD5DF;
+            }
+            QWidget {
+                background-color: #CDD5DF;
+                font-family: "Segoe UI", "Arial", sans-serif;
+                font-size: 13px;
+                color: #1C2733;
+            }
+
+            /* ── Менюбар — тёмное стекло ── */
+            QMenuBar {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #2C3E52, stop:1 #243344
+                );
+                color: #C8D6E5;
+                padding: 2px 4px;
+                spacing: 0px;
+                border-bottom: 1px solid #1A2634;
+            }
+            QMenuBar::item {
+                background: transparent;
+                padding: 5px 16px;
+                letter-spacing: 0.3px;
+            }
+            QMenuBar::item:selected {
+                background: rgba(255, 255, 255, 0.12);
+                color: #FFFFFF;
+            }
+            QMenu {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(245,248,252,0.98), stop:1 rgba(232,238,246,0.98)
+                );
+                border: 1px solid #B0BDC8;
+                border-radius: 4px;
+                padding: 3px 0;
+            }
+            QMenu::item {
+                padding: 6px 24px 6px 16px;
+                color: #1C2733;
+            }
+            QMenu::item:selected {
+                background: rgba(74, 115, 160, 0.15);
+                color: #1A3550;
+            }
+            QMenu::item:disabled {
+                color: #9AAAB8;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #CBD5DF;
+                margin: 3px 8px;
+            }
+
+            /* ── Кнопки — матовое стекло ── */
+            QPushButton {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(255,255,255,0.82),
+                    stop:1 rgba(220,230,242,0.75)
+                );
+                border: 1px solid rgba(160,180,200,0.70);
+                border-bottom: 1px solid rgba(130,155,180,0.80);
+                border-radius: 5px;
+                padding: 6px 12px;
+                color: #243040;
+                font-weight: 500;
+                text-align: left;
+            }
+            QPushButton:hover:enabled {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(255,255,255,0.95),
+                    stop:1 rgba(210,228,248,0.90)
+                );
+                border-color: rgba(80,130,190,0.75);
+                color: #1A3050;
+            }
+            QPushButton:pressed {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(195,215,238,0.90),
+                    stop:1 rgba(215,230,248,0.85)
+                );
+                border-color: rgba(70,115,170,0.80);
+            }
+            QPushButton:disabled {
+                background: rgba(200,210,220,0.40);
+                border-color: rgba(160,175,190,0.40);
+                color: #8A9BAB;
+            }
+
+            /* ── Чекбоксы ── */
+            QCheckBox {
+                spacing: 6px;
+                color: #243040;
+                background: transparent;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+                border: 1px solid rgba(120,150,180,0.80);
+                border-radius: 3px;
+                background: rgba(255,255,255,0.75);
+            }
+            QCheckBox::indicator:hover {
+                border-color: rgba(70,115,170,0.90);
+                background: rgba(255,255,255,0.90);
+            }
+            QCheckBox::indicator:checked {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #5A8FC0, stop:1 #3A6A9A
+                );
+                border-color: #2E5A88;
+            }
+            QCheckBox:disabled {
+                color: #8A9BAB;
+            }
+            QCheckBox::indicator:disabled {
+                background: rgba(190,200,210,0.45);
+                border-color: rgba(150,165,180,0.45);
+            }
+
+            /* ── Комбобоксы — матовое стекло ── */
+            QComboBox {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(255,255,255,0.82),
+                    stop:1 rgba(220,230,242,0.75)
+                );
+                border: 1px solid rgba(150,170,195,0.70);
+                border-radius: 4px;
+                padding: 3px 8px;
+                color: #243040;
+                min-height: 24px;
+            }
+            QComboBox:hover {
+                border-color: rgba(70,115,170,0.80);
+                background: rgba(255,255,255,0.92);
+            }
+            QComboBox:disabled {
+                background: rgba(200,210,220,0.40);
+                color: #8A9BAB;
+                border-color: rgba(160,175,190,0.40);
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #F0F5FA;
+                border: 1px solid #AABBCC;
+                outline: 0;
+                selection-background-color: #C5D9EE;
+                selection-color: #1A3050;
+            }
+
+            /* ── Спинбоксы ── */
+            QDoubleSpinBox {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(255,255,255,0.82),
+                    stop:1 rgba(220,230,242,0.75)
+                );
+                border: 1px solid rgba(150,170,195,0.70);
+                border-radius: 4px;
+                padding: 3px 6px;
+                color: #243040;
+                min-height: 24px;
+            }
+            QDoubleSpinBox:hover {
+                border-color: rgba(70,115,170,0.80);
+            }
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                border: none;
+                background: transparent;
+                width: 14px;
+            }
+
+            /* ── Метки ── */
+            QLabel {
+                color: #364656;
+                background: transparent;
+            }
+
+            /* ── Таблица ── */
+            QTableView {
+                background: rgba(255,255,255,0.78);
+                alternate-background-color: rgba(235,242,250,0.65);
+                border: 1px solid rgba(150,170,195,0.60);
+                border-radius: 6px;
+                gridline-color: rgba(180,200,220,0.45);
+                selection-background-color: rgba(74,115,160,0.20);
+                selection-color: #1A2D40;
+                outline: 0;
+            }
+            QTableView::item {
+                padding: 3px 8px;
+                border: none;
+            }
+            QHeaderView::section {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3A5068, stop:1 #2C3E52
+                );
+                color: #C8D8E8;
+                padding: 6px 8px;
+                border: none;
+                border-right: 1px solid rgba(255,255,255,0.08);
+                font-weight: 600;
+                font-size: 12px;
+                letter-spacing: 0.2px;
+            }
+
+            /* ── Фрейм с графиком ── */
+            QFrame#frame {
+                background: rgba(255,255,255,0.80);
+                border: 1px solid rgba(150,170,195,0.55);
+                border-radius: 6px;
+            }
+
+            /* ── Сплиттер ── */
+            QSplitter::handle {
+                background: rgba(130,155,180,0.35);
+            }
+            QSplitter::handle:horizontal { width: 2px; }
+            QSplitter::handle:vertical   { height: 2px; }
+
+            /* ── Статусбар ── */
+            QStatusBar {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #2C3E52, stop:1 #243344
+                );
+                color: #7A9AB8;
+                font-size: 11px;
+                border-top: 1px solid #1A2634;
+            }
+
+            /* ── Тонкие скроллбары ── */
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                margin: 0;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(100,130,160,0.45);
+                border-radius: 3px;
+                min-height: 24px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(80,115,155,0.70);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+            QScrollBar:horizontal {
+                background: transparent;
+                height: 6px;
+                margin: 0;
+            }
+            QScrollBar::handle:horizontal {
+                background: rgba(100,130,160,0.45);
+                border-radius: 3px;
+                min-width: 24px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: rgba(80,115,155,0.70);
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+            /* ── Разделители VLine/HLine ── */
+            QFrame[frameShape="5"], QFrame[frameShape="6"] {
+                color: rgba(130,155,180,0.50);
+            }
+
+            /* ── Чекбоксы внутри таблицы (QStandardItem) ── */
+            QAbstractItemView::indicator {
+                width: 14px;
+                height: 14px;
+                border: 1px solid rgba(110,140,175,0.75);
+                border-radius: 3px;
+                background: rgba(255,255,255,0.80);
+            }
+            QAbstractItemView::indicator:unchecked {
+                background: rgba(255,255,255,0.80);
+                border-color: rgba(110,140,175,0.75);
+            }
+            QAbstractItemView::indicator:checked {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #5A8FC0, stop:1 #3A6A9A
+                );
+                border-color: #2E5A88;
+            }
+            QAbstractItemView::indicator:hover {
+                border-color: rgba(70,115,170,0.90);
+            }
+
+            /* ── Пункты в выпадающем меню ComboBox ── */
+            QComboBox QAbstractItemView::item {
+                padding: 4px 8px;
+                color: #243040;
+                min-height: 22px;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #C5D9EE;
+                color: #1A3050;
+            }
+        """)
+
+        self.setWindowTitle("Радиобиология — анализ опухолей")
+        self.label_2.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: #2C3E52; "
+            "letter-spacing: 0.2px; padding: 2px 0; background: transparent;"
+        )
+
+        # Фиксируем палитру для всех статичных комбобоксов
+        for cb in (self.comboBox, self.comboBox_2, self.comboBox_3, self.comboBox_4):
+            self._fix_combo_palette(cb)
+
     def change_table(self):
         """
         Настраивает внешний вид и поведение таблицы для отображения списка файлов экспериментов.
@@ -295,17 +713,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tableView.setModel(self.model)
         # Настройка ширины столбцов
         header = self.tableView.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        # Устанавливаем фиксированную ширину для столбца с чекбоксами и именем файла
-        header.resizeSection(0, 150)  # Подстраиваем под нужный размер
-        header.resizeSection(1, 250)  # Подстраиваем под нужный размер
-        header.resizeSection(2, 170)  # Подстраиваем под нужный размер
-        header.resizeSection(3, 70)   # Столбец «Группа»
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(4, 150)  # Столбец «Контроль для статистики»
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        header.resizeSection(0, 150)
+        header.resizeSection(2, 185)   # «Пометить как контрольный» — достаточно для текста
+        header.resizeSection(3, 65)    # «Группа»
+        header.resizeSection(4, 175)   # «Контроль для статистики»
         # Настройка внешнего вида таблицы
         self.tableView.setShowGrid(True)  # Показать сетку
         # Устанавливаем размеры политики для таблицы, чтобы она заполняла все доступное пространство
@@ -639,6 +1055,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             combo = QComboBox()
             combo.addItems(['Не контроль', 'Контроль 1', 'Контроль 2', 'Контроль 3'])
             combo.setCurrentIndex(0)
+            self._fix_combo_palette(combo)
 
             # Сохраняем путь к файлу в данных ComboBox для последующего использования
             combo.setProperty('file_path', file_path)
@@ -648,9 +1065,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             row_index = self.model.rowCount() - 1
             self.tableView.setIndexWidget(self.model.index(row_index, 4), combo)
 
-            # Устанавливаем высоту строк
+            # Высота строки с запасом под ComboBox
             for row in range(self.model.rowCount()):
-                self.tableView.setRowHeight(row, 20)  # Задаем желаемую высоту строки
+                self.tableView.setRowHeight(row, 36)
+
+        # Подстраиваем сплиттер после завершения отрисовки
+        QTimer.singleShot(50, self._fit_splitter_to_table)
+
+    def _fit_splitter_to_table(self):
+        """Расширяет верхнюю панель сплиттера, чтобы таблица вмещала все строки без скролла."""
+        row_height = 36
+        header_h = self.tableView.horizontalHeader().height()
+        desired = header_h + self.model.rowCount() * row_height + 6
+
+        # Форсируем минимальную высоту таблицы — сплиттер обязан её выдать
+        self.tableView.setMinimumHeight(desired)
+
+        total = self.splitter_2.height()
+        if total <= 0:
+            # Виджет ещё не отрисован — повторим чуть позже
+            QTimer.singleShot(100, self._fit_splitter_to_table)
+            return
+
+        bottom = max(total - desired, 150)
+        self.splitter_2.setSizes([desired, bottom])
 
     def on_table_data_changed(self, *args):
         """
@@ -1767,9 +2205,20 @@ def excepthook(type, value, traceback):
 
 sys.excepthook = excepthook
 
+
+def _apply_application_palette(app: QApplication):
+    """Фиксирует светлые цвета выделения для Fusion и popup-списков."""
+    palette = app.palette()
+    for color_group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+        palette.setColor(color_group, QPalette.ColorRole.Highlight, QColor('#C5D9EE'))
+        palette.setColor(color_group, QPalette.ColorRole.HighlightedText, QColor('#1A3050'))
+    app.setPalette(palette)
+
+
 def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
+    _apply_application_palette(app)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

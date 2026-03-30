@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Документация проекта радиобиологического анализа</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<script>
+  (function () {
+    try {
+      if (localStorage.getItem("rb-theme") === "light") {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    } catch (error) {}
+  })();
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080c15;
+    --bg2: #0d1220;
+    --bg3: #121826;
+    --panel: rgba(18, 24, 38, 0.92);
+    --border: #1e2a40;
+    --border2: #253348;
+    --cyan: #00e5ff;
+    --cyan2: #00a8c8;
+    --orange: #ff7043;
+    --orange2: #e64a19;
+    --green: #69ff47;
+    --purple: #aa00ff;
+    --text: #d7e1ef;
+    --text2: #93a3b5;
+    --text3: #5b6b80;
+    --bg-end: #060911;
+    --header-bg: rgba(8, 12, 21, 0.86);
+    --logo-text: #ffffff;
+    --heading: #ffffff;
+    --hero-grid: rgba(0, 229, 255, 0.045);
+    --hero-glow: rgba(0, 140, 255, 0.18);
+    --tag-border: rgba(0, 229, 255, 0.26);
+    --panel-soft: rgba(18, 24, 38, 0.84);
+    --code-bg: #060911;
+    --code-text: #dff6ff;
+    --tree-bg: #060911;
+    --tree-text: #d8ecff;
+    --hover-glow: rgba(0, 229, 255, 0.08);
+    --theme-toggle-bg: rgba(18, 24, 38, 0.92);
+    --theme-toggle-border: #253348;
+    --theme-toggle-text: #d7e1ef;
+    --display: "Syne", "Segoe UI", sans-serif;
+    --sans: "Inter", "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", Consolas, monospace;
+    --r: 12px;
+    --r2: 18px;
+    --shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+  }
+
+  [data-theme="light"] {
+    --bg: #f5f3ef;
+    --bg2: #eceae5;
+    --bg3: #e2e0da;
+    --panel: #ffffff;
+    --border: #d0ccc4;
+    --border2: #bfbbb2;
+    --cyan: #0a5c8a;
+    --cyan2: #1478b0;
+    --orange: #be4010;
+    --orange2: #9a3410;
+    --green: #1a7a3a;
+    --purple: #6623c8;
+    --text: #1c2534;
+    --text2: #465468;
+    --text3: #8898aa;
+    --bg-end: #f5f3ef;
+    --header-bg: rgba(245, 243, 239, 0.92);
+    --logo-text: #1c2534;
+    --heading: #1c2534;
+    --hero-grid: rgba(10, 92, 138, 0.15);
+    --hero-glow: rgba(10, 92, 138, 0.07);
+    --tag-border: rgba(10, 92, 138, 0.25);
+    --panel-soft: #ffffff;
+    --code-bg: #ffffff;
+    --code-text: #1c2534;
+    --tree-bg: #ffffff;
+    --tree-text: #1c2534;
+    --hover-glow: rgba(10, 92, 138, 0.1);
+    --shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    min-height: 100vh;
+    font-family: var(--sans);
+    background:
+      radial-gradient(circle at top, rgba(0, 168, 200, 0.12), transparent 30%),
+      radial-gradient(circle at 80% 20%, rgba(170, 0, 255, 0.08), transparent 25%),
+      linear-gradient(180deg, var(--bg), var(--bg-end) 100%);
+    color: var(--text);
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--cyan2); }
+
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--header-bg);
+    backdrop-filter: blur(18px);
+    border-bottom: 1px solid var(--border);
+  }
+  .site-header-inner,
+  .page {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+  .site-header-inner {
+    min-height: 58px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: var(--logo-text);
+    font-family: var(--display);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    min-width: 0;
+  }
+  .logo-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .logo-main {
+    color: var(--logo-text);
+    font-size: 0.98rem;
+    line-height: 1.08;
+  }
+  .logo-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--cyan2), var(--purple));
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+  }
+  .logo-sub {
+    color: var(--text2);
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+  }
+  .nav-links {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 16px;
+    list-style: none;
+  }
+  .header-controls {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    gap: 16px;
+    min-width: 0;
+  }
+  .nav-links a {
+    color: var(--text2);
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.72rem;
+    transition: color .2s ease;
+  }
+  .nav-links a:hover { color: var(--cyan); }
+  .docs-switcher {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .docs-switcher-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text2);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color .2s ease;
+  }
+  .docs-switcher-btn:hover,
+  .docs-switcher.open .docs-switcher-btn {
+    color: var(--cyan);
+  }
+  .docs-switcher-caret {
+    font-size: 0.8rem;
+    line-height: 1;
+    transition: transform .18s ease;
+  }
+  .docs-switcher.open .docs-switcher-caret {
+    transform: rotate(180deg);
+  }
+  .docs-switcher-panel {
+    position: absolute;
+    top: calc(100% + 12px);
+    right: 0;
+    width: 290px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+    z-index: 150;
+  }
+  .docs-switcher.open .docs-switcher-panel {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .docs-switcher-title {
+    padding: 6px 10px 8px;
+    color: var(--text3);
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .docs-switcher-link {
+    display: block;
+    padding: 11px 12px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: border-color .18s ease, background .18s ease, transform .18s ease;
+  }
+  .docs-switcher-link:hover {
+    border-color: var(--cyan2);
+    transform: translateY(-1px);
+  }
+  .docs-switcher-link.current {
+    border-color: var(--border2);
+    background: rgba(0, 229, 255, 0.04);
+  }
+  .docs-switcher-link strong {
+    display: block;
+    color: var(--heading);
+    font-size: 0.86rem;
+    font-weight: 600;
+  }
+  .docs-switcher-link span {
+    display: block;
+    margin-top: 4px;
+    color: var(--text2);
+    font-size: 0.77rem;
+    line-height: 1.5;
+  }
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    padding: 5px 12px 4px;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    color: var(--text2);
+    transition: border-color .2s ease, color .2s ease, background .2s ease;
+    flex-shrink: 0;
+  }
+  .theme-toggle:hover {
+    border-color: var(--cyan2);
+    color: var(--text);
+  }
+  .theme-toggle-icon {
+    font-size: 1rem;
+    line-height: 1;
+    display: inline-block;
+    transition: transform .35s ease;
+  }
+  .theme-toggle:hover .theme-toggle-icon { transform: rotate(20deg); }
+
+  .hero {
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--hero-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--hero-grid) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    width: 900px;
+    height: 520px;
+    left: 50%;
+    top: -180px;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at center, var(--hero-glow), transparent 70%);
+    pointer-events: none;
+  }
+  .hero-inner {
+    position: relative;
+    z-index: 1;
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 88px 28px 72px;
+  }
+  .hero-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--cyan);
+    border: 1px solid var(--tag-border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    margin-bottom: 18px;
+  }
+  .hero h1 {
+    max-width: 900px;
+    color: var(--heading);
+    font-family: var(--display);
+    font-size: clamp(2.4rem, 4vw, 4.2rem);
+    line-height: 1.04;
+    letter-spacing: -0.02em;
+    margin-bottom: 18px;
+  }
+  .hero h1 span { color: var(--cyan); }
+  .hero p {
+    max-width: 760px;
+    color: var(--text2);
+    font-size: 1rem;
+    margin-bottom: 30px;
+  }
+  .hero-panels {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 34px;
+  }
+  .hero-panel {
+    background: var(--panel-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    padding: 18px 18px 16px;
+    box-shadow: var(--shadow);
+  }
+  .hero-panel-num {
+    color: var(--text3);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    margin-bottom: 10px;
+  }
+  .hero-panel h3 {
+    color: var(--heading);
+    font-family: var(--display);
+    font-size: 1rem;
+    margin-bottom: 8px;
+  }
+  .hero-panel p {
+    margin: 0;
+    font-size: 0.84rem;
+    color: var(--text2);
+  }
+  .hero-panel.c1 { border-top: 2px solid var(--cyan); }
+  .hero-panel.c2 { border-top: 2px solid var(--orange); }
+  .hero-panel.c3 { border-top: 2px solid var(--purple); }
+
+  .page { padding-top: 20px; padding-bottom: 64px; }
+  .section {
+    padding: 52px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .section:last-child { border-bottom: none; }
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 26px;
+  }
+  .section-num {
+    font-family: var(--mono);
+    color: var(--text3);
+    letter-spacing: 0.12em;
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+  .section-title {
+    color: var(--heading);
+    font-family: var(--display);
+    font-size: clamp(1.5rem, 2vw, 2rem);
+    letter-spacing: -0.01em;
+  }
+  .section-title .cy { color: var(--cyan); }
+  .section-title .or { color: var(--orange); }
+  .section-title .pu { color: var(--purple); }
+  .section-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border2), transparent);
+  }
+
+  .lead {
+    max-width: 840px;
+    color: var(--text2);
+    margin-bottom: 26px;
+  }
+
+  .grid-3,
+  .grid-2,
+  .module-grid,
+  .docs-grid,
+  .entry-grid {
+    display: grid;
+    gap: 16px;
+  }
+  .grid-3,
+  .module-grid,
+  .docs-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid-2,
+  .entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .card,
+  .module-card,
+  .doc-card,
+  .entry-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    padding: 18px 18px 16px;
+    box-shadow: var(--shadow);
+  }
+  .card h3,
+  .module-card h3,
+  .doc-card h3,
+  .entry-card h3 {
+    color: var(--heading);
+    font-family: var(--display);
+    font-size: 1rem;
+    margin-bottom: 10px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    color: var(--cyan2);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.68rem;
+    margin-bottom: 10px;
+  }
+  .card p,
+  .module-card p,
+  .doc-card p,
+  .entry-card p,
+  .module-card li,
+  .card li {
+    color: var(--text2);
+    font-size: 0.88rem;
+  }
+  .card ul,
+  .module-card ul {
+    list-style: none;
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .card li::before,
+  .module-card li::before {
+    content: "•";
+    color: var(--cyan);
+    margin-right: 10px;
+  }
+
+  .module-card {
+    position: relative;
+    overflow: hidden;
+  }
+  .module-card::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--cyan2), transparent);
+    opacity: 0.85;
+  }
+  .module-card.m2::after { background: linear-gradient(90deg, var(--orange), transparent); }
+  .module-card.m3::after { background: linear-gradient(90deg, var(--purple), transparent); }
+  .module-card.m4::after { background: linear-gradient(90deg, var(--green), transparent); }
+
+  .stack {
+    display: grid;
+    gap: 14px;
+  }
+  .stack .card { padding: 16px 18px; }
+
+  .architecture-diagram {
+    position: relative;
+    margin-bottom: 26px;
+    padding: 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    background: linear-gradient(180deg, rgba(0, 229, 255, 0.04), transparent 38%), var(--panel);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .architecture-diagram::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 78%);
+    pointer-events: none;
+  }
+  .architecture-diagram > * {
+    position: relative;
+    z-index: 1;
+  }
+  .architecture-diagram-head {
+    margin-bottom: 18px;
+  }
+  .architecture-diagram-head h3 {
+    color: var(--heading);
+    font-family: var(--display);
+    font-size: 1.08rem;
+    margin-bottom: 8px;
+  }
+  .architecture-diagram-head p {
+    max-width: 760px;
+    color: var(--text2);
+    font-size: 0.88rem;
+  }
+  .architecture-source {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 18px 22px;
+    border: 1px solid var(--cyan2);
+    border-radius: 18px;
+    background: rgba(0, 229, 255, 0.05);
+    text-align: center;
+  }
+  .architecture-source h4,
+  .architecture-lane h4,
+  .architecture-sidecar h4 {
+    color: var(--heading);
+    font-family: var(--display);
+    font-size: 1rem;
+    margin-bottom: 8px;
+  }
+  .architecture-source p,
+  .architecture-lane p,
+  .architecture-sidecar p {
+    color: var(--text2);
+    font-size: 0.88rem;
+  }
+  .architecture-arrow {
+    margin: 14px 0 18px;
+    text-align: center;
+    color: var(--text3);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .architecture-main {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .architecture-lane {
+    position: relative;
+    overflow: hidden;
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: var(--bg3);
+  }
+  .architecture-lane::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--cyan), transparent);
+    opacity: 0.95;
+  }
+  .architecture-lane.survival::before {
+    background: linear-gradient(90deg, var(--orange), transparent);
+  }
+  .architecture-lane-label,
+  .architecture-sidecar-label {
+    font-family: var(--mono);
+    color: var(--text3);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .architecture-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .architecture-source .architecture-chip-row {
+    justify-content: center;
+  }
+  .architecture-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(0, 229, 255, 0.18);
+    background: rgba(0, 229, 255, 0.07);
+    color: var(--cyan);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    line-height: 1.3;
+  }
+  .architecture-chip.or {
+    border-color: rgba(255, 112, 67, 0.2);
+    background: rgba(255, 112, 67, 0.08);
+    color: var(--orange);
+  }
+  .architecture-chip.pu {
+    border-color: rgba(170, 0, 255, 0.2);
+    background: rgba(170, 0, 255, 0.08);
+    color: var(--purple);
+  }
+  .architecture-output {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    color: var(--text2);
+    font-size: 0.84rem;
+  }
+  .architecture-output strong {
+    color: var(--heading);
+    font-weight: 600;
+  }
+  .architecture-sidecar {
+    margin-top: 16px;
+    padding: 18px;
+    border: 1px dashed var(--border2);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .code-block {
+    background: var(--code-bg);
+    border: 1px solid var(--border2);
+    border-radius: 14px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--code-text);
+    line-height: 1.75;
+    white-space: pre-wrap;
+  }
+
+  .doc-card {
+    text-decoration: none;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }
+  .doc-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--cyan2);
+    box-shadow: 0 16px 44px var(--hover-glow);
+  }
+  .doc-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    color: var(--cyan);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    text-decoration: none;
+  }
+
+  .repo-map {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 18px;
+    align-items: start;
+  }
+  .tree {
+    background: var(--tree-bg);
+    border: 1px solid var(--border2);
+    border-radius: 14px;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--tree-text);
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  .footer {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 28px;
+    color: var(--text3);
+    font-size: 0.82rem;
+  }
+  .footer a { color: var(--cyan2); text-decoration: none; }
+
+  [data-theme="light"] body { background: var(--bg); color: var(--text); }
+  [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg2); }
+  [data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--border2); }
+
+  [data-theme="light"] .site-header {
+    background: rgba(245, 243, 239, 0.92);
+    border-bottom-color: var(--border);
+  }
+  [data-theme="light"] .logo { color: var(--text); }
+  [data-theme="light"] .nav-links a { color: var(--text2); }
+  [data-theme="light"] .nav-links a:hover,
+  [data-theme="light"] .nav-links a.active { color: var(--cyan); }
+  [data-theme="light"] .theme-toggle {
+    background: #fff;
+    border-color: var(--border);
+    color: var(--text3);
+  }
+  [data-theme="light"] .theme-toggle:hover {
+    border-color: var(--cyan2);
+    color: var(--text);
+  }
+  [data-theme="light"] .docs-switcher-btn { color: var(--text2); }
+  [data-theme="light"] .docs-switcher-btn:hover,
+  [data-theme="light"] .docs-switcher.open .docs-switcher-btn { color: var(--cyan); }
+  [data-theme="light"] .docs-switcher-panel {
+    background: #fff;
+    border-color: var(--border);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  }
+  [data-theme="light"] .docs-switcher-link.current {
+    border-color: var(--border2);
+    background: rgba(10, 92, 138, 0.04);
+  }
+
+  [data-theme="light"] .hero {
+    border-bottom-color: var(--border);
+    background: var(--bg);
+  }
+  [data-theme="light"] .hero::before {
+    background-image: radial-gradient(circle, rgba(10, 92, 138, 0.15) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+  [data-theme="light"] .hero::after {
+    background: radial-gradient(ellipse at center, rgba(10, 92, 138, 0.07) 0%, transparent 70%);
+  }
+  [data-theme="light"] .hero h1 { color: var(--text); }
+  [data-theme="light"] .hero h1 span { color: var(--cyan); }
+  [data-theme="light"] .hero p { color: var(--text2); }
+  [data-theme="light"] .hero-tag {
+    color: var(--cyan);
+    border-color: rgba(10, 92, 138, 0.25);
+  }
+  [data-theme="light"] .hero-panel {
+    background: #fff;
+    border-color: var(--border);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+  }
+  [data-theme="light"] .hero-panel h3 { color: var(--text); }
+  [data-theme="light"] .hero-panel-num { color: var(--text3); }
+
+  [data-theme="light"] .section { border-bottom-color: var(--border); }
+  [data-theme="light"] .section-title { color: var(--text); }
+  [data-theme="light"] .section-num { color: var(--text3); }
+  [data-theme="light"] .section-line { background: linear-gradient(90deg, var(--border), transparent); }
+  [data-theme="light"] .lead { color: var(--text2); }
+
+  [data-theme="light"] .card,
+  [data-theme="light"] .module-card,
+  [data-theme="light"] .doc-card,
+  [data-theme="light"] .entry-card {
+    background: #fff;
+    border-color: var(--border);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  }
+  [data-theme="light"] .card h3,
+  [data-theme="light"] .module-card h3,
+  [data-theme="light"] .doc-card h3,
+  [data-theme="light"] .entry-card h3 {
+    color: var(--text);
+  }
+  [data-theme="light"] .card p,
+  [data-theme="light"] .module-card p,
+  [data-theme="light"] .doc-card p,
+  [data-theme="light"] .entry-card p,
+  [data-theme="light"] .module-card li,
+  [data-theme="light"] .card li {
+    color: var(--text2);
+  }
+  [data-theme="light"] .eyebrow { color: var(--cyan2); }
+  [data-theme="light"] .doc-card:hover {
+    box-shadow: 0 4px 18px rgba(10, 92, 138, 0.1);
+    border-color: var(--cyan2);
+  }
+  [data-theme="light"] .doc-link { color: var(--cyan); }
+
+  [data-theme="light"] .architecture-diagram {
+    background: #fff;
+    border-color: var(--border);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
+  }
+  [data-theme="light"] .architecture-diagram::before {
+    background-image: radial-gradient(circle, rgba(10, 92, 138, 0.12) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  [data-theme="light"] .architecture-diagram-head p,
+  [data-theme="light"] .architecture-source p,
+  [data-theme="light"] .architecture-lane p,
+  [data-theme="light"] .architecture-sidecar p,
+  [data-theme="light"] .architecture-output {
+    color: var(--text2);
+  }
+  [data-theme="light"] .architecture-source {
+    background: rgba(10, 92, 138, 0.05);
+    border-color: var(--cyan2);
+  }
+  [data-theme="light"] .architecture-lane {
+    background: #fff;
+    border-color: var(--border);
+  }
+  [data-theme="light"] .architecture-sidecar {
+    background: rgba(10, 92, 138, 0.03);
+    border-color: var(--border2);
+  }
+  [data-theme="light"] .architecture-chip {
+    background: rgba(10, 92, 138, 0.07);
+    border-color: rgba(10, 92, 138, 0.18);
+    color: var(--cyan);
+  }
+  [data-theme="light"] .architecture-chip.or {
+    background: rgba(190, 64, 16, 0.08);
+    border-color: rgba(190, 64, 16, 0.18);
+    color: var(--orange);
+  }
+  [data-theme="light"] .architecture-chip.pu {
+    background: rgba(102, 35, 200, 0.08);
+    border-color: rgba(102, 35, 200, 0.18);
+    color: var(--purple);
+  }
+
+  [data-theme="light"] .code-block {
+    background: #fff;
+    border-color: var(--border);
+    color: var(--text);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  }
+  [data-theme="light"] .tree {
+    background: #fff;
+    border-color: var(--border);
+    color: var(--text);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  }
+  [data-theme="light"] .footer { color: var(--text3); }
+  [data-theme="light"] .footer a { color: var(--cyan2); }
+
+  @media (max-width: 1220px) {
+    .hero-panels,
+    .grid-3,
+    .module-grid,
+    .docs-grid,
+    .grid-2,
+    .entry-grid,
+    .architecture-main,
+    .repo-map {
+      grid-template-columns: 1fr;
+    }
+    .site-header-inner {
+      grid-template-columns: 1fr;
+      align-items: flex-start;
+      padding-top: 14px;
+      padding-bottom: 14px;
+    }
+    .nav-links {
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .header-controls {
+      width: 100%;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .site-header-inner,
+    .hero-inner,
+    .page,
+    .footer {
+      padding-left: 18px;
+      padding-right: 18px;
+    }
+    .hero-inner { padding-top: 72px; padding-bottom: 56px; }
+    .section { padding: 40px 0; }
+    .header-controls { justify-content: flex-start; }
+  }
+</style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="logo" href="#top">
+        <span class="logo-badge">RB</span>
+        <span class="logo-text">
+          <span class="logo-main">Проект радиобиологического анализа</span>
+          <span class="logo-sub">общая документация</span>
+        </span>
+      </a>
+      <div class="header-controls">
+        <nav>
+          <ul class="nav-links">
+            <li><a href="#architecture">Архитектура</a></li>
+            <li><a href="#modules">Модули</a></li>
+            <li><a href="#flows">Потоки</a></li>
+            <li><a href="#scenarios">Сценарии</a></li>
+            <li><a href="#entrypoints">Запуск</a></li>
+          </ul>
+        </nav>
+        <div class="docs-switcher" id="docsSwitcher">
+          <button class="docs-switcher-btn" id="docsSwitcherButton" type="button" aria-haspopup="true" aria-expanded="false">
+            <span>Гайды</span>
+            <span class="docs-switcher-caret">▾</span>
+          </button>
+          <div class="docs-switcher-panel" aria-label="Навигация по документации">
+            <div class="docs-switcher-title">Переходы по документации</div>
+            <a class="docs-switcher-link current" href="./index.html">
+              <strong>Обзор проекта</strong>
+              <span>Архитектура, модули, сценарии, точки запуска и карта репозитория.</span>
+            </a>
+            <a class="docs-switcher-link" href="../survival/docs/index.html">
+              <strong>Модуль survival</strong>
+              <span>Подбор параметров, прогноз роста, GEANT4 и радиобиологический pipeline.</span>
+            </a>
+            <a class="docs-switcher-link" href="#docs">
+              <strong>Каталог HTML-разделов</strong>
+              <span>Блок со ссылками на текущие и будущие специализированные страницы.</span>
+            </a>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему">
+          <span class="theme-toggle-icon" id="themeIcon">☀</span>
+          <span id="themeLabel">LIGHT</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <section class="hero" id="top">
+    <div class="hero-inner">
+      <div class="hero-tag">Общая документация</div>
+      <h1>Документация <span>проекта радиобиологического анализа</span></h1>
+      <p>
+        Эта страница описывает весь подпроект: GUI для общей статистики на базе Excel и matplotlib-скрипты, Excel-пайплайн,
+        модуль статистики, утилиты визуализации, отдельный 3D-визуализатор и расширенный радиобиологический
+        контур <code>survival</code> с подбором параметров, прогнозом роста и GEANT4 / RT Dose-конвейером.
+      </p>
+
+      <div class="hero-panels">
+        <div class="hero-panel c1">
+          <div class="hero-panel-num">01 / EXCEL STATS STACK</div>
+          <h3>Excel statistics + plotting</h3>
+          <p>PyQt6-оболочка над Excel-парсерами и классами визуализации для опухолей, кожных реакций и сравнений.</p>
+        </div>
+        <div class="hero-panel c2">
+          <div class="hero-panel-num">02 / MODELING STACK</div>
+          <h3>Survival subsystem</h3>
+          <p>Подбор alpha/beta, LET-параметризация, voxel SF, mixed field, GEANT4 bridge и прогноз роста.</p>
+        </div>
+        <div class="hero-panel c3">
+          <div class="hero-panel-num">03 / GEOMETRY STACK</div>
+          <h3>3D-визуализатор геометрии</h3>
+          <p>Отдельный интерфейс для просмотра динамики опухоли в виде эллипсоида по измерениям <code>a-b-c</code>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <main class="page">
+    <section class="section" id="architecture">
+      <div class="section-head">
+        <div class="section-num">01 / ARCHITECTURE</div>
+        <h2 class="section-title">Две основные <span class="cy">оси проекта</span></h2>
+        <div class="section-line"></div>
+      </div>
+      <p class="lead">
+        Проект состоит не из одного монолитного приложения, а из набора связанных инструментов.
+        На практике он делится на контур общей статистики на базе Excel и более специализированный модуль
+        <code>survival</code> для радиобиологического моделирования и дозиметрического пайплайна.
+      </p>
+
+      <div class="architecture-diagram">
+        <div class="architecture-diagram-head">
+          <div class="eyebrow">Схема системы</div>
+          <h3>Как связаны основные подсистемы проекта</h3>
+          <p>
+            Общие входные данные расходятся по двум главным веткам анализа: статистической Excel-ветке и
+            радиобиологическому контуру <code>survival</code>. Отдельно рядом живёт 3D-визуализатор, который
+            использует ту же экспериментальную динамику, но решает задачу геометрической визуализации.
+          </p>
+        </div>
+
+        <div class="architecture-source">
+          <h4>Общие входы проекта</h4>
+          <p>Excel-эксперименты, параметры фракционирования, RT Dose / RTSTRUCT, NIfTI и GEANT4 protobuf.</p>
+          <div class="architecture-chip-row">
+            <span class="architecture-chip">.xlsx</span>
+            <span class="architecture-chip">tumor / skin data</span>
+            <span class="architecture-chip or">RT Dose / RTSTRUCT</span>
+            <span class="architecture-chip or">NIfTI</span>
+            <span class="architecture-chip or">GEANT4 protobuf</span>
+          </div>
+        </div>
+
+        <div class="architecture-arrow">маршрутизация по задаче анализа</div>
+
+        <div class="architecture-main">
+          <article class="architecture-lane">
+            <div class="architecture-lane-label">Основная ветка 01</div>
+            <h4>Общая статистика на базе Excel</h4>
+            <p>Интерактивная работа с экспериментами, межгрупповыми сравнениями, кожными реакциями и построением графиков.</p>
+            <div class="architecture-chip-row">
+              <span class="architecture-chip">gui/main_window.py</span>
+              <span class="architecture-chip">data_processing/</span>
+              <span class="architecture-chip">stats_methods/</span>
+              <span class="architecture-chip">utils/</span>
+            </div>
+            <div class="architecture-output">
+              <strong>Выход:</strong> графики, сравнительные кривые, AUC / CV / ТРО, статистические сводки и сохранение графиков.
+            </div>
+          </article>
+
+          <article class="architecture-lane survival">
+            <div class="architecture-lane-label">Основная ветка 02</div>
+            <h4>Радиобиология и <code>survival</code></h4>
+            <p>Подбор радиобиологических параметров, повоксельные расчёты и прогноз роста опухоли по дозовым данным.</p>
+            <div class="architecture-chip-row">
+              <span class="architecture-chip or">подбор / прогноз</span>
+              <span class="architecture-chip or">dose_reader.py</span>
+              <span class="architecture-chip or">voxel_sf_calculator.py</span>
+              <span class="architecture-chip or">pipeline_geant4_to_prediction.py</span>
+            </div>
+            <div class="architecture-output">
+              <strong>Выход:</strong> подобранные alpha/beta, voxel SF, DVH, прогноз роста, CSV / JSON экспорт и модельные метрики.
+            </div>
+          </article>
+        </div>
+
+        <div class="architecture-sidecar">
+          <div class="architecture-sidecar-label">Отдельный инструмент</div>
+          <h4>3D-визуализатор опухоли</h4>
+          <p>Отдельный визуализатор читает ту же Excel-динамику и строит геометрическое представление опухоли по измерениям <code>a-b-c</code>.</p>
+          <div class="architecture-chip-row">
+            <span class="architecture-chip pu">tumor_3d_viewer.py</span>
+            <span class="architecture-chip pu">tumor_geometry_processor.py</span>
+            <span class="architecture-chip pu">3D animation</span>
+            <span class="architecture-chip pu">group geometry</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="eyebrow">Контур Excel-статистики</div>
+          <h3>GUI, графики, Excel и статистика</h3>
+          <ul>
+            <li><code>gui/main_window.py</code> управляет загрузкой файлов, настройками анализа и рендерингом результатов.</li>
+            <li><code>data_processing/</code> извлекает данные из Excel и приводит их к виду, пригодному для анализа.</li>
+            <li><code>stats_methods/</code> считает AUC, CV, ТРО, интерполяции, тесты значимости и выбросы.</li>
+            <li><code>utils/</code> содержит слой для построения, оформления и сохранения графиков.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Контур моделирования</div>
+          <h3><code>survival</code>, prediction и DICOM / protobuf</h3>
+          <ul>
+            <li>Подбор параметров <code>alpha/beta</code> по опухолевым кривым и пакетный анализ по семействам облучения.</li>
+            <li>Прогноз роста опухоли на базе подобранных параметров и расписания фракций.</li>
+            <li>Чтение RT Dose, RTSTRUCT, NIfTI и GEANT4 protobuf для повоксельных расчётов.</li>
+            <li>Отдельные CLI и GUI для подбора параметров, прогноза роста и GEANT4-контура.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="modules">
+      <div class="section-head">
+        <div class="section-num">02 / MODULES</div>
+        <h2 class="section-title">Основные <span class="or">модули и роли</span></h2>
+        <div class="section-line"></div>
+      </div>
+      <div class="module-grid">
+        <div class="module-card">
+          <div class="eyebrow">gui/</div>
+          <h3>Главное окно проекта</h3>
+          <p>Точка входа для интерактивной работы с общей статистикой на базе Excel. Управляет списком файлов, выбором контрольной группы, статистическими режимами и построением графиков.</p>
+        </div>
+        <div class="module-card m2">
+          <div class="eyebrow">data_processing/</div>
+          <h3>Excel parsing</h3>
+          <p>Читает таблицы экспериментов, извлекает параметры, временные точки, метки животных и значения для опухолей либо кожных реакций.</p>
+        </div>
+        <div class="module-card m3">
+          <div class="eyebrow">stats_methods/</div>
+          <h3>Статистика и outlier removal</h3>
+          <p>Поддерживает межгрупповые сравнения, интерполяции, расчёт торможения роста опухоли (ТРО), CV, AUC и несколько стратегий удаления выбросов.</p>
+        </div>
+        <div class="module-card m4">
+          <div class="eyebrow">utils/</div>
+          <h3>Graph infrastructure</h3>
+          <p>Задаёт общий стиль графиков, управление легендами, подготовку кривых и финализацию matplotlib figure.</p>
+        </div>
+        <div class="module-card">
+          <div class="eyebrow">top-level scripts</div>
+          <h3>Отдельные визуализаторы</h3>
+          <p><code>draw_base_graphs.py</code>, <code>draw_base_graphs_compare.py</code>, <code>draw_abs_rel_graph_compare.py</code>, <code>skin_reactions_base_grapf.py</code> и <code>controls.py</code>.</p>
+        </div>
+        <div class="module-card m2">
+          <div class="eyebrow">survival/</div>
+          <h3>Радиобиологический модуль</h3>
+          <p>Наиболее насыщенный модуль: подбор параметров, прогноз роста, voxel SF, LET-модель, mixed field и сквозной конвейер расчётов по дозовым данным.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="flows">
+      <div class="section-head">
+        <div class="section-num">03 / FLOWS</div>
+        <h2 class="section-title">Потоки данных и <span class="pu">типы входов</span></h2>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="eyebrow">Excel -> graphs</div>
+          <h3>Excel statistics flow</h3>
+          <ul>
+            <li>Excel-файл с параметрами эксперимента, днями и строками по животным.</li>
+            <li>Парсинг через <code>data_processing/excel_data_processor.py</code>.</li>
+            <li>Преобразование через <code>TumorDataProcessor</code> или <code>SkinReactionsDataProcessor</code>.</li>
+            <li>Отрисовка через классы визуализации и <code>GraphVisualizer</code>.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Excel -> fit -> prediction</div>
+          <h3>Контур подбора радиобиологических параметров</h3>
+          <ul>
+            <li>Набор опухолевых Excel-серий с контролями и фракциями.</li>
+            <li>Нормализация treated-кривых на control.</li>
+            <li>Подбор <code>alpha/beta</code> или кривых response-mode.</li>
+            <li>Передача параметров в модуль прогноза и радиобиологический анализ.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Dose data -> voxel SF</div>
+          <h3>DICOM / NIfTI / protobuf flow</h3>
+          <ul>
+            <li>RT Dose DICOM, RTSTRUCT, NIfTI mask или GEANT4 protobuf inputs.</li>
+            <li>Чтение и структурная привязка через <code>dose_reader.py</code>.</li>
+            <li>Вычисление повоксельной выживаемости и агрегированных параметров.</li>
+            <li>Экспорт CSV / JSON для предсказания роста опухоли.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="stack" style="margin-top: 18px;">
+        <div class="card">
+          <div class="eyebrow">Input formats</div>
+          <h3>Какие данные понимает проект</h3>
+          <p>
+            Проект работает как минимум с четырьмя типами входов:
+            <code>.xlsx</code> для экспериментальных таблиц,
+            RT Dose / RTSTRUCT DICOM для клинической геометрии и дозы,
+            NIfTI для структурных масок и protobuf-файлы GEANT4 / NPLibrary для voxel map.
+          </p>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Outputs</div>
+          <h3>Что он обычно производит</h3>
+          <p>
+            Основные результаты: графики опухолевого роста и кожных реакций, таблицы ТРО/AUC,
+            CSV-сводка по подбору параметров, CSV по повоксельной SF, DVH CSV, CSV с кривой роста и агрегированные JSON-отчёты.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="scenarios">
+      <div class="section-head">
+        <div class="section-num">04 / SCENARIOS</div>
+        <h2 class="section-title">Типовые <span class="cy">сценарии использования</span></h2>
+        <div class="section-line"></div>
+      </div>
+      <p class="lead">
+        Ниже перечислены типовые пользовательские потоки, ради которых проект обычно и запускают.
+        Это помогает быстро понять, какой вход брать, через какой интерфейс идти и какой результат ожидать.
+      </p>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="eyebrow">Scenario 01</div>
+          <h3>Посмотреть один опухолевый эксперимент</h3>
+          <ul>
+            <li>Открыть главное окно анализа через <code>gui.main_window</code>.</li>
+            <li>Загрузить один <code>.xlsx</code> с опухолевыми измерениями.</li>
+            <li>Выбрать режим абсолютных, относительных или средних кривых.</li>
+            <li>Получить график по одному эксперименту и при необходимости сохранить его.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Scenario 02</div>
+          <h3>Сравнить несколько экспериментальных групп</h3>
+          <ul>
+            <li>В основном GUI загрузить два и более Excel-файла.</li>
+            <li>Отметить нужные группы и режим сравнения между экспериментами.</li>
+            <li>При необходимости включить AUC, Mann-Whitney, t-test или Shapiro.</li>
+            <li>Получить сравнительные кривые, таблицы или графики ТРО.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Scenario 03</div>
+          <h3>Разобрать кожные реакции</h3>
+          <ul>
+            <li>Использовать Excel-файл с реакциями кожи.</li>
+            <li>Открыть его через главное GUI или соответствующий отдельный скрипт.</li>
+            <li>Построить индивидуальные либо усреднённые кривые реакции.</li>
+            <li>При необходимости перейти к шкале RTOG и дальнейшему анализу.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Scenario 04</div>
+          <h3>Посмотреть 3D-геометрию опухоли</h3>
+          <ul>
+            <li>Запустить <code>tumor_3d_viewer.py</code>.</li>
+            <li>Открыть Excel с измерениями вида <code>a-b-c</code> или со скалярными объёмами.</li>
+            <li>Выбрать крысу или усреднённую геометрию по группе.</li>
+            <li>Перелистывать дни, запускать анимацию и смотреть динамику в 3D.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Scenario 05</div>
+          <h3>Подобрать радиобиологические параметры</h3>
+          <ul>
+            <li>Перейти в модуль <code>survival</code>.</li>
+            <li>Подать набор опухолевых Excel-серий с контрольными группами.</li>
+            <li>Запустить подбор параметров через CLI или специализированный GUI.</li>
+            <li>Получить подобранные <code>alpha/beta</code>, CSV-сводку и диагностические метрики.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Scenario 06</div>
+          <h3>Прогнать дозиметрический конвейер прогноза</h3>
+          <ul>
+            <li>Подготовить RT Dose / RTSTRUCT / NIfTI или GEANT4 protobuf-данные.</li>
+            <li>Передать их в <code>pipeline_geant4_to_prediction.py</code>.</li>
+            <li>Указать подобранные или вручную заданные параметры радиобиологии.</li>
+            <li>Получить voxel SF, DVH, growth curve и агрегированные JSON/CSV-артефакты.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="entrypoints">
+      <div class="section-head">
+        <div class="section-num">05 / ENTRYPOINTS</div>
+        <h2 class="section-title">Как это <span class="cy">запускается</span></h2>
+        <div class="section-line"></div>
+      </div>
+      <div class="entry-grid">
+        <div class="entry-card">
+          <div class="eyebrow">Main GUI</div>
+          <h3>Основное окно анализа</h3>
+          <div class="code-block">python -m work_with_prepared_data.radiobioligy_project.gui.main_window</div>
+        </div>
+        <div class="entry-card">
+          <div class="eyebrow">3D-визуализатор</div>
+          <h3>Просмотр геометрии опухоли</h3>
+          <div class="code-block">python -m work_with_prepared_data.radiobioligy_project.tumor_3d_viewer</div>
+        </div>
+        <div class="entry-card">
+          <div class="eyebrow">Подбор параметров survival</div>
+          <h3>CLI для подбора alpha/beta</h3>
+          <div class="code-block">cd work_with_prepared_data/radiobioligy_project/survival
+python .\fit_alpha_beta_using_processor.py</div>
+        </div>
+        <div class="entry-card">
+          <div class="eyebrow">Конвейер survival</div>
+          <h3>GEANT4 / RT Dose prediction flow</h3>
+          <div class="code-block">cd work_with_prepared_data/radiobioligy_project/survival
+python .\pipeline_geant4_to_prediction.py --help</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="repo">
+      <div class="section-head">
+        <div class="section-num">06 / REPOSITORY MAP</div>
+        <h2 class="section-title">Карта <span class="or">каталогов</span></h2>
+        <div class="section-line"></div>
+      </div>
+      <div class="repo-map">
+        <div class="tree">radiobioligy_project/
+├── docs/
+├── gui/
+├── data_processing/
+├── stats_methods/
+├── survival/
+├── utils/
+├── controls.py
+├── draw_base_graphs.py
+├── draw_base_graphs_compare.py
+├── draw_abs_rel_graph_compare.py
+├── skin_reactions_base_grapf.py
+├── tumor_3d_viewer.py
+└── README.md</div>
+        <div class="stack">
+          <div class="card">
+            <div class="eyebrow">tests</div>
+            <h3>Где лежат проверки</h3>
+            <p>
+              Тесты по радиобиологическому стеку разделены на две зоны: root-level каталог
+              <code>C:\dev\neuro_stats\tests</code> и локальный набор в <code>survival/tests</code>.
+              Это полезно помнить при запуске, потому что часть импортов чувствительна к рабочей директории.
+            </p>
+          </div>
+          <div class="card">
+            <div class="eyebrow">docs</div>
+            <h3>Документация по модулям</h3>
+            <p>
+              Эта страница является общим overview для всего подпроекта. Специализированные модули могут иметь
+              свои HTML-страницы в собственных подпапках, например <code>survival/docs/index.html</code>.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="docs">
+      <div class="section-head">
+        <div class="section-num">07 / HTML DOCS</div>
+        <h2 class="section-title">Переход к <span class="pu">модульным страницам</span></h2>
+        <div class="section-line"></div>
+      </div>
+      <p class="lead">
+        Эта overview-страница теперь служит точкой входа в документацию проекта. Отсюда можно переходить
+        на более глубокие HTML-описания модулей без поиска по репозиторию.
+      </p>
+      <div class="docs-grid">
+        <a class="doc-card" href="./index.html">
+          <div class="eyebrow">Overview</div>
+          <h3>Обзор проекта</h3>
+          <p>Общий обзор архитектуры, каталогов, потоков данных и точек входа для всего радиобиологического подпроекта.</p>
+          <span class="doc-link">Открыта сейчас</span>
+        </a>
+        <a class="doc-card" href="../survival/docs/index.html">
+          <div class="eyebrow">Module docs</div>
+          <h3>Survival</h3>
+          <p>Подробная HTML-документация по подбору параметров, прогнозу роста, конвейеру расчётов, LET-параметризации и внутренним API.</p>
+          <span class="doc-link">Открыть страницу модуля →</span>
+        </a>
+        <div class="doc-card">
+          <div class="eyebrow">Extensible</div>
+          <h3>Future module docs</h3>
+          <p>Структура страницы рассчитана на появление отдельных HTML-документов для GUI, графического контура, 3D-визуализатора и других подсистем.</p>
+          <span class="doc-link">Добавляются по мере роста проекта</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    Общая локальная HTML-документация для радиобиологического подпроекта.
+    Для перехода в специализированные описания используйте блок <a href="#docs">HTML docs</a>.
+  </footer>
+  <script>
+    (function () {
+      var html = document.documentElement;
+      var btn = document.getElementById("themeToggle");
+      var icon = document.getElementById("themeIcon");
+      var label = document.getElementById("themeLabel");
+
+      if (!btn || !icon || !label) {
+        return;
+      }
+
+      function apply(theme) {
+        if (theme === "light") {
+          html.setAttribute("data-theme", "light");
+          icon.textContent = "☽";
+          label.textContent = "DARK";
+        } else {
+          html.removeAttribute("data-theme");
+          icon.textContent = "☀";
+          label.textContent = "LIGHT";
+        }
+      }
+
+      var saved = "dark";
+      try {
+        saved = localStorage.getItem("rb-theme") || "dark";
+      } catch (error) {}
+      apply(saved);
+
+      btn.addEventListener("click", function () {
+        var next = html.getAttribute("data-theme") === "light" ? "dark" : "light";
+        try {
+          localStorage.setItem("rb-theme", next);
+        } catch (error) {}
+        apply(next);
+      });
+    })();
+
+    (function () {
+      var switcher = document.getElementById("docsSwitcher");
+      var button = document.getElementById("docsSwitcherButton");
+
+      if (!switcher || !button) {
+        return;
+      }
+
+      function setOpen(isOpen) {
+        switcher.classList.toggle("open", isOpen);
+        button.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      }
+
+      button.addEventListener("click", function (event) {
+        event.stopPropagation();
+        setOpen(!switcher.classList.contains("open"));
+      });
+
+      document.addEventListener("click", function (event) {
+        if (!switcher.contains(event.target)) {
+          setOpen(false);
+        }
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          setOpen(false);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

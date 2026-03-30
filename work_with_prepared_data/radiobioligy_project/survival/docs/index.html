@@ -101,6 +101,90 @@
   }
   .nav-links a:hover { color: var(--cyan); }
   .nav-links a.active { color: var(--cyan); }
+  .header-tools {
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .docs-switcher {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .docs-switcher-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text2);
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color .2s;
+  }
+  .docs-switcher-btn:hover,
+  .docs-switcher.open .docs-switcher-btn { color: var(--cyan); }
+  .docs-switcher-caret {
+    font-size: .8rem;
+    line-height: 1;
+    transition: transform .18s ease;
+  }
+  .docs-switcher.open .docs-switcher-caret { transform: rotate(180deg); }
+  .docs-switcher-panel {
+    position: absolute; top: calc(100% + 12px); right: 0;
+    width: 290px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(13,18,32,.96);
+    box-shadow: 0 16px 36px rgba(0,0,0,.28);
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+    z-index: 220;
+  }
+  .docs-switcher.open .docs-switcher-panel {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .docs-switcher-title {
+    padding: 6px 10px 8px;
+    color: var(--text3);
+    font-family: var(--mono);
+    font-size: .62rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .docs-switcher-link {
+    display: block;
+    padding: 11px 12px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: border-color .2s, transform .2s, background .2s;
+  }
+  .docs-switcher-link:hover {
+    border-color: var(--cyan2);
+    transform: translateY(-1px);
+  }
+  .docs-switcher-link.current {
+    border-color: var(--border2);
+    background: rgba(0,229,255,.04);
+  }
+  .docs-switcher-link strong {
+    display: block;
+    color: #fff;
+    font-size: .84rem;
+    font-weight: 600;
+  }
+  .docs-switcher-link span {
+    display: block;
+    margin-top: 4px;
+    color: var(--text2);
+    font-size: .76rem;
+    line-height: 1.5;
+  }
 
   /* ─── Hero ──────────────────────────────────────────────── */
   .hero {
@@ -673,6 +757,7 @@
     .hero-inner { padding: 3.5rem 1.2rem 3rem; }
     .page { padding: 0 1.2rem; }
     footer { padding: 2rem 1.2rem; }
+    .header-tools { gap: .8rem; }
   }
 
   /* ─── Animations ────────────────────────────────────────── */
@@ -730,7 +815,7 @@
     color: var(--text2);
     transition: border-color .2s, color .2s, background .2s;
     flex-shrink: 0;
-    margin-left: 1.2rem;
+    margin-left: 0;
   }
   .theme-toggle:hover { border-color: var(--cyan2); color: var(--text); }
   .theme-toggle-icon { font-size: 1rem; line-height: 1; display: inline-block; transition: transform .35s ease; }
@@ -767,6 +852,12 @@
   [data-theme="light"] .nav-links a { color: var(--text2); }
   [data-theme="light"] .nav-links a:hover  { color: var(--cyan); }
   [data-theme="light"] .nav-links a.active { color: var(--cyan); }
+  [data-theme="light"] .docs-switcher-btn { color: var(--text2); }
+  [data-theme="light"] .docs-switcher-btn:hover,
+  [data-theme="light"] .docs-switcher.open .docs-switcher-btn { color: var(--cyan); }
+  [data-theme="light"] .docs-switcher-panel { background: #fff; border-color: var(--border); box-shadow: 0 10px 28px rgba(0,0,0,.08); }
+  [data-theme="light"] .docs-switcher-link.current { border-color: var(--border2); background: rgba(10,92,138,.04); }
+  [data-theme="light"] .docs-switcher-link strong { color: var(--text); }
   [data-theme="light"] .theme-toggle { background: #fff; border-color: var(--border); color: var(--text3); }
   [data-theme="light"] .theme-toggle:hover { border-color: var(--cyan2); color: var(--text); }
 
@@ -908,7 +999,7 @@
       survival
       <span class="logo-sub">/ docs</span>
     </a>
-    <div style="display:flex;align-items:center;">
+    <div class="header-tools">
       <nav>
         <ul class="nav-links">
           <li><a href="#inputs">Данные</a></li>
@@ -918,6 +1009,27 @@
           <li><a href="#reference">Справка</a></li>
         </ul>
       </nav>
+      <div class="docs-switcher" id="docsSwitcher">
+        <button class="docs-switcher-btn" id="docsSwitcherButton" type="button" aria-haspopup="true" aria-expanded="false">
+          <span>Гайды</span>
+          <span class="docs-switcher-caret">▾</span>
+        </button>
+        <div class="docs-switcher-panel" aria-label="Навигация по документации">
+          <div class="docs-switcher-title">Переходы по документации</div>
+          <a class="docs-switcher-link" href="../../docs/index.html">
+            <strong>Обзор проекта</strong>
+            <span>Архитектура всего проекта, Excel-статистика, сценарии и карта репозитория.</span>
+          </a>
+          <a class="docs-switcher-link current" href="./index.html">
+            <strong>Модуль survival</strong>
+            <span>Подбор параметров ЛКМ, прогноз роста, GEANT4 и внутренняя справка.</span>
+          </a>
+          <a class="docs-switcher-link" href="#reference">
+            <strong>Справка survival</strong>
+            <span>Быстрый переход к справочному разделу текущей страницы.</span>
+          </a>
+        </div>
+      </div>
       <button class="theme-toggle" id="themeToggle" aria-label="Переключить тему">
         <span class="theme-toggle-icon" id="themeIcon">☀</span>
         <span id="themeLabel">LIGHT</span>
@@ -1845,6 +1957,32 @@ document.querySelectorAll('.tabs-nav').forEach(nav => {
     const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
     localStorage.setItem('rb-theme', next);
     apply(next);
+  });
+})();
+
+/* Docs switcher */
+(function () {
+  const switcher = document.getElementById('docsSwitcher');
+  const button = document.getElementById('docsSwitcherButton');
+
+  if (!switcher || !button) return;
+
+  function setOpen(isOpen) {
+    switcher.classList.toggle('open', isOpen);
+    button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  }
+
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setOpen(!switcher.classList.contains('open'));
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!switcher.contains(event.target)) setOpen(false);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') setOpen(false);
   });
 })();
 
