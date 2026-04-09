@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -620,15 +621,16 @@ class FitAlphaBetaWindow(QMainWindow):
         main_splitter.setChildrenCollapsible(False)
         main_splitter.addWidget(self._build_sidebar_panel())
 
-        results_splitter = QSplitter(Qt.Orientation.Vertical, self)
-        results_splitter.setChildrenCollapsible(False)
-        results_splitter.addWidget(self._build_summary_panel())
-        results_splitter.addWidget(self._build_detail_panel())
-        results_splitter.setStretchFactor(0, 1)
-        results_splitter.setStretchFactor(1, 3)
-        results_splitter.setSizes([250, 520])
+        self.results_splitter = QSplitter(Qt.Orientation.Vertical, self)
+        self.results_splitter.setChildrenCollapsible(False)
+        self.results_splitter.setHandleWidth(4)
+        self.results_splitter.addWidget(self._build_summary_panel())
+        self.results_splitter.addWidget(self._build_detail_panel())
+        self.results_splitter.setStretchFactor(0, 0)
+        self.results_splitter.setStretchFactor(1, 1)
+        self.results_splitter.setSizes([160, 610])
 
-        main_splitter.addWidget(results_splitter)
+        main_splitter.addWidget(self.results_splitter)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
         main_splitter.setSizes([430, 900])
@@ -946,16 +948,19 @@ class FitAlphaBetaWindow(QMainWindow):
         header_row.addStretch(1)
         header_row.addWidget(QLabel("Selected run"))
         self.run_selector = QComboBox(self)
-        self.run_selector.setMinimumWidth(360)
+        self.run_selector.setMinimumWidth(220)
+        self.run_selector.setMinimumContentsLength(28)
         self.run_selector.setMaxVisibleItems(14)
-        self.run_selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContentsOnFirstShow)
+        self.run_selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.run_selector.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.run_selector.currentIndexChanged.connect(self.display_run)
         header_row.addWidget(self.run_selector)
         layout.addLayout(header_row)
 
         self.summary_table = self._create_table(SUMMARY_HEADERS)
         self.summary_table.currentCellChanged.connect(self._sync_run_selector_with_table)
-        self.summary_table.setMinimumHeight(220)
+        self.summary_table.setMinimumHeight(120)
+        self.summary_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.summary_table)
         return panel
 
@@ -1078,8 +1083,8 @@ class FitAlphaBetaWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        controls_group = QGroupBox("NTCP analysis", self)
-        controls_layout = QGridLayout(controls_group)
+        self.ntcp_controls_group = QGroupBox("NTCP analysis", self)
+        controls_layout = QGridLayout(self.ntcp_controls_group)
         controls_layout.setHorizontalSpacing(8)
         controls_layout.setVerticalSpacing(6)
 
@@ -1137,10 +1142,14 @@ class FitAlphaBetaWindow(QMainWindow):
         controls_layout.addWidget(self.ntcp_clear_groups_button, 2, 4, 1, 2)
 
         controls_layout.setColumnStretch(5, 1)
-        layout.addWidget(controls_group)
+        layout.addWidget(self.ntcp_controls_group)
 
-        source_group = QGroupBox("Skin/RTOG groups", self)
-        source_layout = QVBoxLayout(source_group)
+        self.ntcp_content_splitter = QSplitter(Qt.Orientation.Vertical, self)
+        self.ntcp_content_splitter.setChildrenCollapsible(False)
+        self.ntcp_content_splitter.setHandleWidth(4)
+
+        self.ntcp_source_group = QGroupBox("Skin/RTOG groups", self)
+        source_layout = QVBoxLayout(self.ntcp_source_group)
         source_layout.setContentsMargins(8, 8, 8, 8)
         source_layout.setSpacing(6)
 
@@ -1150,23 +1159,32 @@ class FitAlphaBetaWindow(QMainWindow):
             | QAbstractItemView.EditTrigger.EditKeyPressed
             | QAbstractItemView.EditTrigger.SelectedClicked
         )
-        self.ntcp_source_table.setMinimumHeight(140)
+        self.ntcp_source_group.setMinimumHeight(0)
+        self.ntcp_source_table.setMinimumHeight(0)
         source_layout.addWidget(self.ntcp_source_table)
-        layout.addWidget(source_group)
+        self.ntcp_content_splitter.addWidget(self.ntcp_source_group)
+        self.ntcp_content_splitter.setCollapsible(0, True)
 
         self.ntcp_figure = Figure(figsize=(8, 4.4))
         self.ntcp_canvas = FigureCanvasQTAgg(self.ntcp_figure)
-        self.ntcp_canvas.setMinimumHeight(220)
-        layout.addWidget(self.ntcp_canvas)
+        self.ntcp_canvas.setMinimumHeight(180)
+        self.ntcp_content_splitter.addWidget(self.ntcp_canvas)
 
         self.ntcp_table = self._create_table(NTCP_HEADERS)
-        self.ntcp_table.setMinimumHeight(180)
-        layout.addWidget(self.ntcp_table, 1)
+        self.ntcp_table.setMinimumHeight(100)
+        self.ntcp_content_splitter.addWidget(self.ntcp_table)
 
         self.ntcp_text = QPlainTextEdit(self)
         self.ntcp_text.setReadOnly(True)
-        self.ntcp_text.setMaximumHeight(120)
-        layout.addWidget(self.ntcp_text)
+        self.ntcp_text.setMinimumHeight(80)
+        self.ntcp_content_splitter.addWidget(self.ntcp_text)
+
+        self.ntcp_content_splitter.setStretchFactor(0, 2)
+        self.ntcp_content_splitter.setStretchFactor(1, 3)
+        self.ntcp_content_splitter.setStretchFactor(2, 2)
+        self.ntcp_content_splitter.setStretchFactor(3, 1)
+        self.ntcp_content_splitter.setSizes([180, 260, 180, 120])
+        layout.addWidget(self.ntcp_content_splitter, 1)
         return panel
 
     def _build_tcp_panel(self) -> QWidget:
@@ -1175,8 +1193,8 @@ class FitAlphaBetaWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        controls_group = QGroupBox("TCP analysis", self)
-        controls_layout = QGridLayout(controls_group)
+        self.tcp_controls_group = QGroupBox("TCP analysis", self)
+        controls_layout = QGridLayout(self.tcp_controls_group)
         controls_layout.setHorizontalSpacing(8)
         controls_layout.setVerticalSpacing(6)
 
@@ -1221,21 +1239,31 @@ class FitAlphaBetaWindow(QMainWindow):
         controls_layout.addWidget(self.tcp_export_button, 1, 6)
 
         controls_layout.setColumnStretch(3, 1)
-        layout.addWidget(controls_group)
+        layout.addWidget(self.tcp_controls_group)
+
+        self.tcp_content_splitter = QSplitter(Qt.Orientation.Vertical, self)
+        self.tcp_content_splitter.setChildrenCollapsible(False)
+        self.tcp_content_splitter.setHandleWidth(4)
 
         self.tcp_figure = Figure(figsize=(8, 4.4))
         self.tcp_canvas = FigureCanvasQTAgg(self.tcp_figure)
-        self.tcp_canvas.setMinimumHeight(220)
-        layout.addWidget(self.tcp_canvas)
+        self.tcp_canvas.setMinimumHeight(180)
+        self.tcp_content_splitter.addWidget(self.tcp_canvas)
 
         self.tcp_table = self._create_table(TCP_HEADERS)
-        self.tcp_table.setMinimumHeight(180)
-        layout.addWidget(self.tcp_table, 1)
+        self.tcp_table.setMinimumHeight(100)
+        self.tcp_content_splitter.addWidget(self.tcp_table)
 
         self.tcp_text = QPlainTextEdit(self)
         self.tcp_text.setReadOnly(True)
-        self.tcp_text.setMaximumHeight(120)
-        layout.addWidget(self.tcp_text)
+        self.tcp_text.setMinimumHeight(80)
+        self.tcp_content_splitter.addWidget(self.tcp_text)
+
+        self.tcp_content_splitter.setStretchFactor(0, 3)
+        self.tcp_content_splitter.setStretchFactor(1, 2)
+        self.tcp_content_splitter.setStretchFactor(2, 1)
+        self.tcp_content_splitter.setSizes([320, 200, 120])
+        layout.addWidget(self.tcp_content_splitter, 1)
         return panel
 
     @staticmethod
@@ -2505,17 +2533,39 @@ class FitAlphaBetaWindow(QMainWindow):
 
         axis = self.ntcp_figure.add_subplot(111)
         ordered_rows = sorted(self.ntcp_curve_rows, key=lambda row: row.dose_total)
+        doses = [row.dose_total for row in ordered_rows]
+        ntcps = [row.ntcp for row in ordered_rows]
         axis.plot(
-            [row.dose_total for row in ordered_rows],
-            [row.ntcp for row in ordered_rows],
+            doses,
+            ntcps,
             marker="o",
             linewidth=2.0,
-            color="#b91c1c",
+            color="#2563eb",
+            label="NTCP",
         )
+
+        observed_groups = [
+            group
+            for group in self.ntcp_fit_groups
+            if group.dose_total is not None and group.n_subjects > 0
+        ]
+        if observed_groups:
+            observed_groups = sorted(observed_groups, key=lambda group: float(group.dose_total))
+            axis.plot(
+                [float(group.dose_total) for group in observed_groups],
+                [group.complication_rate for group in observed_groups],
+                marker="s",
+                linewidth=1.6,
+                linestyle="--",
+                color="#f97316",
+                label="Observed complication rate",
+            )
+
         axis.set_xlabel("Total dose (Gy)")
         axis.set_ylabel("NTCP")
         axis.set_ylim(-0.02, 1.02)
         axis.grid(True, alpha=0.25)
+        axis.legend(loc="upper right")
         self.ntcp_figure.tight_layout(pad=1.1)
         self.ntcp_canvas.draw_idle()
 

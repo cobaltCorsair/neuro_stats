@@ -94,6 +94,32 @@ class GrowthSimulationResult:
     axis_c: np.ndarray
 
 
+def ellipsoid_volume_from_diameters(
+    axis_a: float | Sequence[float] | np.ndarray,
+    axis_b: float | Sequence[float] | np.ndarray,
+    axis_c: float | Sequence[float] | np.ndarray,
+) -> np.ndarray:
+    """Compute ellipsoid volume from full axis lengths (diameters)."""
+    return (math.pi * np.asarray(axis_a, dtype=float) * np.asarray(axis_b, dtype=float) * np.asarray(axis_c, dtype=float)) / 6.0
+
+
+def geometry_volume_consistency(
+    total_volume: float | Sequence[float] | np.ndarray,
+    axis_a: float | Sequence[float] | np.ndarray,
+    axis_b: float | Sequence[float] | np.ndarray,
+    axis_c: float | Sequence[float] | np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compare predicted total volume with the ellipsoid volume implied by a/b/c."""
+    total = np.asarray(total_volume, dtype=float)
+    ellipsoid = ellipsoid_volume_from_diameters(axis_a, axis_b, axis_c)
+    delta = ellipsoid - total
+    relative = np.zeros_like(delta, dtype=float)
+    nonzero_mask = np.abs(total) > 1.0e-12
+    relative[nonzero_mask] = delta[nonzero_mask] / total[nonzero_mask]
+    relative[~nonzero_mask] = np.where(np.abs(delta[~nonzero_mask]) <= 1.0e-12, 0.0, np.nan)
+    return ellipsoid, delta, relative
+
+
 def surviving_fraction(
     alpha: float,
     beta: float,

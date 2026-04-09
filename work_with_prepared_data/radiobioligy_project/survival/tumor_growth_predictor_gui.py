@@ -72,6 +72,8 @@ from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predicto
     build_schedule_from_intervals,
     parse_irradiation_intervals_days,
     default_geometry_scaling,
+    geometry_volume_consistency,
+    ellipsoid_volume_from_diameters,
     fit_geometry_scaling,
     fit_gompertz_to_control,
     predict_schedule_surviving_fraction,
@@ -470,8 +472,8 @@ class TumorGrowthPredictorWindow(QMainWindow):
         return group
 
     def _build_parameter_group(self) -> QGroupBox:
-        group = QGroupBox("Model parameters", self)
-        layout = QGridLayout(group)
+        self.parameter_group = QGroupBox("Model parameters", self)
+        layout = QGridLayout(self.parameter_group)
         layout.setContentsMargins(10, 14, 10, 10)
         layout.setHorizontalSpacing(8)
         layout.setVerticalSpacing(6)
@@ -496,35 +498,36 @@ class TumorGrowthPredictorWindow(QMainWindow):
 
         layout.addWidget(QLabel("alpha"), 0, 0)
         layout.addWidget(self.alpha_spin, 0, 1)
-        layout.addWidget(QLabel("beta"), 0, 2)
-        layout.addWidget(self.beta_spin, 0, 3)
+        layout.addWidget(QLabel("beta"), 1, 0)
+        layout.addWidget(self.beta_spin, 1, 1)
 
-        layout.addWidget(QLabel("Growth rate r"), 1, 0)
-        layout.addWidget(self.growth_rate_spin, 1, 1)
-        layout.addWidget(QLabel("Carrying capacity K"), 1, 2)
-        layout.addWidget(self.carrying_capacity_spin, 1, 3)
+        layout.addWidget(QLabel("Growth rate r"), 2, 0)
+        layout.addWidget(self.growth_rate_spin, 2, 1)
+        layout.addWidget(QLabel("Carrying capacity K"), 3, 0)
+        layout.addWidget(self.carrying_capacity_spin, 3, 1)
 
-        layout.addWidget(QLabel("Clearance rate"), 2, 0)
-        layout.addWidget(self.clearance_rate_spin, 2, 1)
-        layout.addWidget(QLabel("Horizon (days)"), 2, 2)
-        layout.addWidget(self.horizon_spin, 2, 3)
+        layout.addWidget(QLabel("Clearance rate"), 4, 0)
+        layout.addWidget(self.clearance_rate_spin, 4, 1)
+        layout.addWidget(QLabel("Horizon (days)"), 5, 0)
+        layout.addWidget(self.horizon_spin, 5, 1)
 
-        layout.addWidget(QLabel("Step (days)"), 3, 0)
-        layout.addWidget(self.step_spin, 3, 1)
-        layout.addWidget(QLabel("Repair T1/2 (h)"), 3, 2)
-        layout.addWidget(self.repair_half_time_spin, 3, 3)
+        layout.addWidget(QLabel("Step (days)"), 6, 0)
+        layout.addWidget(self.step_spin, 6, 1)
+        layout.addWidget(QLabel("Repair T1/2 (h)"), 7, 0)
+        layout.addWidget(self.repair_half_time_spin, 7, 1)
 
-        layout.addWidget(QLabel("Geometry mode"), 4, 0)
+        layout.addWidget(QLabel("Geometry mode"), 8, 0)
         self.geometry_mode_combo = QComboBox(self)
         self._configure_combo_box(self.geometry_mode_combo)
         self.geometry_mode_combo.addItem("Fixed ratios", "fixed")
         self.geometry_mode_combo.addItem("Fit from observed shape", "fitted")
         self.geometry_mode_combo.currentIndexChanged.connect(self.on_geometry_mode_changed)
-        layout.addWidget(self.geometry_mode_combo, 4, 1)
+        layout.addWidget(self.geometry_mode_combo, 8, 1)
 
-        layout.addWidget(QLabel("TCP cell density"), 4, 2)
-        layout.addWidget(self.tcp_cell_density_edit, 4, 3)
-        return group
+        layout.addWidget(QLabel("TCP cell density"), 9, 0)
+        layout.addWidget(self.tcp_cell_density_edit, 9, 1)
+        layout.setColumnStretch(1, 1)
+        return self.parameter_group
 
     def _build_schedule_group(self) -> QGroupBox:
         group = QGroupBox("Dose schedule", self)
@@ -1621,6 +1624,24 @@ class TumorGrowthPredictorWindow(QMainWindow):
     def format_family_sequence(sequence: Sequence[str]) -> str:
         return " -> ".join(sequence) if sequence else "-"
 
+    @staticmethod
+    def schedules_equivalent(
+        first: Sequence[TreatmentFraction],
+        second: Sequence[TreatmentFraction],
+    ) -> bool:
+        if len(first) != len(second):
+            return False
+        for left, right in zip(first, second):
+            left_family = None if left.family is None else str(left.family).strip().lower()
+            right_family = None if right.family is None else str(right.family).strip().lower()
+            if (
+                abs(float(left.day) - float(right.day)) > 1.0e-9
+                or abs(float(left.dose) - float(right.dose)) > 1.0e-9
+                or left_family != right_family
+            ):
+                return False
+        return True
+
     def refresh_comparison_view(self) -> None:
         self.scenario_comparison_report = None
         self.comparison_curves = {}
@@ -1733,8 +1754,16 @@ class TumorGrowthPredictorWindow(QMainWindow):
             self.comparison_canvas.draw_idle()
             return
 
-        for scenario_name, values in self.comparison_curves.items():
-            axis.plot(sample_times, values, linewidth=2.0, label=scenario_name)
+        curve_items = list(self.comparison_curves.items())
+        if (
+            len(curve_items) == 2
+            and np.allclose(curve_items[0][1], curve_items[1][1], rtol=1.0e-9, atol=1.0e-9)
+        ):
+            combined_label = f"{curve_items[0][0]} = {curve_items[1][0]}"
+            axis.plot(sample_times, curve_items[0][1], linewidth=2.0, label=combined_label)
+        else:
+            for scenario_name, values in curve_items:
+                axis.plot(sample_times, values, linewidth=2.0, label=scenario_name)
 
         if self.observed_days is not None and self.observed_volume is not None:
             valid = np.isfinite(self.observed_days) & np.isfinite(self.observed_volume) & (self.observed_volume > 0.0)
@@ -1780,6 +1809,8 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 f"{alternative_name} intervals: "
                 + format_schedule_intervals([event.day for event in alternative_schedule])
             )
+        if self.schedules_equivalent(current_schedule, alternative_schedule):
+            lines.append("Schedules are identical: comparison curves overlap exactly.")
         if current_row is not None and alternative_row is not None:
             same_dose = abs(current_row.total_physical_dose - alternative_row.total_physical_dose) <= 1.0e-9
             lines.append(
@@ -2157,6 +2188,9 @@ class TumorGrowthPredictorWindow(QMainWindow):
             lines.append(f"Treated tumor file: {self.geometry_dataset.path.name}")
         if self.control_dataset is not None:
             lines.append(f"Control file: {self.control_dataset.path.name}")
+        current_ellipsoid = float(ellipsoid_volume_from_diameters(axis_a, axis_b, axis_c))
+        current_delta = current_ellipsoid - float(total)
+        current_relative = 0.0 if abs(float(total)) <= 1.0e-12 else current_delta / float(total)
         lines.extend(
             [
                 f"Tumor: {self.selection_combo.currentText()}",
@@ -2184,6 +2218,8 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 f"a = {axis_a:.3f}",
                 f"b = {axis_b:.3f}",
                 f"c = {axis_c:.3f}",
+                f"Ellipsoid volume (pi*a*b*c/6) = {current_ellipsoid:.6f}",
+                f"Difference vs Predicted total = {current_delta:+.6f} ({current_relative:+.3%})",
             ]
         )
         if initial_volume_line is not None:
@@ -2222,6 +2258,15 @@ class TumorGrowthPredictorWindow(QMainWindow):
                 ]
             )
 
+        if self.simulation_result is not None:
+            lines.extend(
+                [
+                    "",
+                    "Geometry consistency over trajectory:",
+                    *self.build_geometry_consistency_report_lines(self.simulation_result),
+                ]
+            )
+
         if schedule:
             lines.append("")
             lines.append(f"Interval schedule = {interval_schedule_label}")
@@ -2247,6 +2292,47 @@ class TumorGrowthPredictorWindow(QMainWindow):
             for family in self.missing_schedule_families:
                 lines.append(f"- {family} -> using default alpha/beta")
         return "\n".join(lines)
+
+    def build_geometry_consistency_report_lines(
+        self,
+        result: GrowthSimulationResult,
+    ) -> list[str]:
+        ellipsoid, delta, relative = geometry_volume_consistency(
+            result.total_volume,
+            result.axis_a,
+            result.axis_b,
+            result.axis_c,
+        )
+        abs_delta = np.abs(delta)
+        abs_relative = np.abs(relative)
+        max_abs_index = int(np.nanargmax(abs_delta)) if len(abs_delta) else 0
+        max_rel_index = int(np.nanargmax(abs_relative)) if len(abs_relative) else 0
+
+        lines = [
+            (
+                "max |pi*a*b*c/6 - Predicted total| = "
+                f"{abs_delta[max_abs_index]:.6f} at t={_format_time_days(float(result.times[max_abs_index]))}"
+            ),
+            (
+                "max relative mismatch = "
+                f"{abs_relative[max_rel_index]:.3%} at t={_format_time_days(float(result.times[max_rel_index]))}"
+            ),
+            "Per-time check:",
+        ]
+        for time_value, total_value, ellipsoid_value, delta_value, relative_value in zip(
+            result.times,
+            result.total_volume,
+            ellipsoid,
+            delta,
+            relative,
+        ):
+            lines.append(
+                "t="
+                + _format_time_days(float(time_value))
+                + f": total={float(total_value):.6f}, piabc/6={float(ellipsoid_value):.6f}, "
+                + f"delta={float(delta_value):+.6f}, rel={float(relative_value):+.3%}"
+            )
+        return lines
 
     def clear_prediction_outputs(self) -> None:
         self.timer.stop()
