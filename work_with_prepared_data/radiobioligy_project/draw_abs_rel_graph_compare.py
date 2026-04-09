@@ -1,5 +1,7 @@
 # файл draw_abs_rel_graph_compare.py
 
+import math
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from typing import List
@@ -29,6 +31,9 @@ class TumorDataComparatorAdvanced:
     Args: *visualizers (TumorDataVisualizer): Произвольное количество объектов TumorDataVisualizer, каждый из которых
     представляет данные одного эксперимента.
     """
+
+    TGI_TIME_GRID_CONTROL_DAYS = "control_days"
+    TGI_TIME_GRID_DAILY_INTERPOLATION = "daily_interpolation"
 
     def __init__(self, *visualizers: TumorDataVisualizer):
         self.visualizers = visualizers
@@ -308,86 +313,258 @@ class TumorDataComparatorAdvanced:
         # Увеличиваем размер шрифта легенды для графиков торможения роста опухоли
         drawgraph.finalize_figure('', legend_fontsize=18)
 
-    def create_tumor_growth_inhibition_table(self, control_visualizer, experiment_visualizers):
-        """
-        Создает таблицу сравнения торможения роста опухоли между контрольной и экспериментальными группами.
+    @staticmethod
+    def _build_experiment_names(experiment_visualizers: List[TumorDataVisualizer]) -> List[str]:
+        experiment_names = []
+        duplicate_counters = {}
 
-        Метод сначала нормализует временные данные, обрезает их до минимальной длины временного ряда среди всех
-        визуализаторов, и затем вычисляет процент торможения роста опухоли (ТРО) для каждой экспериментальной группы
-        по сравнению с контрольной группой. Результаты представляются в виде таблицы, где также рассчитывается и
-        отображается абсолютная и относительная разница в эффективности ТРО между группами начиная с 9-го дня.
+        for index, experiment_visualizer in enumerate(experiment_visualizers, start=1):
+            base_name = format_experiment_params(experiment_visualizer.experiment_params).strip()
+            if not base_name:
+                base_name = f"Эксперимент {index}"
 
-        Args:
-            control_visualizer (TumorDataVisualizer): Визуализатор данных для контрольной группы.
-            experiment_visualizers (List[TumorDataVisualizer]): Список визуализаторов данных для экспериментальных групп.
+            duplicate_counters[base_name] = duplicate_counters.get(base_name, 0) + 1
+            if duplicate_counters[base_name] > 1:
+                experiment_names.append(f"{base_name} ({duplicate_counters[base_name]})")
+            else:
+                experiment_names.append(base_name)
 
-        Returns:
-            None: Функция не возвращает значения, но выводит таблицу с результатами сравнения и аналитические
-                  показатели по ней в консоль.
+        return experiment_names
 
-        Использует:
-            - `normalize_time_data_min` для нормализации временных данных.
-            - `calculate_tumor_growth_inhibition` для расчета торможения роста опухоли.
-            - `pd.DataFrame` для создания и обработки таблицы результатов.
-            - `pd.set_option` для настройки отображения таблицы в консоли.
-
-        Примечание:
-            - Метод важен для количественной оценки и сравнения эффективности различных терапевтических подходов
-              в контексте торможения роста опухолей.
-            - Анализ абсолютной и относительной разницы в эффективности ТРО помогает глубже понять степень
-              влияния экспериментальных условий на динамику роста опухолей.
-        """
+    def _build_tumor_growth_inhibition_series(self, control_visualizer, experiment_visualizers):
         SupportingFunctions.normalize_time_data_min([control_visualizer] + experiment_visualizers)
 
-        # Находим минимальную длину временного ряда среди всех визуализаторов
-        min_length = min(len(viz.time_data) for viz in [control_visualizer] + experiment_visualizers)
+        control_times = SupportingFunctions.to_float_list(control_visualizer.time_data)
+        control_mean = SupportingFunctions.to_float_list(control_visualizer.data_processor.get_mean_tumor_volumes())
+        experiment_names = self._build_experiment_names(experiment_visualizers)
 
-        # Обрезаем данные до минимальной длины
-        control_time_data = control_visualizer.time_data[:min_length]
-        control_mean_volumes = control_visualizer.data_processor.get_mean_tumor_volumes()[:min_length]
+        tgi_series_by_experiment = []
+        for experiment_name, experiment_visualizer in zip(experiment_names, experiment_visualizers):
+            experiment_times = SupportingFunctions.to_float_list(experiment_visualizer.time_data)
+            experiment_mean = SupportingFunctions.to_float_list(
+                experiment_visualizer.data_processor.get_mean_tumor_volumes()
+            )
 
-        data = {'Время (сут)': control_time_data}
-
-        for experiment_visualizer in experiment_visualizers:
-            experiment_mean_volumes = experiment_visualizer.data_processor.get_mean_tumor_volumes()[:min_length]
-
+            control_on_experiment_time = SupportingFunctions.interpolate_data_to_common_timepoints(
+                control_times,
+                control_mean,
+                experiment_times
+            )
             tumor_growth_inhibition = SupportingFunctions.calculate_tumor_growth_inhibition(
-                control_mean_volumes,
-                experiment_mean_volumes)
+                control_on_experiment_time,
+                experiment_mean
+            )
 
-            experiment_name = format_experiment_params(experiment_visualizer.experiment_params)
-            data[experiment_name] = tumor_growth_inhibition
+            series = pd.Series(
+                tumor_growth_inhibition,
+                index=pd.Index(experiment_times, dtype="float64"),
+                name=experiment_name,
+                dtype="float64"
+            )
+            series = series[~pd.isna(series.index)]
+            series = series.groupby(level=0).mean()
+            tgi_series_by_experiment.append((experiment_name, series))
 
-        # Создание DataFrame из словаря
-        df = pd.DataFrame(data)
+        return tgi_series_by_experiment
 
-        # Преобразование 'Время (сут)' в числовой тип данных для возможности фильтрации
-        df['Время (сут)'] = pd.to_numeric(df['Время (сут)'])
+    @staticmethod
+    def _build_control_time_grid(control_visualizer):
+        return sorted({
+            float(timepoint)
+            for timepoint in SupportingFunctions.to_float_list(control_visualizer.time_data)
+            if not pd.isna(timepoint)
+        })
 
-        # Фильтрация DataFrame для времени начиная с 9-го дня
-        df_filtered = df.loc[df['Время (сут)'] >= 9].copy()
+    @staticmethod
+    def _build_daily_experiment_time_grid(tgi_series_by_experiment):
+        non_empty_series = [series for _, series in tgi_series_by_experiment if not series.empty]
+        if not non_empty_series:
+            return []
 
-        # Расчет абсолютной разницы эффективности ТРО и относительной эффективности
-        df_filtered['Absolute Difference (%)'] = df_filtered.iloc[:, 1] - df_filtered.iloc[:, 2]
-        df_filtered['Relative Difference (%)'] = (df_filtered['Absolute Difference (%)'] / df_filtered.iloc[:, 1] * 100)
+        start_day = math.floor(min(series.index.min() for series in non_empty_series))
+        end_day = math.ceil(max(series.index.max() for series in non_empty_series))
+        return [float(day) for day in range(start_day, end_day + 1)]
 
-        # Установка формата чисел
-        pd.set_option('display.float_format', '{:.2f}'.format)
-        pd.set_option('display.max_rows', None)  # Для показа всех строк
-        pd.set_option('display.max_columns', None)  # Для показа всех столбцов
+    @staticmethod
+    def _align_tgi_series_to_timepoints(tgi_series_by_experiment, time_grid):
+        common_timepoints = sorted({
+            float(timepoint)
+            for timepoint in time_grid
+            if not pd.isna(timepoint)
+        })
+        if not common_timepoints:
+            return [
+                (experiment_name, pd.Series(name=experiment_name, dtype="float64"))
+                for experiment_name, _ in tgi_series_by_experiment
+            ]
 
-        # Изменение индекса
-        df.set_index('Время (сут)', inplace=True)
+        aligned_index = pd.Index(common_timepoints, dtype="float64")
+        aligned_series = []
 
-        # # Печать отфильтрованной таблицы с использованием to_string()
-        # print(df_filtered.to_string())
-        #
-        # # Расчет среднего абсолютного значения относительных различий
-        # average_absolute_relative_difference = df_filtered['Relative Difference (%)'].abs().mean()
-        # print(
-        #     f"Среднее абсолютное значение относительного различия начиная с 9-го дня: {average_absolute_relative_difference:.2f}%")
+        for experiment_name, series in tgi_series_by_experiment:
+            if series.empty:
+                aligned_values = [float("nan")] * len(common_timepoints)
+            else:
+                sorted_series = series.sort_index()
+                if len(sorted_series) == 1:
+                    aligned_values = [float(sorted_series.iloc[0])] * len(common_timepoints)
+                else:
+                    aligned_values = SupportingFunctions.interpolate_data_to_common_timepoints(
+                        sorted_series.index.tolist(),
+                        sorted_series.tolist(),
+                        common_timepoints
+                    )
 
-        return df_filtered
+            aligned_series.append((
+                experiment_name,
+                pd.Series(aligned_values, index=aligned_index, name=experiment_name, dtype="float64")
+            ))
+
+        return aligned_series
+
+    @staticmethod
+    def _build_tgi_table_dataframe(tgi_series_by_experiment):
+        if not tgi_series_by_experiment:
+            return pd.DataFrame(columns=['Время (сут)'])
+
+        tgi_df = pd.concat(
+            [series.rename(experiment_name) for experiment_name, series in tgi_series_by_experiment],
+            axis=1
+        ).sort_index()
+        tgi_df = tgi_df.reset_index().rename(columns={'index': 'Время (сут)'})
+        tgi_df['Время (сут)'] = pd.to_numeric(tgi_df['Время (сут)'], errors='coerce')
+        return tgi_df
+
+    @staticmethod
+    def _create_pairwise_tgi_summary(tgi_series_by_experiment):
+        if len(tgi_series_by_experiment) < 2:
+            return None
+
+        summary_rows = []
+        for left_index, (left_name, left_series) in enumerate(tgi_series_by_experiment[:-1]):
+            left_filtered = left_series[left_series.index >= 9]
+
+            for right_name, right_series in tgi_series_by_experiment[left_index + 1:]:
+                right_filtered = right_series[right_series.index >= 9]
+                paired_values = pd.concat(
+                    [left_filtered.rename(left_name), right_filtered.rename(right_name)],
+                    axis=1,
+                    join='inner'
+                ).dropna()
+
+                if paired_values.empty:
+                    average_absolute_difference = float('nan')
+                    average_relative_difference = float('nan')
+                    timepoint_count = 0
+                else:
+                    absolute_difference = (paired_values[left_name] - paired_values[right_name]).abs()
+                    baseline = paired_values[left_name].abs().replace(0, pd.NA)
+                    relative_difference = (absolute_difference / baseline) * 100
+
+                    average_absolute_difference = absolute_difference.mean()
+                    average_relative_difference = relative_difference.mean()
+                    timepoint_count = len(paired_values)
+
+                summary_rows.append({
+                    'Пара экспериментов': f"{left_name} vs {right_name}",
+                    'Средняя абсолютная разница ТРО, %': average_absolute_difference,
+                    'Средняя относительная разница ТРО, %': average_relative_difference,
+                    'Число временных точек': timepoint_count,
+                })
+
+        return pd.DataFrame(summary_rows)
+
+    def _create_tumor_growth_inhibition_tables_by_mode(self, control_visualizer, experiment_visualizers):
+        if not experiment_visualizers:
+            empty_df = pd.DataFrame(columns=['Время (сут)'])
+            return {
+                self.TGI_TIME_GRID_CONTROL_DAYS: (empty_df, None),
+                self.TGI_TIME_GRID_DAILY_INTERPOLATION: (empty_df.copy(), None),
+            }
+
+        tgi_series_by_experiment = self._build_tumor_growth_inhibition_series(
+            control_visualizer,
+            experiment_visualizers
+        )
+
+        control_days_series = self._align_tgi_series_to_timepoints(
+            tgi_series_by_experiment,
+            self._build_control_time_grid(control_visualizer)
+        )
+        daily_interpolated_series = self._align_tgi_series_to_timepoints(
+            tgi_series_by_experiment,
+            self._build_daily_experiment_time_grid(tgi_series_by_experiment)
+        )
+
+        return {
+            self.TGI_TIME_GRID_CONTROL_DAYS: (
+                self._build_tgi_table_dataframe(control_days_series),
+                self._create_pairwise_tgi_summary(control_days_series)
+            ),
+            self.TGI_TIME_GRID_DAILY_INTERPOLATION: (
+                self._build_tgi_table_dataframe(daily_interpolated_series),
+                self._create_pairwise_tgi_summary(daily_interpolated_series)
+            ),
+        }
+
+    def create_tumor_growth_inhibition_tables(self, control_visualizer, experiment_visualizers):
+        """
+        Возвращает обе таблицы ТРО:
+        - по суткам контроля;
+        - с ежедневной интерполяцией от начала до конца экспериментов.
+        """
+        return self._create_tumor_growth_inhibition_tables_by_mode(
+            control_visualizer,
+            experiment_visualizers
+        )
+
+    def _legacy_create_tumor_growth_inhibition_table(self, control_visualizer, experiment_visualizers):
+        """
+        Возвращает основную таблицу ТРО по времени и, при n >= 2, попарную сводку
+        различий между экспериментами после 9-го дня.
+        """
+        return self.create_tumor_growth_inhibition_table(
+            control_visualizer,
+            experiment_visualizers,
+            time_grid_mode=self.TGI_TIME_GRID_CONTROL_DAYS
+        )
+
+        if not experiment_visualizers:
+            return pd.DataFrame(columns=['Время (сут)']), None
+
+        tgi_series_by_experiment = self._build_tumor_growth_inhibition_series(
+            control_visualizer,
+            experiment_visualizers
+        )
+        tgi_series_by_experiment = self._interpolate_tgi_series_to_common_timepoints(tgi_series_by_experiment)
+
+        tgi_df = pd.concat(
+            [series.rename(experiment_name) for experiment_name, series in tgi_series_by_experiment],
+            axis=1
+        ).sort_index()
+        tgi_df = tgi_df.reset_index().rename(columns={'index': 'Время (сут)'})
+        tgi_df['Время (сут)'] = pd.to_numeric(tgi_df['Время (сут)'], errors='coerce')
+
+        pairwise_summary_df = self._create_pairwise_tgi_summary(tgi_series_by_experiment)
+        return tgi_df, pairwise_summary_df
+
+    def create_tumor_growth_inhibition_table(
+            self,
+            control_visualizer,
+            experiment_visualizers,
+            time_grid_mode=TGI_TIME_GRID_CONTROL_DAYS
+    ):
+        """
+        Возвращает основную таблицу ТРО по времени и, при n >= 2, попарную сводку
+        различий между экспериментами после 9-го дня.
+        """
+        tables_by_mode = self._create_tumor_growth_inhibition_tables_by_mode(
+            control_visualizer,
+            experiment_visualizers
+        )
+        if time_grid_mode not in tables_by_mode:
+            raise ValueError(f"Unsupported TGI time grid mode: {time_grid_mode}")
+        return tables_by_mode[time_grid_mode]
 
 
 if __name__ == "__main__":

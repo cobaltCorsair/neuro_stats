@@ -1,8 +1,11 @@
 import io
+import numbers
 import subprocess
 import sys
 import os
 from pathlib import Path
+
+import pandas as pd
 
 # Добавляем директорию radiobioligy_project/ в sys.path, чтобы модули
 # с голыми импортами (controls.py, draw_base_graphs.py и др.) находили друг друга
@@ -29,6 +32,7 @@ from work_with_prepared_data.radiobioligy_project.skin_reactions_base_grapf impo
 from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_methods import ExtractOutliers
 from work_with_prepared_data.radiobioligy_project.gui.checkable_combobox import CheckableComboBox
 from work_with_prepared_data.radiobioligy_project.gui.legend_window import LegendManager
+from work_with_prepared_data.radiobioligy_project.gui.tgi_table_window import TumorGrowthInhibitionTableWindow
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -205,6 +209,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.growth_predictor_window = None
         self.geant4_pipeline_window = None
         self.tumor_3d_viewer_window = None
+        self.tgi_table_window = None
         self.cached_visualizer = None  # Кеш для модифицированного визуализатора
         self.cache_key = None  # Ключ для проверки актуальности кеша
         self.show_legend_separately = False  # Флаг для отображения легенды отдельно
@@ -1626,32 +1631,32 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         selected_paths = self.get_selected_experiments()
 
         # Проверяем наличие контрольного пути и наличие выбранных экспериментов
-        if not self.control_path or len(selected_paths) != 2:
-            print("Необходимо выбрать контрольную группу и два эксперимента")
+        if not self.control_path or len(selected_paths) < 1:
+            print("нужен контроль и хотя бы один эксперимент")
             return
 
         # Получение контрольного и экспериментальных визуализаторов
-        visualizer = TumorDataComparatorAdvanced(*[TumorDataVisualizer(path) for path in selected_paths])
         control_visualizer = ControlGroupVisualizer(self.control_path)
         experiment_visualizers = [TumorDataVisualizer(path) for path in selected_paths]
+        visualizer = TumorDataComparatorAdvanced(*experiment_visualizers)
 
         # Предполагаем, что функция модифицирована для возврата DataFrame
-        df = (TumorDataComparatorAdvanced.
-              create_tumor_growth_inhibition_table(visualizer, control_visualizer, experiment_visualizers))
+        tables_by_mode = visualizer.create_tumor_growth_inhibition_tables(
+            control_visualizer,
+            experiment_visualizers
+        )
 
         # Очистка layout перед добавлением нового содержимого
-        self.clear_layout(self.frame.layout())
+        if self.tgi_table_window is None:
+            self.tgi_table_window = TumorGrowthInhibitionTableWindow(self)
 
         # Проверка, существует ли layout. Если нет, создаем новый.
-        if self.frame.layout() is None:
-            layout = QVBoxLayout(self.frame)
-            self.frame.setLayout(layout)
-        else:
-            layout = self.frame.layout()
+        self.tgi_table_window.set_tables(tables_by_mode)
+        self.tgi_table_window.show()
+        self.tgi_table_window.raise_()
+        self.tgi_table_window.activateWindow()
 
         # Создание QTableWidget и заполнение его данными из DataFrame
-        table = self.dataframe_to_qtablewidget(df)
-        layout.addWidget(table)
 
     def handle_pushButton_4(self):
         # Определяем тип графика в зависимости от выбранных чекбоксов
@@ -2009,15 +2014,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         table_widget = QTableWidget()
         table_widget.setRowCount(df.shape[0])
         table_widget.setColumnCount(df.shape[1])
-        table_widget.setHorizontalHeaderLabels(df.columns)
+        table_widget.setHorizontalHeaderLabels([str(column) for column in df.columns])
 
         for i, (index, row) in enumerate(df.iterrows()):
             for j, value in enumerate(row):
-                if j == 0:
-                    item = QTableWidgetItem(str(int(value)))
+                if pd.isna(value):
+                    display_value = ""
+                elif isinstance(value, numbers.Integral):
+                    display_value = str(int(value))
+                elif isinstance(value, numbers.Real):
+                    numeric_value = float(value)
+                    if j == 0 and numeric_value.is_integer():
+                        display_value = str(int(numeric_value))
+                    else:
+                        display_value = f"{numeric_value:.3f}"
                 else:
-                    # Остальные значения округляем до трех знаков после запятой
-                    item = QTableWidgetItem(f"{value:.3f}")
+                    display_value = str(value)
+                item = QTableWidgetItem(display_value)
                 table_widget.setItem(i, j, item)
 
         table_widget.resizeColumnsToContents()
