@@ -687,6 +687,7 @@ class SupportingFunctions:
                     out.append(float(s.replace(',', '.')))
                 except Exception:
                     out.append(float('nan'))
+        return out
 
     @staticmethod
     def calculate_pairwise_divergence(
@@ -751,4 +752,3 @@ class SupportingFunctions:
         with np.errstate(invalid='ignore', divide='ignore'):
             cv = np.where(mean_vals == 0, np.nan, std_vals / mean_vals * 100.0)
         return cv.tolist(), mean_vals.tolist()
-        return out
