@@ -67,7 +67,15 @@ def compute_mixed_field_sf(
     )
     weights = _component_weights(normalized_components, dose_values)
 
-    zaider_rossi_exponent = float(np.sum(alpha_values * dose_values + beta_values * np.square(dose_values)))
+    # Zaider-Rossi (1980) eq. 11: SF = exp(-Σ(αᵢDᵢ + βᵢDᵢ²) - 2Σᵢ<ⱼ √(βᵢβⱼ)·DᵢDⱼ)
+    # Cross-term coefficient √(βᵢβⱼ) is derived from TDRA perfect-square expansion (eq. 7).
+    diagonal = float(np.sum(alpha_values * dose_values + beta_values * np.square(dose_values)))
+    n = len(beta_values)
+    cross_term = 0.0
+    for i in range(n):
+        for j in range(i + 1, n):
+            cross_term += 2.0 * math.sqrt(beta_values[i] * beta_values[j]) * dose_values[i] * dose_values[j]
+    zaider_rossi_exponent = diagonal + cross_term
     sf_zaider_rossi = float(np.exp(-zaider_rossi_exponent))
 
     tdra_alpha = float(np.sum(weights * alpha_values))
