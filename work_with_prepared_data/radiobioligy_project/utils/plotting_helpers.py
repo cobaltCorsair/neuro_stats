@@ -4,6 +4,9 @@ from typing import List
 import matplotlib.pyplot as plt
 
 
+PLOT_FONT_FAMILY = ['Times New Roman', 'DejaVu Serif']
+
+
 class MatplotlibConfigurator:
     """
     Класс для конфигурации и восстановления настроек визуализации Matplotlib.
@@ -29,7 +32,7 @@ class MatplotlibConfigurator:
             # Times New Roman on macOS does not contain some dose subscripts
             # (for example U+2099/U+209A), so keep it first and let Matplotlib
             # fall back to DejaVu Serif for missing glyphs.
-            'font.family': ['Times New Roman', 'DejaVu Serif'],
+            'font.family': PLOT_FONT_FAMILY,
             'font.size': 22,  # Размер основного текста
             'axes.titlesize': 24,  # Размер заголовков осей
             'axes.labelsize': 24,  # Размер меток осей

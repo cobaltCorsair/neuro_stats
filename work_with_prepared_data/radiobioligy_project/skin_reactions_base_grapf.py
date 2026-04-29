@@ -8,7 +8,7 @@ import matplotlib.patches as mpatches
 import seaborn as sns
 import math
 import pandas as pd
-from utils.plotting_helpers import format_experiment_params, MatplotlibConfigurator, custom_fill_between
+from utils.plotting_helpers import format_experiment_params, MatplotlibConfigurator, custom_fill_between, PLOT_FONT_FAMILY
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
 from data_processing.data_processing import SkinReactionsDataProcessor
@@ -448,7 +448,7 @@ class SkinReactionsVisualizer:
             control_groups_info: Словарь {control_type: [indices]} для множественных контролей.
         """
         import re
-        with sns.axes_style("whitegrid"):
+        with sns.axes_style("whitegrid", rc={'font.family': PLOT_FONT_FAMILY}):
             def extract_total_dose(experiment_params):
                 total = 0.0
                 for p in experiment_params:
@@ -607,7 +607,7 @@ class SkinReactionsVisualizer:
                             y_label="AUC (усл. ед.)", perform_stat_test: bool = False, control_index: int = 0,
                             control_groups_info: dict = None):
         import re
-        with sns.axes_style("whitegrid"):
+        with sns.axes_style("whitegrid", rc={'font.family': PLOT_FONT_FAMILY}):
             def extract_total_dose(experiment_params):
                 total = 0.0
                 for p in experiment_params:

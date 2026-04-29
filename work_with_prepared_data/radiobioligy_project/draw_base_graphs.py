@@ -9,7 +9,7 @@ import math
 import pandas as pd
 import re
 
-from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
+from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator, PLOT_FONT_FAMILY
 from stats_methods.support_stats_methods import SupportingFunctions, ExtractOutliers
 from data_processing.excel_data_processor import process_tumor_data_excel
 from data_processing.data_processing import TumorDataProcessor
@@ -300,7 +300,7 @@ class TumorDataVisualizer:
             control_groups_info: Словарь {control_type: [indices]} для множественных контролей.
             show_separate_legend: Если True, легенда выводится в отдельное окно предпросмотра.
         """
-        with sns.axes_style("whitegrid"):
+        with sns.axes_style("whitegrid", rc={'font.family': PLOT_FONT_FAMILY}):
             def extract_total_dose(experiment_params):
                 total = 0.0
                 for p in experiment_params:
@@ -370,8 +370,10 @@ class TumorDataVisualizer:
             all_individual_aucs = [d['individual_aucs'] for d in file_data]  # Для Mann-Whitney
 
             # --- Barplot по числовой оси X (doses) ---
-            plt.figure(figsize=(12, 8))
+            plt.figure(figsize=(12, 7))
             bar_width = 2.5 if len(unique_doses) < 10 else 0.8
+            value_label_fontsize = plt.rcParams.get("legend.fontsize", 16)
+            legend_fontsize = 18
 
             # Паттерны для разделения файлов в одной дозе
             hatches = ['', '///', '\\\\\\', '|||', '---', '+++', 'xxx', '...', 'ooo']
@@ -392,7 +394,7 @@ class TumorDataVisualizer:
                     # Подпись AUC НАД столбцом (над error bar)
                     label_y = data['auc_mean'] + data['auc_sem'] + 0.02 * data['auc_mean']
                     plt.text(dose, label_y, f"{data['auc_mean']:.2f}",
-                            ha='center', va='bottom', fontsize=12,
+                            ha='center', va='bottom', fontsize=value_label_fontsize,
                             fontweight='bold', color='black')
 
                     bars.append((bar, dose, data['auc_mean'], data['auc_sem']))
@@ -419,7 +421,7 @@ class TumorDataVisualizer:
                         # Подпись AUC НАД столбцом (над error bar)
                         label_y = bottom + segment_height + data['auc_sem'] + 0.02 * max_auc_in_group
                         plt.text(dose, label_y, f"{data['auc_mean']:.2f}",
-                                ha='center', va='bottom', fontsize=12,
+                                ha='center', va='bottom', fontsize=value_label_fontsize,
                                 fontweight='bold', color='black', zorder=10)
 
                         # Обновляем максимальную высоту для Mann-Whitney
@@ -435,28 +437,33 @@ class TumorDataVisualizer:
 
                 dose_positions.append(dose)
 
-            plt.xlabel("Суммарная доза, Гр", fontsize=14)
-            plt.ylabel(y_label, fontsize=14)
-            plt.title(title, fontsize=16)
+            plt.xlabel("Суммарная доза, Гр")
+            plt.ylabel(y_label)
+            plt.title(title)
 
             # Подписи с дозами на тиках оси X
             dose_labels = ["Контроль" if d == 0 else str(d) for d in unique_doses]
-            plt.xticks(unique_doses, dose_labels, fontsize=12)
+            plt.xticks(unique_doses, dose_labels)
 
             # Легенда
-            legend_patches = []
-            for data in file_data:
-                legend_patches.append(mpatches.Patch(color=data["color"], label=data["label"]))
+            legend_data = [
+                data
+                for dose in unique_doses
+                for data in dose_groups[dose]
+            ]
+            legend_patches = [
+                mpatches.Patch(color=data["color"], label=data["label"])
+                for data in legend_data
+            ]
 
             if show_separate_legend:
                 # Легенда в отдельном окне - скрываем на графике
                 legend = plt.legend(handles=legend_patches, loc="upper left", bbox_to_anchor=(0.0, -0.05),
-                               ncol=1, fontsize=11, frameon=False, handletextpad=0.8)
+                               ncol=1, fontsize=legend_fontsize, frameon=False, handletextpad=0.8)
                 legend.set_visible(False)
             else:
-                # Легенда под графиком - выравнивание по левому краю (где начало оси X)
-                legend = plt.legend(handles=legend_patches, loc="upper left", bbox_to_anchor=(0.0, -0.05),
-                               ncol=1, fontsize=11, frameon=False, handletextpad=0.8)
+                legend = plt.legend(handles=legend_patches, loc="best",
+                               ncol=1, fontsize=legend_fontsize, handletextpad=0.8)
 
 
             # Критерий Манна-Уитни
@@ -540,7 +547,8 @@ class TumorDataVisualizer:
                         name = control_names.get(control_type, f'Контроль {control_type}')
                         symbols_used.append(f"{symbol} - {name}")
                     explanation_text += ", ".join(symbols_used)
-                    plt.figtext(0.5, 0.02, explanation_text, ha='center', fontsize=10, style='italic')
+                    plt.figtext(0.5, 0.02, explanation_text, ha='center',
+                                fontsize=value_label_fontsize, style='italic')
 
             # Тест Шапиро–Уилка: аннотация нормальности для каждой группы
             if use_shapiro:
@@ -572,7 +580,7 @@ class TumorDataVisualizer:
                         shapiro_legend = ax.legend(
                             handles=handles, title="Шапиро–Уилк (AUC)",
                             loc='upper left', bbox_to_anchor=(0.0, -0.05),
-                            fontsize=9, frameon=False
+                            fontsize=value_label_fontsize, frameon=False
                         )
                         ax.add_artist(shapiro_legend)
                     else:
@@ -580,7 +588,7 @@ class TumorDataVisualizer:
                         ax_current.text(
                             0.02, 0.03, "\n".join(shapiro_lines),
                             transform=ax_current.transAxes,
-                            fontsize=12, verticalalignment='bottom',
+                            fontsize=value_label_fontsize, verticalalignment='bottom',
                             bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
                                       edgecolor='lightgray', alpha=0.9),
                         )
@@ -588,9 +596,7 @@ class TumorDataVisualizer:
             if show_separate_legend:
                 plt.tight_layout()  # Легенда отдельно - не нужно дополнительное место
             else:
-                # Вычисляем нужное место в зависимости от количества элементов легенды
-                legend_space = 0.05 + len(file_data) * 0.03  # Базовый отступ + по 3% на элемент
-                plt.tight_layout(rect=[0, legend_space, 1, 1])  # Больше места снизу для легенды
+                plt.tight_layout()
 
 
 
