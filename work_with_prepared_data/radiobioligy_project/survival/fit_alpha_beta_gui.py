@@ -12,6 +12,7 @@ from typing import Dict, List, Mapping, Optional, Sequence
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+import numpy as np
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
@@ -87,6 +88,15 @@ from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predicto
 
 USE_ALL_CONTROLS = "__all_controls__"
 UNASSIGNED_CONTROL = "__unassigned_control__"
+
+COMPACT_PLOT_FIGSIZE = (7.0, 3.35)
+COMPACT_PLOT_MIN_HEIGHT = 150
+COMPACT_PLOT_LABEL_FONT = 11
+COMPACT_PLOT_TICK_FONT = 9
+COMPACT_PLOT_LEGEND_FONT = 9
+COMPACT_PLOT_LINE_WIDTH = 1.8
+COMPACT_PLOT_SECONDARY_LINE_WIDTH = 1.5
+COMPACT_PLOT_MARKER_SIZE = 5.5
 
 
 SUMMARY_HEADERS = [
@@ -1165,9 +1175,9 @@ class FitAlphaBetaWindow(QMainWindow):
         self.ntcp_content_splitter.addWidget(self.ntcp_source_group)
         self.ntcp_content_splitter.setCollapsible(0, True)
 
-        self.ntcp_figure = Figure(figsize=(8, 4.4))
+        self.ntcp_figure = Figure(figsize=COMPACT_PLOT_FIGSIZE)
         self.ntcp_canvas = FigureCanvasQTAgg(self.ntcp_figure)
-        self.ntcp_canvas.setMinimumHeight(180)
+        self.ntcp_canvas.setMinimumHeight(COMPACT_PLOT_MIN_HEIGHT)
         self.ntcp_content_splitter.addWidget(self.ntcp_canvas)
 
         self.ntcp_table = self._create_table(NTCP_HEADERS)
@@ -1183,7 +1193,7 @@ class FitAlphaBetaWindow(QMainWindow):
         self.ntcp_content_splitter.setStretchFactor(1, 3)
         self.ntcp_content_splitter.setStretchFactor(2, 2)
         self.ntcp_content_splitter.setStretchFactor(3, 1)
-        self.ntcp_content_splitter.setSizes([180, 260, 180, 120])
+        self.ntcp_content_splitter.setSizes([180, 230, 180, 120])
         layout.addWidget(self.ntcp_content_splitter, 1)
         return panel
 
@@ -1245,9 +1255,9 @@ class FitAlphaBetaWindow(QMainWindow):
         self.tcp_content_splitter.setChildrenCollapsible(False)
         self.tcp_content_splitter.setHandleWidth(4)
 
-        self.tcp_figure = Figure(figsize=(8, 4.4))
+        self.tcp_figure = Figure(figsize=COMPACT_PLOT_FIGSIZE)
         self.tcp_canvas = FigureCanvasQTAgg(self.tcp_figure)
-        self.tcp_canvas.setMinimumHeight(180)
+        self.tcp_canvas.setMinimumHeight(COMPACT_PLOT_MIN_HEIGHT)
         self.tcp_content_splitter.addWidget(self.tcp_canvas)
 
         self.tcp_table = self._create_table(TCP_HEADERS)
@@ -1262,7 +1272,7 @@ class FitAlphaBetaWindow(QMainWindow):
         self.tcp_content_splitter.setStretchFactor(0, 3)
         self.tcp_content_splitter.setStretchFactor(1, 2)
         self.tcp_content_splitter.setStretchFactor(2, 1)
-        self.tcp_content_splitter.setSizes([320, 200, 120])
+        self.tcp_content_splitter.setSizes([260, 200, 120])
         layout.addWidget(self.tcp_content_splitter, 1)
         return panel
 
@@ -1280,6 +1290,19 @@ class FitAlphaBetaWindow(QMainWindow):
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(True)
         return table
+
+    @staticmethod
+    def _style_compact_plot_axis(axis: object) -> None:
+        axis.xaxis.label.set_size(COMPACT_PLOT_LABEL_FONT)
+        axis.yaxis.label.set_size(COMPACT_PLOT_LABEL_FONT)
+        axis.tick_params(axis="both", labelsize=COMPACT_PLOT_TICK_FONT)
+
+    @staticmethod
+    def _style_compact_legend(legend: object) -> None:
+        if legend is None:
+            return
+        for text in legend.get_texts():
+            text.set_fontsize(COMPACT_PLOT_LEGEND_FONT)
 
     def _apply_window_style(self) -> None:
         self.setStyleSheet(
@@ -2274,28 +2297,45 @@ class FitAlphaBetaWindow(QMainWindow):
         tcps = [row.tcp for row in ordered_rows]
         sfs = [row.sf for row in ordered_rows]
 
-        axis.plot(doses, tcps, marker="o", linewidth=2.0, color="#2563eb", label="TCP")
-        axis.set_xlabel("Total dose (Gy)")
-        axis.set_ylabel("TCP")
+        axis.plot(
+            doses,
+            tcps,
+            marker="o",
+            markersize=COMPACT_PLOT_MARKER_SIZE,
+            linewidth=COMPACT_PLOT_LINE_WIDTH,
+            color="#2563eb",
+            label="TCP",
+        )
+        axis.set_xlabel("Total dose (Gy)", fontsize=COMPACT_PLOT_LABEL_FONT)
+        axis.set_ylabel("TCP", fontsize=COMPACT_PLOT_LABEL_FONT)
         axis.set_ylim(-0.02, 1.02)
         axis.grid(True, alpha=0.25)
+        self._style_compact_plot_axis(axis)
 
         sf_axis = axis.twinx()
         sf_axis.plot(
             doses,
             sfs,
             marker="s",
-            linewidth=1.6,
+            markersize=COMPACT_PLOT_MARKER_SIZE,
+            linewidth=COMPACT_PLOT_SECONDARY_LINE_WIDTH,
             linestyle="--",
             color="#f97316",
             label="Predicted SF",
         )
-        sf_axis.set_ylabel("Predicted SF")
+        sf_axis.set_ylabel("Predicted SF", fontsize=COMPACT_PLOT_LABEL_FONT)
         sf_axis.set_ylim(bottom=0.0)
+        self._style_compact_plot_axis(sf_axis)
 
         lines = axis.get_lines() + sf_axis.get_lines()
-        axis.legend(lines, [line.get_label() for line in lines], loc="best")
-        self.tcp_figure.tight_layout(pad=1.1)
+        legend = axis.legend(
+            lines,
+            [line.get_label() for line in lines],
+            loc="best",
+            fontsize=COMPACT_PLOT_LEGEND_FONT,
+        )
+        self._style_compact_legend(legend)
+        self.tcp_figure.tight_layout(pad=0.8)
         self.tcp_canvas.draw_idle()
 
     def build_tcp_summary_text(
@@ -2539,7 +2579,8 @@ class FitAlphaBetaWindow(QMainWindow):
             doses,
             ntcps,
             marker="o",
-            linewidth=2.0,
+            markersize=COMPACT_PLOT_MARKER_SIZE,
+            linewidth=COMPACT_PLOT_LINE_WIDTH,
             color="#2563eb",
             label="NTCP",
         )
@@ -2555,18 +2596,21 @@ class FitAlphaBetaWindow(QMainWindow):
                 [float(group.dose_total) for group in observed_groups],
                 [group.complication_rate for group in observed_groups],
                 marker="s",
-                linewidth=1.6,
+                markersize=COMPACT_PLOT_MARKER_SIZE,
+                linewidth=COMPACT_PLOT_SECONDARY_LINE_WIDTH,
                 linestyle="--",
                 color="#f97316",
                 label="Observed complication rate",
             )
 
-        axis.set_xlabel("Total dose (Gy)")
-        axis.set_ylabel("NTCP")
+        axis.set_xlabel("Total dose (Gy)", fontsize=COMPACT_PLOT_LABEL_FONT)
+        axis.set_ylabel("NTCP", fontsize=COMPACT_PLOT_LABEL_FONT)
         axis.set_ylim(-0.02, 1.02)
         axis.grid(True, alpha=0.25)
-        axis.legend(loc="upper right")
-        self.ntcp_figure.tight_layout(pad=1.1)
+        self._style_compact_plot_axis(axis)
+        legend = axis.legend(loc="upper right", fontsize=COMPACT_PLOT_LEGEND_FONT)
+        self._style_compact_legend(legend)
+        self.ntcp_figure.tight_layout(pad=0.8)
         self.ntcp_canvas.draw_idle()
 
     def build_ntcp_summary_text(self, dose_grid: Sequence[float]) -> str:
@@ -2785,6 +2829,7 @@ class FitAlphaBetaWindow(QMainWindow):
 
     def populate_train_table(self, run: AnalysisRunResult) -> None:
         experiments = run.train
+        self.train_table.clearSpans()
         self.train_table.setRowCount(len(experiments))
         for row_index, experiment in enumerate(experiments):
             bed = eqd2 = g_factor = predicted_tcp = None
@@ -2815,13 +2860,86 @@ class FitAlphaBetaWindow(QMainWindow):
             ]
             self._fill_row(self.train_table, row_index, values)
 
+    def _validation_placeholder_message(self, run: AnalysisRunResult) -> str:
+        if run.summary.status != "ok":
+            return f"Validation not available: {run.summary.reason or 'run did not complete.'}"
+        if run.validation_kind == "none":
+            return "Validation not computed: Validate kind = none."
+        if run.summary.response_mode == "curve":
+            return (
+                "Validation table is available only for scalar response; "
+                "see Summary text for curve metrics."
+            )
+        if not run.validation:
+            return "Validation not computed: no holdout experiments matched Validate kind."
+        return "Validation results are not available for this run."
+
+    def _cross_validation_placeholder_message(self, run: AnalysisRunResult) -> str:
+        if run.summary.status != "ok":
+            return (
+                f"Cross-validation not available: "
+                f"{run.summary.reason or 'run did not complete.'}"
+            )
+        if run.summary.response_mode != "scalar":
+            return "Cross-validation is available only for scalar response."
+        if len(run.train) < 3:
+            return (
+                "Cross-validation requires at least 3 training experiments "
+                f"(found {len(run.train)})."
+            )
+        return "Cross-validation results are not available for this run."
+
+    def _bootstrap_placeholder_message(self, run: AnalysisRunResult) -> str:
+        if run.summary.status != "ok":
+            return f"Bootstrap not available: {run.summary.reason or 'run did not complete.'}"
+        return "Bootstrap not computed: Bootstrap = 0."
+
+    @staticmethod
+    def _show_table_placeholder(table: QTableWidget, message: str) -> None:
+        table.clearSpans()
+        column_count = table.columnCount()
+        table.setRowCount(1)
+
+        item = QTableWidgetItem(message)
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable & ~Qt.ItemFlag.ItemIsSelectable)
+        item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
+        table.setItem(0, 0, item)
+
+        for column_index in range(1, column_count):
+            filler = QTableWidgetItem("")
+            filler.setFlags(
+                filler.flags() & ~Qt.ItemFlag.ItemIsEditable & ~Qt.ItemFlag.ItemIsSelectable
+            )
+            table.setItem(0, column_index, filler)
+
+        if column_count > 1:
+            table.setSpan(0, 0, 1, column_count)
+
     def populate_validation_table(self, run: AnalysisRunResult) -> None:
+        self.validation_table.clearSpans()
+        if run.summary.status != "ok" or run.validation_kind == "none":
+            self._show_table_placeholder(
+                self.validation_table,
+                self._validation_placeholder_message(run),
+            )
+            return
+
         rows = []
         if run.validation_summary is not None:
             rows = list(run.validation_summary.rows)
 
         if run.validation_summary is not None and run.validation_summary.response_mode == "curve":
-            self.validation_table.setRowCount(0)
+            self._show_table_placeholder(
+                self.validation_table,
+                self._validation_placeholder_message(run),
+            )
+            return
+
+        if not run.validation:
+            self._show_table_placeholder(
+                self.validation_table,
+                self._validation_placeholder_message(run),
+            )
             return
 
         self.validation_table.setRowCount(len(run.validation))
@@ -2875,6 +2993,14 @@ class FitAlphaBetaWindow(QMainWindow):
             self._fill_row(self.validation_table, row_index, values)
 
     def populate_cross_validation_table(self, run: AnalysisRunResult) -> None:
+        self.cross_validation_table.clearSpans()
+        if run.cross_validation is None:
+            self._show_table_placeholder(
+                self.cross_validation_table,
+                self._cross_validation_placeholder_message(run),
+            )
+            return
+
         table_rows = build_cross_validation_table_rows(
             list(run.cross_validation.rows) if run.cross_validation is not None else []
         )
@@ -2883,9 +3009,13 @@ class FitAlphaBetaWindow(QMainWindow):
             self._fill_row(self.cross_validation_table, row_index, values)
 
     def populate_bootstrap_table(self, run: AnalysisRunResult) -> None:
+        self.bootstrap_table.clearSpans()
         summary = run.bootstrap_summary
         if summary is None:
-            self.bootstrap_table.setRowCount(0)
+            self._show_table_placeholder(
+                self.bootstrap_table,
+                self._bootstrap_placeholder_message(run),
+            )
             return
 
         rows = [
@@ -3027,6 +3157,14 @@ class FitAlphaBetaWindow(QMainWindow):
             )
             if run.cross_validation.cv_r_squared is not None:
                 lines.append(f"LOO CV R^2 = {run.cross_validation.cv_r_squared:.4f}")
+        elif summary.response_mode != "scalar":
+            lines.append("LOO cross-validation is available only for scalar response.")
+        elif len(run.train) < 3:
+            lines.append(
+                f"LOO cross-validation skipped: need at least 3 training experiments (found {len(run.train)})."
+            )
+        else:
+            lines.append("LOO cross-validation did not produce reportable folds.")
 
         mean_bed = run.mean_train_bed
         mean_eqd2 = run.mean_train_eqd2
@@ -3089,6 +3227,8 @@ class FitAlphaBetaWindow(QMainWindow):
                     )
                 ]
             )
+        elif run.validation_kind == "none":
+            lines.append("Validation disabled: Validate kind = none.")
         elif run.validation_kind != "none":
             lines.append("Validation subset requested, but no holdout experiments matched it.")
 
@@ -3108,6 +3248,8 @@ class FitAlphaBetaWindow(QMainWindow):
                 lines.append(
                     "alpha/beta is unstable in bootstrap because beta approaches zero."
                 )
+        else:
+            lines.append("Bootstrap skipped: Bootstrap = 0.")
 
         if run.model_comparison:
             lines.append("")

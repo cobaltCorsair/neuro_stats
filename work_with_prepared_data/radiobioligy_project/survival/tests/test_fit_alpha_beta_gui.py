@@ -8,10 +8,20 @@ from PyQt6.QtWidgets import QApplication
 
 try:
     from survival.fit_alpha_beta_gui import FitAlphaBetaWindow
+    from survival.fit_alpha_beta_using_processor import (
+        AnalysisRunResult,
+        AnalysisRunSummary,
+        LQFitResult,
+    )
     from survival.radiobiology_analysis import NTCPFitGroup
 except ModuleNotFoundError:
     from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_gui import (
         FitAlphaBetaWindow,
+    )
+    from work_with_prepared_data.radiobioligy_project.survival.fit_alpha_beta_using_processor import (
+        AnalysisRunResult,
+        AnalysisRunSummary,
+        LQFitResult,
     )
     from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis import (
         NTCPFitGroup,
@@ -70,6 +80,97 @@ class FitAlphaBetaGuiTests(unittest.TestCase):
             self.assertEqual(window.summary_table.minimumHeight(), 120)
             self.assertEqual(window.results_splitter.handleWidth(), 4)
             self.assertLessEqual(window.run_selector.minimumWidth(), 220)
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_tcp_and_ntcp_plots_use_compact_defaults(self) -> None:
+        window = FitAlphaBetaWindow()
+        try:
+            tcp_width, tcp_height = window.tcp_figure.get_size_inches()
+            ntcp_width, ntcp_height = window.ntcp_figure.get_size_inches()
+
+            self.assertAlmostEqual(tcp_width, 7.0, places=2)
+            self.assertAlmostEqual(tcp_height, 3.35, places=2)
+            self.assertAlmostEqual(ntcp_width, 7.0, places=2)
+            self.assertAlmostEqual(ntcp_height, 3.35, places=2)
+            self.assertEqual(window.tcp_canvas.minimumHeight(), 150)
+            self.assertEqual(window.ntcp_canvas.minimumHeight(), 150)
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_empty_detail_tables_show_explanatory_placeholders(self) -> None:
+        window = FitAlphaBetaWindow()
+        try:
+            run = AnalysisRunResult(
+                summary=AnalysisRunSummary(
+                    sf_mode="absolute",
+                    family="y",
+                    total_count=2,
+                    single_count=1,
+                    fractionated_count=1,
+                    train_count=2,
+                    validation_count=0,
+                    status="ok",
+                    response_mode="scalar",
+                    model_kind="classic_lq",
+                ),
+                train=(object(), object()),
+                validation=(),
+                train_kind="all",
+                validation_kind="none",
+            )
+
+            window.populate_validation_table(run)
+            window.populate_bootstrap_table(run)
+            window.populate_cross_validation_table(run)
+
+            self.assertEqual(window.validation_table.rowCount(), 1)
+            self.assertEqual(
+                window.validation_table.item(0, 0).text(),
+                "Validation not computed: Validate kind = none.",
+            )
+            self.assertEqual(window.bootstrap_table.rowCount(), 1)
+            self.assertEqual(
+                window.bootstrap_table.item(0, 0).text(),
+                "Bootstrap not computed: Bootstrap = 0.",
+            )
+            self.assertEqual(window.cross_validation_table.rowCount(), 1)
+            self.assertEqual(
+                window.cross_validation_table.item(0, 0).text(),
+                "Cross-validation requires at least 3 training experiments (found 2).",
+            )
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_analysis_plot_handles_let_fit_context(self) -> None:
+        window = FitAlphaBetaWindow()
+        try:
+            window.let_fit_result = LQFitResult(
+                alpha=0.203,
+                beta=0.08,
+                train_count=4,
+                train_kind="all",
+                family="p_peak",
+                sf_mode="absolute",
+                model_kind="let_dependent",
+                alpha_0=0.2,
+                lambda_alpha=0.01,
+            )
+            window.let_alpha_points = [
+                ("y", 0.3, 0.203, "classic_lq"),
+                ("p_peak", 12.0, 0.32, "classic_lq"),
+            ]
+
+            window.refresh_analysis_plot()
+            self.app.processEvents()
+
+            self.assertEqual(len(window.analysis_figure.axes), 1)
+            axis = window.analysis_figure.axes[0]
+            self.assertEqual(axis.get_xlabel(), "LET (keV/um)")
+            self.assertEqual(axis.get_ylabel(), "Alpha (Gy^-1)")
         finally:
             window.close()
             self.app.processEvents()
