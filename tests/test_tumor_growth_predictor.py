@@ -116,6 +116,75 @@ class TumorGrowthPredictorTests(unittest.TestCase):
         self.assertAlmostEqual(intervals[1], 1.0, places=8)
         self.assertAlmostEqual(intervals[2], 1.0 / 24.0, places=8)
 
+    def test_parse_irradiation_intervals_days_recognizes_indexed_t_tokens(self) -> None:
+        intervals = parse_irradiation_intervals_days(
+            (
+                "y = 18.8 Гр",
+                "p = 2.36 Гр",
+                "y = 18.8 Гр",
+                "p = 2.36 Гр",
+                "t1 = 2 ч",
+                "t2 = 24 ч",
+                "t3 = 1 ч",
+            )
+        )
+
+        self.assertEqual(len(intervals), 3)
+        self.assertAlmostEqual(intervals[0], 2.0 / 24.0, places=8)
+        self.assertAlmostEqual(intervals[1], 1.0, places=8)
+        self.assertAlmostEqual(intervals[2], 1.0 / 24.0, places=8)
+
+    def test_parse_irradiation_intervals_days_recognizes_indexed_t_token_with_slash_form(self) -> None:
+        intervals = parse_irradiation_intervals_days(
+            (
+                "n = 2.36 Гр",
+                "p = 18.8 Гр",
+                "n = 2.36 Гр",
+                "p = 18.8 Гр",
+                "t1 = 2 ч/24 ч/1 ч",
+            )
+        )
+
+        self.assertEqual(len(intervals), 3)
+        self.assertAlmostEqual(intervals[0], 2.0 / 24.0, places=8)
+        self.assertAlmostEqual(intervals[1], 1.0, places=8)
+        self.assertAlmostEqual(intervals[2], 1.0 / 24.0, places=8)
+
+    def test_parse_irradiation_intervals_days_sums_compound_units_in_one_segment(self) -> None:
+        # "1 ч 45 мин" inside one slash-segment is a single interval = 1.75 h.
+        intervals = parse_irradiation_intervals_days(
+            (
+                "n = 2.36 Гр",
+                "p = 18.8 Гр",
+                "n = 2.36 Гр",
+                "p = 18.8 Гр",
+                "t1 = 2 ч/24 ч/1 ч 45 мин",
+            )
+        )
+
+        self.assertEqual(len(intervals), 3)
+        self.assertAlmostEqual(intervals[0], 2.0 / 24.0, places=8)
+        self.assertAlmostEqual(intervals[1], 1.0, places=8)
+        self.assertAlmostEqual(intervals[2], 1.75 / 24.0, places=8)
+
+    def test_parse_irradiation_intervals_days_sums_compound_units_in_separate_t_tokens(self) -> None:
+        intervals = parse_irradiation_intervals_days(
+            (
+                "y = 18.8 Гр",
+                "p = 2.36 Гр",
+                "y = 18.8 Гр",
+                "p = 2.36 Гр",
+                "t1 = 2 ч",
+                "t2 = 24 ч",
+                "t3 = 1 ч 45 мин",
+            )
+        )
+
+        self.assertEqual(len(intervals), 3)
+        self.assertAlmostEqual(intervals[0], 2.0 / 24.0, places=8)
+        self.assertAlmostEqual(intervals[1], 1.0, places=8)
+        self.assertAlmostEqual(intervals[2], 1.75 / 24.0, places=8)
+
     def test_build_schedule_from_intervals_uses_subday_spacing(self) -> None:
         schedule = build_schedule_from_intervals(
             [4.0, 4.0, 32.0],

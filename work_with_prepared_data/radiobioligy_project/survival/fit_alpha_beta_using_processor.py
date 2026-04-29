@@ -107,7 +107,7 @@ NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 GR_SUFFIX = re.compile(r"гр|gy", re.IGNORECASE)
 FAMILY_TOKEN = re.compile(r"[A-Za-zА-Яа-я]+\d*|\d+")
 KNOWN_FAMILIES = ("y", "p", "p_peak", "p_through", "n", "e", "c")
-TIME_TOKEN = re.compile(r"\bt\s*=")
+TIME_TOKEN = re.compile(r"\bt\d*\s*=")
 TIME_VALUE_WITH_UNIT = re.compile(
     r"(?P<value>\d+(?:[.,]\d+)?)\s*"
     r"(?P<unit>"
@@ -200,27 +200,16 @@ def extract_time_values(
     require_t_token: bool,
     output_unit: Literal["days", "hours"],
 ) -> List[float]:
-    """Extract one or many time values, including slash-separated mixed units."""
+    """Extract one or many time values, including slash-separated mixed units.
+
+    Each slash/semicolon/pipe-separated segment yields one value; compound forms
+    inside a segment like ``1 ч 45 мин`` are summed (=> 1.75 h).
+    """
     token_body, is_time_token = _strip_time_prefix(token)
     if require_t_token and not is_time_token:
         return []
     if not token_body:
         return []
-
-    total_numbers = NUMBER.findall(token_body)
-    pair_matches = list(TIME_VALUE_WITH_UNIT.finditer(token_body))
-    if pair_matches and len(pair_matches) == len(total_numbers):
-        parsed_values: List[float] = []
-        for match in pair_matches:
-            kind = _detect_time_unit_kind(match.group("unit"))
-            if kind is None:
-                continue
-            value = float(match.group("value").replace(",", "."))
-            if not np.isfinite(value) or value < 0.0:
-                continue
-            parsed_values.append(value * _time_kind_factor(kind, output_unit))
-        if parsed_values:
-            return parsed_values
 
     segments = [segment.strip() for segment in re.split(r"\s*[/;|]+\s*", token_body) if segment.strip()]
     if not segments:
@@ -229,7 +218,25 @@ def extract_time_values(
     global_kind = _detect_time_unit_kind(token_body)
     values: List[float] = []
     for segment in segments:
-        segment_values = [float(num.replace(",", ".")) for num in NUMBER.findall(segment)]
+        segment_numbers = NUMBER.findall(segment)
+        pair_matches = list(TIME_VALUE_WITH_UNIT.finditer(segment))
+        if pair_matches and len(pair_matches) == len(segment_numbers):
+            segment_total = 0.0
+            had_valid_pair = False
+            for match in pair_matches:
+                kind = _detect_time_unit_kind(match.group("unit"))
+                if kind is None:
+                    continue
+                value = float(match.group("value").replace(",", "."))
+                if not np.isfinite(value) or value < 0.0:
+                    continue
+                segment_total += value * _time_kind_factor(kind, output_unit)
+                had_valid_pair = True
+            if had_valid_pair:
+                values.append(segment_total)
+                continue
+
+        segment_values = [float(num.replace(",", ".")) for num in segment_numbers]
         if not segment_values:
             continue
         kind = _detect_time_unit_kind(segment) or global_kind

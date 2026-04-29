@@ -301,6 +301,87 @@ class FitAlphaBetaUsingProcessorTests(unittest.TestCase):
         self.assertAlmostEqual(schedule_days[2], 25.0 / 24.0, places=8)
         self.assertAlmostEqual(schedule_days[3], 26.0 / 24.0, places=8)
 
+    def test_parse_schedule_days_recognizes_indexed_t_tokens(self) -> None:
+        schedule_days, has_explicit_timing = parse_schedule_days(
+            [
+                "y = 18.8 Гр",
+                "p = 2.36 Гр",
+                "y = 18.8 Гр",
+                "p = 2.36 Гр",
+                "t1 = 2 ч",
+                "t2 = 24 ч",
+                "t3 = 1 ч",
+            ],
+            fractions=(18.8, 2.36, 18.8, 2.36),
+        )
+
+        self.assertTrue(has_explicit_timing)
+        self.assertEqual(len(schedule_days), 4)
+        self.assertAlmostEqual(schedule_days[0], 0.0, places=8)
+        self.assertAlmostEqual(schedule_days[1], 2.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[2], 26.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[3], 27.0 / 24.0, places=8)
+
+    def test_parse_schedule_days_recognizes_indexed_t_token_with_slash_form(self) -> None:
+        schedule_days, has_explicit_timing = parse_schedule_days(
+            [
+                "n = 2.36 Гр",
+                "p = 18.8 Гр",
+                "n = 2.36 Гр",
+                "p = 18.8 Гр",
+                "t1 = 2 ч/24 ч/1 ч",
+            ],
+            fractions=(2.36, 18.8, 2.36, 18.8),
+        )
+
+        self.assertTrue(has_explicit_timing)
+        self.assertEqual(len(schedule_days), 4)
+        self.assertAlmostEqual(schedule_days[0], 0.0, places=8)
+        self.assertAlmostEqual(schedule_days[1], 2.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[2], 26.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[3], 27.0 / 24.0, places=8)
+
+    def test_parse_schedule_days_sums_compound_units_in_one_segment(self) -> None:
+        # "1 ч 45 мин" inside a single slash-segment is one interval = 1.75 h.
+        schedule_days, has_explicit_timing = parse_schedule_days(
+            [
+                "n = 2.36 Гр",
+                "p = 18.8 Гр",
+                "n = 2.36 Гр",
+                "p = 18.8 Гр",
+                "t1 = 2 ч/24 ч/1 ч 45 мин",
+            ],
+            fractions=(2.36, 18.8, 2.36, 18.8),
+        )
+
+        self.assertTrue(has_explicit_timing)
+        self.assertEqual(len(schedule_days), 4)
+        self.assertAlmostEqual(schedule_days[0], 0.0, places=8)
+        self.assertAlmostEqual(schedule_days[1], 2.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[2], 26.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[3], (26.0 + 1.75) / 24.0, places=8)
+
+    def test_parse_schedule_days_sums_compound_units_in_separate_t_tokens(self) -> None:
+        schedule_days, has_explicit_timing = parse_schedule_days(
+            [
+                "y = 18.8 Гр",
+                "p = 2.36 Гр",
+                "y = 18.8 Гр",
+                "p = 2.36 Гр",
+                "t1 = 2 ч",
+                "t2 = 24 ч",
+                "t3 = 1 ч 45 мин",
+            ],
+            fractions=(18.8, 2.36, 18.8, 2.36),
+        )
+
+        self.assertTrue(has_explicit_timing)
+        self.assertEqual(len(schedule_days), 4)
+        self.assertAlmostEqual(schedule_days[0], 0.0, places=8)
+        self.assertAlmostEqual(schedule_days[1], 2.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[2], 26.0 / 24.0, places=8)
+        self.assertAlmostEqual(schedule_days[3], (26.0 + 1.75) / 24.0, places=8)
+
     def test_parse_irradiation_durations_hours_repeats_single_value(self) -> None:
         durations = parse_irradiation_durations_hours(
             ["y = 4 Gy", "y = 4 Gy", "tau = 30 min"],
