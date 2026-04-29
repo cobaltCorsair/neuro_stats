@@ -26,7 +26,10 @@ class MatplotlibConfigurator:
         Устанавливает семейство шрифтов, размеры шрифтов и другие параметры визуализации.
         """
         plt.rcParams.update({
-            'font.family': 'Times New Roman',  # Семейство шрифтов
+            # Times New Roman on macOS does not contain some dose subscripts
+            # (for example U+2099/U+209A), so keep it first and let Matplotlib
+            # fall back to DejaVu Serif for missing glyphs.
+            'font.family': ['Times New Roman', 'DejaVu Serif'],
             'font.size': 22,  # Размер основного текста
             'axes.titlesize': 24,  # Размер заголовков осей
             'axes.labelsize': 24,  # Размер меток осей
