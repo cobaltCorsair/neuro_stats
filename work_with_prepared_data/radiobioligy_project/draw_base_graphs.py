@@ -14,6 +14,7 @@ from stats_methods.support_stats_methods import SupportingFunctions, ExtractOutl
 from data_processing.excel_data_processor import process_tumor_data_excel
 from data_processing.data_processing import TumorDataProcessor
 from utils.visualizer import GraphVisualizer
+from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -461,9 +462,12 @@ class TumorDataVisualizer:
                 legend = plt.legend(handles=legend_patches, loc="upper left", bbox_to_anchor=(0.0, -0.05),
                                ncol=1, fontsize=legend_fontsize, frameon=False, handletextpad=0.8)
                 legend.set_visible(False)
+                plt.gca().add_artist(legend)
             else:
-                legend = plt.legend(handles=legend_patches, loc="best",
-                               ncol=1, fontsize=legend_fontsize, handletextpad=0.8)
+                legend_position = graph_manager.get_current_legend_position()
+                if legend_position is not None:
+                    legend = plt.legend(handles=legend_patches, loc=legend_position,
+                                   ncol=1, fontsize=legend_fontsize, handletextpad=0.8)
 
 
             # Критерий Манна-Уитни
@@ -582,6 +586,7 @@ class TumorDataVisualizer:
                             loc='upper left', bbox_to_anchor=(0.0, -0.05),
                             fontsize=value_label_fontsize, frameon=False
                         )
+                        shapiro_legend.set_visible(False)
                         ax.add_artist(shapiro_legend)
                     else:
                         ax_current = plt.gca()

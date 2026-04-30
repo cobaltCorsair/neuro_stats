@@ -13,6 +13,7 @@ from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
 from data_processing.data_processing import SkinReactionsDataProcessor
 from utils.visualizer import GraphVisualizer
+from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -524,8 +525,10 @@ class SkinReactionsVisualizer:
             legend_patches = [mpatches.Patch(color=col, label=lab)
                               for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
             ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
-            plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
-                       ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
+            legend_position = graph_manager.get_current_legend_position()
+            if legend_position is not None:
+                plt.legend(handles=legend_patches, loc=legend_position,
+                           ncol=ncol, fontsize=12, handletextpad=0.5, columnspacing=2.5)
 
             # Критерий Манна-Уитни
             if perform_stat_test and len(all_individual_aucs) > 1:
@@ -684,8 +687,10 @@ class SkinReactionsVisualizer:
             legend_patches = [mpatches.Patch(color=col, label=lab)
                               for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
             ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
-            plt.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
-                       ncol=ncol, fontsize=12, frameon=False, handletextpad=0.5, columnspacing=2.5)
+            legend_position = graph_manager.get_current_legend_position()
+            if legend_position is not None:
+                plt.legend(handles=legend_patches, loc=legend_position,
+                           ncol=ncol, fontsize=12, handletextpad=0.5, columnspacing=2.5)
 
             # Критерий Манна-Уитни
             if perform_stat_test and len(all_individual_aucs) > 1:

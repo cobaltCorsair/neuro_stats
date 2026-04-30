@@ -246,6 +246,10 @@ class LegendPreviewWindow(QDialog):
     def generate_legend_image(self):
         """Генерирует изображение легенды из GraphVisualizer или напрямую из figure"""
         try:
+            if self.figure and self._figure_has_legends(self.figure):
+                self._generate_legend_from_figure()
+                return
+
             # Получаем последний визуализатор
             visualizer = graph_manager.get_last_visualizer()
 
@@ -385,6 +389,16 @@ class LegendPreviewWindow(QDialog):
         except Exception as e:
             self.image_label.setText(f"Ошибка при генерации легенды: {str(e)}")
 
+    @staticmethod
+    def _figure_has_legends(figure):
+        for ax in figure.get_axes():
+            if ax.get_legend() is not None:
+                return True
+            for artist in ax.artists:
+                if type(artist).__name__ == 'Legend':
+                    return True
+        return False
+
     def _generate_legend_from_figure(self):
         """Извлекает и отображает легенду напрямую из matplotlib figure"""
         try:
@@ -401,8 +415,16 @@ class LegendPreviewWindow(QDialog):
             # Извлекаем легенды из всех осей
             legend_elements = []
             for ax in axes:
+                legends = []
+                for artist in ax.artists:
+                    if type(artist).__name__ == 'Legend':
+                        legends.append(artist)
+
                 legend = ax.get_legend()
-                if legend:
+                if legend and legend not in legends:
+                    legends.append(legend)
+
+                for legend in legends:
                     # Извлекаем handles и labels из легенды
                     # Используем совместимый способ для разных версий matplotlib
                     try:
