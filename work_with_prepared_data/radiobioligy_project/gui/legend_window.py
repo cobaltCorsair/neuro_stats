@@ -333,7 +333,7 @@ class LegendPreviewWindow(QDialog):
                                      linestyle='',
                                      linewidth=0,
                                      markersize=8,
-                                     label=f"AUC: {auc:.2f}")
+                                     label=f"AUC: {auc / getattr(visualizer, 'auc_scale_factor', 1.0):.1f}")
                         )
                 if auc_elements:
                     legend_groups.append(('Площадь под кривой', auc_elements))

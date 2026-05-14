@@ -116,6 +116,7 @@ class SkinReactionsVisualizer:
             "Средние кожные реакции, абс. ед.",
             figsize=(12, 7)
         )
+        drawgraph.auc_scale_factor = 100
         drawgraph.setup_figure()
         # Получение средних кожных реакций и их статистических характеристик
         mean_reactions, std_dev, error_margin = self.data_processor.get_mean_skin_reactions()
@@ -145,6 +146,7 @@ class SkinReactionsVisualizer:
             "Кожные реакции, усл. ед.",
             figsize=(12, 7)
         )
+        drawgraph.auc_scale_factor = 100
         drawgraph.setup_figure()
 
         def _to_float_list(seq):
@@ -262,6 +264,7 @@ class SkinReactionsVisualizer:
             "Кожные реакции, усл. ед.",
             figsize=(12, 7)
         )
+        drawgraph.auc_scale_factor = 100
         drawgraph.setup_figure()
 
         def _to_float_list(seq):
@@ -518,7 +521,7 @@ class SkinReactionsVisualizer:
             for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
                 y_text = bar.get_height() - err - 0.03 * max(aucs_for_fit)
                 y_text = max(0, y_text)
-                plt.text(bar.get_x() + bar.get_width() / 2, y_text, f"{auc:.2f}",
+                plt.text(bar.get_x() + bar.get_width() / 2, y_text, f"{auc / 100:.1f}",
                          ha='center', va='top', fontsize=12, fontweight='bold', color='black')
 
             # Легенда
@@ -680,7 +683,7 @@ class SkinReactionsVisualizer:
             for i, (bar, auc, err) in enumerate(zip(bars, aucs_for_fit, errors_for_fit)):
                 y_text = bar.get_height() - err - 0.03 * max(aucs_for_fit)
                 y_text = max(0, y_text)
-                plt.text(bar.get_x() + bar.get_width() / 2, y_text, f"{auc:.2f}",
+                plt.text(bar.get_x() + bar.get_width() / 2, y_text, f"{auc / 100:.1f}",
                          ha='center', va='top', fontsize=12, fontweight='bold', color='black')
 
             # Легенда

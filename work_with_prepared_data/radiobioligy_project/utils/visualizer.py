@@ -55,6 +55,7 @@ class GraphVisualizer:
         self.marker_size = 12
         self.lines = []
         self.aucs = []
+        self.auc_scale_factor = 1.0
         self.max_x = None
         self.max_y = None
         self.legend_info = []
@@ -604,7 +605,7 @@ class GraphVisualizer:
 
         # Создаем и добавляем легенду AUC, если есть значения AUC и легенда не скрыта
         if self.aucs and self.legend_position is not None:
-            auc_labels = [f"AUC: {auc:.2f}" for auc in self.aucs]
+            auc_labels = [f"AUC: {auc / self.auc_scale_factor:.1f}" for auc in self.aucs]
             # Создаем объекты легенды AUC. Важно передать 'handles=self.lines', если стили линий важны
             auc_legend = plt.legend(handles=self.lines, labels=auc_labels, title="Площадь под кривой",
                                     loc='upper right', fontsize=legend_fontsize)
@@ -683,7 +684,7 @@ class GraphVisualizer:
             legend_text += "Площади под кривой (AUC):\n"
             legend_text += "-" * 30 + "\n"
             for i, auc in enumerate(self.aucs, 1):
-                legend_text += f"{i}. AUC: {auc:.2f}\n"
+                legend_text += f"{i}. AUC: {auc / self.auc_scale_factor:.1f}\n"
             legend_text += "\n"
         
         # Дополнительные легенды
