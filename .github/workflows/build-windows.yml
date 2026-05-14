@@ -19,13 +19,13 @@ jobs:
           python-version: '3.11'
 
       - name: Install Poetry
-        run: pip install poetry==1.8.3
+        run: pipx install poetry
 
       - name: Install dependencies (without ML group)
-        run: poetry install --without ml
+        run: poetry install --without ml --no-interaction --no-ansi
 
       - name: Build EXE with PyInstaller
-        run: poetry run pyinstaller radiobiology_app.spec --clean
+        run: poetry run pyinstaller radiobiology_app.spec --clean --noconfirm
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
