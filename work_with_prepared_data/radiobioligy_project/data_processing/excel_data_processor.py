@@ -9,6 +9,114 @@ from datetime import datetime
 from work_with_prepared_data.radiobioligy_project.data_processing.rat_manager import register_rat_labels
 
 
+def _extract_t_values_hours(t_str: str) -> List[float]:
+    """
+    Парсит строку t-ячейки заголовка Excel в список интервалов (в часах).
+
+    Примеры входа:
+        't = 2.5 ч / 1 ч'       → [2.5, 1.0]
+        't1 = 2ч/24ч/1ч 45мин'  → [2.0, 24.0, 1.75]
+        't = 2 ч / 2 ч. / 48 ч. / 2 ч / 2 ч. /'  → [2.0, 2.0, 48.0, 2.0, 2.0]
+        't = 30 мин.'            → [0.5]
+        't = 2,5 ч.'             → [2.5]
+    """
+    s = re.sub(r'^t\d*\s*=\s*', '', str(t_str).strip(), flags=re.IGNORECASE)
+    tokens = [tok.strip().rstrip('.') for tok in s.split('/') if tok.strip().rstrip('.')]
+    values = []
+    for tok in tokens:
+        h_match = re.search(r'(\d+[.,]\d*|\d+)\s*ч', tok)
+        m_match = re.search(r'(\d+[.,]\d*|\d+)\s*мин', tok)
+        hours = 0.0
+        if h_match:
+            hours += float(h_match.group(1).replace(',', '.'))
+        if m_match:
+            hours += float(m_match.group(1).replace(',', '.')) / 60.0
+        if h_match or m_match:
+            values.append(round(hours, 6))
+    return values
+
+
+def parse_irradiation_schedule(t_str: str, dose_keys: List[str]) -> List[float]:
+    """
+    Возвращает список N-1 интервалов между фракциями (в часах).
+
+    Правила:
+      1 значение в t          → все интервалы равны этому значению
+      N-1 значений в t        → позиционно: intervals[i] = values[i]
+      2 значения, N-1 > 2     → блочный разбор:
+          k = длина первого блока одного типа слева;
+          threshold = max(k-1, 1);
+          intervals[i] = A  при i < threshold, иначе B
+
+    Args:
+        t_str:     сырая строка t-ячейки (например 't = 2.5 ч / 1 ч')
+        dose_keys: список типов излучения по порядку (например ['p','n','n','n','n'])
+
+    Returns:
+        Список float (часы), длина = len(dose_keys) - 1. Пустой список, если не удалось.
+    """
+    N = len(dose_keys)
+    if N <= 1:
+        return []
+    values = _extract_t_values_hours(t_str)
+    n_gaps = N - 1
+    if not values:
+        return []
+    if len(values) == 1:
+        return [values[0]] * n_gaps
+    if len(values) == n_gaps:
+        return list(values)
+    if len(values) == 2 and n_gaps > 2:
+        A, B = values
+        k = 1
+        while k < N and dose_keys[k] == dose_keys[0]:
+            k += 1
+        threshold = max(k - 1, 1)
+        return [A if i < threshold else B for i in range(n_gaps)]
+    # fallback: повторить первое значение
+    return [values[0]] * n_gaps
+
+
+def get_schedule_from_params(experiment_params: List[str]) -> List[float]:
+    """
+    Извлекает распарсенные интервалы из experiment_params (в часах).
+    Возвращает пустой список, если Schedule= не найден.
+    """
+    for p in experiment_params:
+        if p.startswith("Schedule="):
+            raw = p.split("=", 1)[1]
+            return [float(v) for v in raw.split(",") if v.strip()]
+    return []
+
+
+def _process_header_row(raw_params: List[str]) -> Tuple[List[str], List[float]]:
+    """
+    Обрабатывает сырой список ячеек первой строки Excel:
+    - Нормализует t/t1/t2-ячейки → 'Irradiation Time=...' (независимо от позиции)
+    - Вычисляет расписание фракций и добавляет 'Schedule=...' (часы через запятую)
+
+    Returns:
+        (обновлённый список params, список интервалов в часах)
+    """
+    params = list(raw_params)
+    t_str = None
+    for i, p in enumerate(params):
+        if re.match(r'^t\d*\s*=', p.strip(), re.IGNORECASE):
+            t_str = p.strip()
+            params[i] = f"Irradiation Time={t_str.split('=', 1)[1].strip()}"
+    dose_keys = []
+    for p in params:
+        m = re.match(r'^([a-zA-Z])\s*=\s*[\d.,]', p.strip())
+        if m:
+            dose_keys.append(m.group(1).lower())
+    schedule: List[float] = []
+    if t_str and dose_keys:
+        schedule = parse_irradiation_schedule(t_str, dose_keys)
+        if schedule:
+            params.append(f"Schedule={','.join(str(v) for v in schedule)}")
+    return params, schedule
+
+
 def _normalize_tumor_cell(value) -> str:
     """Normalize raw Excel cell contents before tumor-volume parsing."""
     if pd.isna(value):
@@ -32,14 +140,8 @@ def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str],
             временном интервале.
     """
     data = pd.read_excel(file_path, header=None)
-    experiment_params = data.iloc[0, :].dropna().astype(str).tolist()
-
-    # Проверка на наличие интервала времени облучения в последней ячейке первой строки
-    if experiment_params and 'ч' in experiment_params[-1]:
-        irradiation_time = experiment_params.pop().strip()
-        experiment_params.append(
-            f"Irradiation Time={irradiation_time}")  # Добавляем интервал времени облучения как параметр
-        print(irradiation_time)
+    raw_params = data.iloc[0, :].dropna().astype(str).tolist()
+    experiment_params, _ = _process_header_row(raw_params)
 
     skin_data = data.iloc[2:, :].copy()  # Копируем данные, начиная с третьей строки
     time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in
@@ -105,13 +207,8 @@ def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str]
             - tumor_volumes (List[List[float]]): Список списков с объемами опухолей для каждой крысы на каждом временном интервале.
     """
     data = pd.read_excel(file_path, header=None)
-    # Извлечение всех непустых значений из первой строки как параметры эксперимента
-    experiment_params = data.iloc[0, :].dropna().astype(str).tolist()
-
-    # Проверка на наличие интервала времени облучения в последней ячейке первой строки
-    if experiment_params and 'ч' in experiment_params[-1]:
-        irradiation_time = experiment_params.pop().strip()
-        experiment_params.append(f"Irradiation Time={irradiation_time}")  # Добавляем интервал времени облучения как параметр
+    raw_params = data.iloc[0, :].dropna().astype(str).tolist()
+    experiment_params, _ = _process_header_row(raw_params)
 
     tumor_data = data.iloc[2:, :].copy()
     time_data = [str(int(item.split(' ')[0].replace('V', '0'))) for item in data.iloc[1, 1:]]

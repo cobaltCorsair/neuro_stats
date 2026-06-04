@@ -96,6 +96,8 @@ def format_experiment_params(params: List[str]) -> str:
             date_str = p.split("=", 1)[1].strip()
         elif p.startswith("Irradiation Time="):
             irradiation_time_str = p.split("=", 1)[1].strip()
+        elif p.startswith("Schedule="):
+            pass  # внутренние данные для survival-анализа, не для легенды
         elif '=' in p and not p.startswith('t'):
             key, value = p.split('=', 1)
             key = key.strip()
