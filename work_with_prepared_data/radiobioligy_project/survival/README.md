@@ -12,6 +12,7 @@ Primary documentation entry points:
 - [TECHNICAL_REFERENCE.md](TECHNICAL_REFERENCE.md): current backend/API reference for the module.
 - [TUMOR_GROWTH_PREDICTOR.md](TUMOR_GROWTH_PREDICTOR.md): predictor behavior and model notes.
 - [GEANT4_PIPELINE_CLI.md](GEANT4_PIPELINE_CLI.md): focused CLI guide for the pipeline.
+- [VERIFICATION_TESTS.md](VERIFICATION_TESTS.md): biomodel verification test suite (49 tests, last run 2026-05-29 — all pass).
 
 The fitter layer is intended for series where:
 

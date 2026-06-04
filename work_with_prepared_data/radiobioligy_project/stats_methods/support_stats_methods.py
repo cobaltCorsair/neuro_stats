@@ -221,12 +221,13 @@ class ExtractOutliers:
                                       non_outlier_mask[idx]]
         self._set_data([reaction for idx, reaction in enumerate(data) if non_outlier_mask[idx]])
 
-    def remove_outliers_mahalanobis(self, alpha=0.01):
+    def remove_outliers_mahalanobis(self, alpha=0.05):
         """
         Идентифицирует и удаляет выбросы с использованием квадратичного расстояния Махаланобиса.
 
         Args:
             alpha (float): Уровень значимости для определения порогового значения расстояния.
+                Выброс: D_M^2 > chi2_{k, 1-alpha}. По умолчанию 0.05.
         """
         data_list = self._get_data()
         data = pd.DataFrame(data_list)
@@ -253,18 +254,20 @@ class ExtractOutliers:
         except np.linalg.LinAlgError:
             inv_cov_matrix = np.linalg.pinv(cov_matrix)
 
-        # Вычисление расстояния Махаланобиса
+        # Вычисление квадрата расстояния Махаланобиса: D_M^2 = (x-mu)^T Sigma^{-1} (x-mu)
         try:
-            mahal_distance = data.apply(lambda x: mahalanobis(x, mean, inv_cov_matrix), axis=1)
+            mahal_distance_sq = data.apply(
+                lambda x: mahalanobis(x, mean, inv_cov_matrix) ** 2, axis=1
+            )
         except Exception as e:
             print(f"ОШИБКА при вычислении расстояния Махаланобиса: {e}")
             return
 
-        # Пороговое значение на основе распределения chi-square
+        # Пороговое значение chi2_{k, 1-alpha}: выброс при D_M^2 > threshold
         threshold = chi2.ppf((1 - alpha), df=data.shape[1])
 
         # Индексы не выбросов
-        non_outlier_indices = np.where(mahal_distance <= threshold)[0]
+        non_outlier_indices = np.where(mahal_distance_sq <= threshold)[0]
 
         if len(non_outlier_indices) == 0:
             print("ПРЕДУПРЕЖДЕНИЕ: Все наблюдения классифицированы как выбросы. Метод не применён.")
