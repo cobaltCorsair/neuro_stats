@@ -210,6 +210,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.geant4_pipeline_window = None
         self.tumor_3d_viewer_window = None
         self.tgi_table_window = None
+        self.kaplan_meier_window = None
         self.cached_visualizer = None  # Кеш для модифицированного визуализатора
         self.cache_key = None  # Ключ для проверки актуальности кеша
         self.show_legend_separately = False  # Флаг для отображения легенды отдельно
@@ -235,6 +236,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.action_open_tumor_3d_viewer = QAction("3D геометрия опухоли", self)
         self.action_open_tumor_3d_viewer.triggered.connect(self.open_tumor_3d_viewer)
         self.tools_menu.addAction(self.action_open_tumor_3d_viewer)
+        self.action_open_kaplan_meier = QAction("Каплан-Майер (выживаемость)", self)
+        self.action_open_kaplan_meier.triggered.connect(self.handle_kaplan_meier)
+        self.tools_menu.addAction(self.action_open_kaplan_meier)
         self.action_about_docs = QAction("О программе", self)
         self.action_about_docs.triggered.connect(self.open_project_documentation)
         self.menubar.addAction(self.action_about_docs)
@@ -1458,6 +1462,52 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.current_plot_type = 'divergence_per_rat'
             self.draw_graphic(selected_paths, TumorDataVisualizer,
                               TumorDataVisualizer.plot_relative_divergence_per_rat)
+
+    def handle_kaplan_meier(self):
+        """
+        Строит кривые Каплана-Майера по крысам из выбранных файлов.
+
+        Группы A/B (столбец «Группа» в таблице) становятся отдельными кривыми;
+        файлы без группы образуют третью кривую «Без группы». Если групп вообще
+        нет — один сводный график по всем выбранным файлам.
+        """
+        selected_paths = self.get_selected_experiments()
+        if not selected_paths:
+            QMessageBox.information(self, "Каплан-Майер", "Выберите хотя бы один файл.")
+            return
+
+        from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import (
+            extract_survival_events,
+        )
+
+        groups_assignment = self.get_group_assignment()
+        paths_a = [p for p in selected_paths if groups_assignment.get(p) == 'A']
+        paths_b = [p for p in selected_paths if groups_assignment.get(p) == 'B']
+        paths_other = [p for p in selected_paths if groups_assignment.get(p) is None]
+
+        try:
+            groups = {}
+            if paths_a or paths_b:
+                if paths_a:
+                    groups["Группа A"] = [e for p in paths_a for e in extract_survival_events(p)]
+                if paths_b:
+                    groups["Группа B"] = [e for p in paths_b for e in extract_survival_events(p)]
+                if paths_other:
+                    groups["Без группы"] = [e for p in paths_other for e in extract_survival_events(p)]
+            else:
+                groups["Выбранные эксперименты"] = [e for p in selected_paths for e in extract_survival_events(p)]
+        except Exception as error:
+            self._show_tool_open_error("Каплан-Майер", error)
+            return
+
+        if self.kaplan_meier_window is None:
+            from work_with_prepared_data.radiobioligy_project.gui.kaplan_meier_window import KaplanMeierWindow
+            self.kaplan_meier_window = KaplanMeierWindow(self)
+
+        self.kaplan_meier_window.set_groups(groups)
+        self.kaplan_meier_window.show()
+        self.kaplan_meier_window.raise_()
+        self.kaplan_meier_window.activateWindow()
 
     def on_checkbox_pair_changed(self, thisCheckbox, pairedCheckbox):
         """Обработка изменения состояния пары взаимоисключающих чекбоксов.

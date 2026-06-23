@@ -125,10 +125,11 @@ class GraphVisualizer:
         # Добавляем графики и вычисляем верхние границы
         for index, visualizer in enumerate(visualizers):
             values = value_extractor_func(visualizer)
+            volumes_by_time = np.transpose(visualizer.tumor_volumes)
             std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                       for volumes, mean_volume in zip(np.transpose(visualizer.tumor_volumes), values)]
-            error_margin = [SupportingFunctions.calculate_error_margin(std, len(visualizer.tumor_volumes))
-                            for std in std_dev]
+                       for volumes, mean_volume in zip(volumes_by_time, values)]
+            error_margin = [SupportingFunctions.calculate_error_margin(std, SupportingFunctions.count_at_risk(volumes))
+                            for std, volumes in zip(std_dev, volumes_by_time)]
 
             # Форматируем параметры эксперимента для текста легенды
             formatted_params = format_experiment_params(visualizer.experiment_params)

@@ -405,30 +405,47 @@ class SupportingFunctions:
         """
         Расчет стандартного отклонения для заданного набора значений.
 
+        n берётся как число НЕ-NaN значений (а не общая длина values) — иначе при выбывании
+        животных (смерть/цензурирование, NaN на хвосте) дисперсия систематически
+        недооценивается: сумма квадратов считается по меньшему числу слагаемых, а делится на
+        исходное (большее) n-1.
+
         Args:
             values (list): Список значений, для которых вычисляется стандартное отклонение.
             mean_value (float): Среднее значение данных значений.
 
         Возвращает:
-            float: Стандартное отклонение.
+            float: Стандартное отклонение. NaN, если валидных значений меньше двух.
         """
-        n = len(values)
-        sum_squared_deviations = sum((val - mean_value) ** 2 for val in values if not np.isnan(val))
+        valid = [val for val in values if not np.isnan(val)]
+        n = len(valid)
+        if n < 2:
+            return float('nan')
+        sum_squared_deviations = sum((val - mean_value) ** 2 for val in valid)
         return np.sqrt(sum_squared_deviations / (n - 1))
 
     @staticmethod
     def calculate_error_margin(std_dev, n):
         """
-        Расчет предела погрешности для заданного стандартного отклонения и размера выборки.
+        Расчет предела погрешности (SEM) для заданного стандартного отклонения и размера выборки.
 
         Args:
             std_dev (float): Стандартное отклонение.
-            n (int): Размер выборки.
+            n (int): Размер выборки — число животных, ДЕЙСТВИТЕЛЬНО давших измерение в этой
+                точке (не общее число животных в эксперименте; иначе SEM занижается на
+                временных точках, где часть животных выбыла).
 
         Returns:
-            float: Предел погрешности.
+            float: Предел погрешности. NaN, если n <= 0.
         """
+        if n <= 0:
+            return float('nan')
         return std_dev / np.sqrt(n)
+
+    @staticmethod
+    def count_at_risk(values) -> int:
+        """Число НЕ-NaN значений в столбце — корректный n для SEM в этой временной точке."""
+        return int(np.sum(~np.isnan(np.asarray(values, dtype=float))))
 
     @staticmethod
     def interpolate_data_to_common_timepoints(time_data, skin_reactions, common_timepoints):

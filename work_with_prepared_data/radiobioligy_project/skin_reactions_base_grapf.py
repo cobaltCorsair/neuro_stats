@@ -174,10 +174,12 @@ class SkinReactionsVisualizer:
             reactions_arr = np.array(individual, dtype=float)
             mean_reaction = np.nanmean(reactions_arr, axis=0)
             std_reaction = np.nanstd(reactions_arr, axis=0)
-            sem_reaction = std_reaction / np.sqrt(len(reactions_arr))
+            n_at_risk = np.sum(~np.isnan(reactions_arr), axis=0)
+            sem_reaction = std_reaction / np.sqrt(n_at_risk)
 
-            # error bars через функцию погрешности
-            error_margin = [SupportingFunctions.calculate_error_margin(s, len(reactions_arr)) for s in std_reaction]
+            # error bars через функцию погрешности (n — число животных, давших измерение в
+            # этой точке, а не общее число животных — иначе SEM занижается при выбывании)
+            error_margin = [SupportingFunctions.calculate_error_margin(s, n) for s, n in zip(std_reaction, n_at_risk)]
 
             label_text = format_experiment_params(vis.experiment_params)
 
@@ -294,10 +296,12 @@ class SkinReactionsVisualizer:
             reactions_arr = np.array(individual, dtype=float)
             mean_reaction = np.nanmean(reactions_arr, axis=0)
             std_reaction = np.nanstd(reactions_arr, axis=0)
-            sem_reaction = std_reaction / np.sqrt(len(reactions_arr))
+            n_at_risk = np.sum(~np.isnan(reactions_arr), axis=0)
+            sem_reaction = std_reaction / np.sqrt(n_at_risk)
 
-            # error bars через твою функцию погрешности
-            error_margin = [SupportingFunctions.calculate_error_margin(s, len(reactions_arr)) for s in std_reaction]
+            # error bars через твою функцию погрешности (n — число животных, давших измерение
+            # в этой точке, а не общее число животных — иначе SEM занижается при выбывании)
+            error_margin = [SupportingFunctions.calculate_error_margin(s, n) for s, n in zip(std_reaction, n_at_risk)]
 
             label_text = format_experiment_params(vis.experiment_params)
 

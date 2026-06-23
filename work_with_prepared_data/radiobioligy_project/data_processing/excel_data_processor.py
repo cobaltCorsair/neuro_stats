@@ -1,11 +1,12 @@
 # файл excel_data_processor.py
 
-from typing import List, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import os
 import re
-from datetime import datetime
+from datetime import datetime, date
 from work_with_prepared_data.radiobioligy_project.data_processing.rat_manager import register_rat_labels
 
 
@@ -174,6 +175,164 @@ def _rebase_time_point_labels(labels: List[str], fraction_days: List[float]) -> 
                 offset = 0
             result.append(str(int(round(baseline_day + offset))))
     return result
+
+
+@dataclass(frozen=True)
+class RatSurvivalEvent:
+    """
+    Событие конца наблюдения для одной крысы: подтверждённая смерть или цензурирование
+    (потеря из-под наблюдения по иной причине, например потеря бирки, либо конец эксперимента).
+
+    Attributes:
+        label:          метка крысы
+        day:            абсолютный день события (от дня первой фракции); None если день не определён
+        event_observed: True = подтверждённая смерть, False = цензурировано
+        reason:         исходный текст маркера ('⊗ 29.03', 'death', 'выгрызла', ...);
+                       '' если крыса жива до конца таблицы (censored at last observation)
+        source_file:    имя файла-источника
+    """
+    label: str
+    day: Optional[float]
+    event_observed: bool
+    reason: str
+    source_file: str = ""
+
+
+# Маркеры смерти. Символ '⊗' (падёж) — основной принятый в лаборатории способ записи,
+# может сопровождаться точной календарной датой смерти ('⊗ 29.03'). Слова — запасной вариант.
+_DEATH_SYMBOL_RE = re.compile(r'^[⊗†✝]\s*(.*)$')
+_DEATH_WORD_RE = re.compile(r'^(death|смерть|пал[аои]|падеж|погиб\w*)$', re.IGNORECASE)
+_DATE_IN_TEXT_RE = re.compile(r'(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?')
+
+
+def _classify_marker(raw_text: str) -> Tuple[bool, str]:
+    """
+    Классифицирует нечисловое содержимое ячейки объёма опухоли.
+
+    Returns:
+        (is_death, date_text): is_death=True, если маркер означает подтверждённую смерть;
+        date_text — дата, найденная внутри маркера (например '29.03'), или '' если её нет.
+        Любой иной непустой нечисловой текст ('выгрызла' и т.п.) считается цензурированием
+        (is_death=False) — само наличие текста уже сохраняется как reason вызывающей стороной.
+    """
+    text = raw_text.strip()
+    symbol_match = _DEATH_SYMBOL_RE.match(text)
+    if symbol_match:
+        return True, symbol_match.group(1).strip()
+    if _DEATH_WORD_RE.match(text):
+        return True, ''
+    return False, ''
+
+
+def _parse_calendar_date(date_str: str, ref_year: int) -> Optional[date]:
+    """Парсит дату вида 'D.MM', 'D.MM.YY' или 'D.MM.YYYY'. Без года -> используется ref_year."""
+    m = _DATE_IN_TEXT_RE.search(date_str)
+    if not m:
+        return None
+    day_s, month_s, year_s = m.groups()
+    if year_s is None:
+        year = ref_year
+    else:
+        year = int(year_s)
+        if year < 100:
+            year += 2000
+    try:
+        return date(year, int(month_s), int(day_s))
+    except ValueError:
+        return None
+
+
+def _is_numeric_tumor_cell(text: str) -> bool:
+    """True, если текст — обычное измерение (число или a-b-c триплет), а не маркер события."""
+    if "-" in text and len(text.split("-")) == 3:
+        return True
+    return text.replace(".", "").isdigit()
+
+
+def extract_survival_events(file_path: str) -> List[RatSurvivalEvent]:
+    """
+    Извлекает события смерти/цензурирования крыс из файла объёмов опухолей.
+
+    Распознаёт:
+      - подтверждённую смерть: символ '⊗' (опционально с точной датой смерти, например
+        '⊗ 29.03') или слова death/смерть/падёж/погибла/пала;
+      - цензурирование: любой другой непустой нечисловой текст (например 'выгрызла' —
+        потеряна бирка) — животное не считается умершим, но дальнейших измерений нет.
+
+    Если в маркере смерти есть точная дата, день события вычисляется по календарной дате
+    из подписи столбца, а не по номинальному дню столбца — в лаборатории дату гибели
+    регистрируют отдельно, и она может на 1-2 дня отличаться от дня плановой волюметрии.
+
+    Если в строке есть и цензурирующая пометка, и более поздний подтверждённый маркер смерти
+    (например сначала 'выгрызла', затем '⊗ <дата>' в следующих измеренных столбцах),
+    итоговым событием считается смерть — она более информативна.
+
+    Крысы без какого-либо маркера до конца таблицы считаются цензурированными на момент
+    последнего измеренного столбца (event_observed=False, reason='').
+
+    Returns:
+        Список RatSurvivalEvent, один на крысу, в порядке появления в файле.
+    """
+    data = pd.read_excel(file_path, header=None)
+    raw_params = data.iloc[0, :].dropna().astype(str).tolist()
+    _, schedule_hours = _process_header_row(raw_params)
+    fraction_days = _cumulative_days_from_gaps_hours(schedule_hours)
+
+    raw_labels = [str(item) for item in data.iloc[1, 1:]]
+    rebased_days = [int(v) for v in _rebase_time_point_labels(raw_labels, fraction_days)]
+
+    ref_year = datetime.now().year
+    first_v_label = next((lbl for lbl in raw_labels if lbl.strip().split(' ')[0].upper().startswith('V')), None)
+    if first_v_label is not None:
+        first_v_date = _parse_calendar_date(first_v_label, ref_year)
+        if first_v_date is not None:
+            ref_year = first_v_date.year
+    column_dates = [_parse_calendar_date(lbl, ref_year) for lbl in raw_labels]
+
+    file_name = os.path.basename(file_path)
+    tumor_data = data.iloc[2:, :].copy()
+    tumor_data = tumor_data.apply(lambda column: column.map(_normalize_tumor_cell))
+
+    events: List[RatSurvivalEvent] = []
+    for _, row in tumor_data.iterrows():
+        label = str(row.iloc[0])
+        cells = list(row.iloc[1:])
+        death_event: Optional[RatSurvivalEvent] = None
+        first_other_marker: Optional[Tuple[int, str]] = None
+        last_valid_col_idx: Optional[int] = None
+
+        for col_idx, item in enumerate(cells):
+            text = str(item).strip()
+            if text in ("", "NA", "nan", "None"):
+                continue
+            if _is_numeric_tumor_cell(text):
+                last_valid_col_idx = col_idx
+                continue
+            is_death, date_text = _classify_marker(text)
+            if is_death and death_event is None:
+                day = float(rebased_days[col_idx]) if col_idx < len(rebased_days) else None
+                if date_text and col_idx < len(column_dates) and column_dates[col_idx] is not None:
+                    marker_date = _parse_calendar_date(date_text, ref_year)
+                    if marker_date is not None and day is not None:
+                        day = float(rebased_days[col_idx] - (column_dates[col_idx] - marker_date).days)
+                death_event = RatSurvivalEvent(label, day, True, text, file_name)
+            elif not is_death and first_other_marker is None:
+                first_other_marker = (col_idx, text)
+
+        if death_event is not None:
+            events.append(death_event)
+        elif first_other_marker is not None:
+            col_idx, text = first_other_marker
+            day = float(rebased_days[col_idx]) if col_idx < len(rebased_days) else None
+            events.append(RatSurvivalEvent(label, day, False, text, file_name))
+        else:
+            if last_valid_col_idx is not None and last_valid_col_idx < len(rebased_days):
+                day = float(rebased_days[last_valid_col_idx])
+            else:
+                day = float(rebased_days[-1]) if rebased_days else None
+            events.append(RatSurvivalEvent(label, day, False, "", file_name))
+
+    return events
 
 
 def _normalize_tumor_cell(value) -> str:

@@ -79,7 +79,9 @@ class SkinReactionsDataProcessor:
             стандартные отклонения и доверительные интервалы.
         """
         mean_reactions = np.nanmean(self.skin_reactions, axis=0)
+        reactions_by_time = np.transpose(self.skin_reactions)
         std_dev = [SupportingFunctions.calculate_std_dev(values, mean_value) for values, mean_value in
-                   zip(np.transpose(self.skin_reactions), mean_reactions)]
-        error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.skin_reactions)) for std in std_dev]
+                   zip(reactions_by_time, mean_reactions)]
+        error_margin = [SupportingFunctions.calculate_error_margin(std, SupportingFunctions.count_at_risk(values))
+                        for std, values in zip(std_dev, reactions_by_time)]
         return mean_reactions, np.array(std_dev), np.array(error_margin)

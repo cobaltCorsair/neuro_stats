@@ -57,6 +57,14 @@ class TumorDataVisualizer:
         self.experiment_params, self.time_data, self.rat_labels, self.tumor_volumes = process_tumor_data_excel(file_path)
         self.data_processor = TumorDataProcessor(self.tumor_volumes)  # Создаем экземпляр TumorDataProcessor для обработки данных
 
+    def get_survival_events(self):
+        """
+        Возвращает список RatSurvivalEvent (смерть/цензурирование по каждой крысе),
+        извлечённый из того же Excel-файла. См. extract_survival_events.
+        """
+        from data_processing.excel_data_processor import extract_survival_events
+        return extract_survival_events(self.file_path)
+
     def plot_tumor_volumes_single_graph(self):
         """
         Визуализирует объемы опухолей всех крыс в рамках одного эксперимента на общем графике.
@@ -162,9 +170,11 @@ class TumorDataVisualizer:
         drawgraph.setup_figure()
 
         mean_volumes = self.data_processor.get_mean_tumor_volumes()
+        volumes_by_time = np.transpose(self.tumor_volumes)
         std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
-                   zip(np.transpose(self.tumor_volumes), mean_volumes)]
-        error_margin = [SupportingFunctions.calculate_error_margin(std, len(self.tumor_volumes)) for std in std_dev]
+                   zip(volumes_by_time, mean_volumes)]
+        error_margin = [SupportingFunctions.calculate_error_margin(std, SupportingFunctions.count_at_risk(volumes))
+                        for std, volumes in zip(std_dev, volumes_by_time)]
 
         # Форматируем параметры эксперимента для уникальной метки
         formatted_params = format_experiment_params(self.experiment_params)
@@ -212,10 +222,11 @@ class TumorDataVisualizer:
 
         relative_tumor_volumes = self.data_processor.get_relative_tumor_volumes()
         mean_relative_volumes = self.data_processor.get_mean_relative_tumor_volumes()
+        relative_volumes_by_time = np.transpose(relative_tumor_volumes)
         std_dev_rel = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
-                       zip(np.transpose(relative_tumor_volumes), mean_relative_volumes)]
-        error_margin_rel = [SupportingFunctions.calculate_error_margin(std, len(relative_tumor_volumes)) for std in
-                            std_dev_rel]
+                       zip(relative_volumes_by_time, mean_relative_volumes)]
+        error_margin_rel = [SupportingFunctions.calculate_error_margin(std, SupportingFunctions.count_at_risk(volumes))
+                            for std, volumes in zip(std_dev_rel, relative_volumes_by_time)]
 
         # Форматируем параметры эксперимента для уникальной метки
         formatted_params = format_experiment_params(self.experiment_params)
@@ -659,7 +670,8 @@ class TumorDataVisualizer:
             [d_matrix[p, t] for p in range(n_pairs) if not np.isnan(d_matrix[p, t])],
             mean_d[t]
         ) if n_pairs > 1 else 0.0 for t in range(d_matrix.shape[1])]
-        sem_d = [SupportingFunctions.calculate_error_margin(s, n_pairs) for s in std_d]
+        n_pairs_at_t = [SupportingFunctions.count_at_risk(d_matrix[:, t]) for t in range(d_matrix.shape[1])]
+        sem_d = [SupportingFunctions.calculate_error_margin(s, n) for s, n in zip(std_d, n_pairs_at_t)]
 
         drawgraph = GraphVisualizer(
             "Среднее попарное расхождение d(t)",
