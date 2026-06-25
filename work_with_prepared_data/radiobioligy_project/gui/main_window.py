@@ -1467,9 +1467,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         Строит кривые Каплана-Майера по крысам из выбранных файлов.
 
-        Группы A/B (столбец «Группа» в таблице) становятся отдельными кривыми;
-        файлы без группы образуют третью кривую «Без группы». Если групп вообще
-        нет — один сводный график по всем выбранным файлам.
+        Файлы, явно отмеченные группой A или B (столбец «Группа» в таблице),
+        объединяются в одну кривую на группу — так можно слить крыс из нескольких
+        файлов одного режима в одну выборку. Любой выбранный файл БЕЗ группы
+        становится отдельной кривой (по умолчанию — каждый выбранный файл это
+        своё сравнение, а не один общий пул).
         """
         selected_paths = self.get_selected_experiments()
         if not selected_paths:
@@ -1487,15 +1489,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         try:
             groups = {}
-            if paths_a or paths_b:
-                if paths_a:
-                    groups["Группа A"] = [e for p in paths_a for e in extract_survival_events(p)]
-                if paths_b:
-                    groups["Группа B"] = [e for p in paths_b for e in extract_survival_events(p)]
-                if paths_other:
-                    groups["Без группы"] = [e for p in paths_other for e in extract_survival_events(p)]
-            else:
-                groups["Выбранные эксперименты"] = [e for p in selected_paths for e in extract_survival_events(p)]
+            if paths_a:
+                groups["Группа A"] = [e for p in paths_a for e in extract_survival_events(p)]
+            if paths_b:
+                groups["Группа B"] = [e for p in paths_b for e in extract_survival_events(p)]
+            for path in paths_other:
+                groups[Path(path).stem] = extract_survival_events(path)
         except Exception as error:
             self._show_tool_open_error("Каплан-Майер", error)
             return

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import os
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from work_with_prepared_data.radiobioligy_project.data_processing.rat_manager import register_rat_labels
 
 
@@ -136,44 +136,128 @@ def _cumulative_days_from_gaps_hours(gaps_hours: List[float]) -> List[float]:
     return days
 
 
-def _rebase_time_point_labels(labels: List[str], fraction_days: List[float]) -> List[str]:
+def _infer_reference_year(file_path: str, raw_labels: List[str]) -> int:
+    """
+    Год для дат без явного указания года в подписях ('V исх. - 21.10' без года).
+
+    Приоритет: год, явно указанный в любой подписи ('...- 20.05.26') > год из имени
+    файла > текущий год (крайний случай, если ничего не найдено).
+    """
+    for label in raw_labels:
+        m = _DATE_IN_TEXT_RE.search(str(label))
+        if m and m.group(3):
+            year = int(m.group(3))
+            return year + 2000 if year < 100 else year
+    filename_date = extract_date_from_filename(file_path)
+    if filename_date:
+        try:
+            return int(filename_date.split('.')[-1])
+        except (ValueError, IndexError):
+            pass
+    return datetime.now().year
+
+
+def _label_calendar_dates(labels: List[str], ref_year: int) -> List[Optional[date]]:
+    """
+    Парсит календарную дату каждой подписи по порядку, увеличивая текущий год при
+    обнаружении перехода через Новый год (дата "уходит назад" более чем на полгода
+    относительно предыдущей — явный признак того, что подпись без года относится
+    уже к следующему году).
+    """
+    dates: List[Optional[date]] = []
+    current_year = ref_year
+    previous_date: Optional[date] = None
+    for label in labels:
+        parsed = _parse_calendar_date(str(label), current_year)
+        if parsed is not None and previous_date is not None and (previous_date - parsed).days > 180:
+            current_year += 1
+            parsed = _parse_calendar_date(str(label), current_year)
+        if parsed is not None:
+            previous_date = parsed
+        dates.append(parsed)
+    return dates
+
+
+# Минимальное преимущество (в сутках) календарной точности более позднего якоря фракции
+# над текущим, при котором считаем переразметку реальной, а не шумом. Многие файлы несут
+# устойчивое расхождение в ~1 сутки между номинальной подписью 'N сут.' и календарной датой
+# (привычная конвенция лаборатории) — этого недостаточно для переключения базовой точки.
+_REBASE_SWITCH_THRESHOLD_DAYS = 2
+
+
+def _rebase_time_point_labels(labels: List[str], fraction_days: List[float], file_path: str = "") -> List[str]:
     """
     Преобразует подписи временных точек (вторая строка Excel) в абсолютные дни
     от дня первой фракции.
 
-    Обычный случай — один маркер 'V исх.' в начале, остальные подписи вида
-    'N сут.' считаются от него (старое поведение).
+    Базовый случай — один маркер 'V исх.' в начале, 'N сут.' считается от него
+    (номинальная цифра используется как есть, без проверки по дате: в подписях
+    есть устойчивое расхождение в ~1 сутки между номинальной цифрой и календарной
+    датой — это давняя конвенция, а не ошибка, трогать её не нужно).
 
-    Протоколы с перерывом в несколько суток между фракциями размечают волюметрию
-    заново от каждой фракции: 'V исх.', потом 'V промежут.' (момент следующей
-    фракции), и последующие 'N сут.' в таблице отсчитываются ОТ ЭТОГО V-маркера,
-    а не от начала эксперимента. Каждый встреченный 'V'-маркер по порядку
-    привязывается к очередному дню из fraction_days (вычислен из t= расписания).
+    Протоколы с многосуточным перерывом между фракциями переразмечают волюметрию
+    заново от очередной фракции. Явный признак — строка 'V промежут.': она и раньше
+    привязывалась к очередному дню из fraction_days по порядку появления.
+
+    Но иногда эта строка отсутствует (например, в файле кожных реакций той же серии
+    измерений, где её просто не стали дублировать), а счёт суток всё равно идёт от
+    последней фракции. Чтобы поймать и такой случай без побочных эффектов на обычные
+    файлы, при обработке каждой подписи 'N сут.' проверяем: не предсказывает ли
+    календарная дата ЭТОЙ подписи день много точнее (на ≥ _REBASE_SWITCH_THRESHOLD_DAYS
+    суток), если считать её от ещё не использованной более поздней фракции, а не от
+    текущей базовой точки. Если да — неявно переключаемся на неё (как будто там стояла
+    своя 'V промежут.'). Небольшие фоновые расхождения (~1 сутки) такой порог не пройдут.
+
+    Если дату подписи не удалось распарсить — просто используем текущую базовую точку,
+    без проверки переключения (старое поведение).
 
     Args:
         labels:        сырые подписи второй строки (например 'V исх. - 20.05.26',
                        'V промежут. - 25.05.2026', '2 сут. - 27.05', ...)
         fraction_days: абсолютные дни начала каждой фракции, см. _cumulative_days_from_gaps_hours
+        file_path:     путь к файлу (для вывода года из имени файла, если в подписях его нет)
 
     Returns:
         Список строк с абсолютными днями (например ['0', '5', '7', '9', ...])
     """
+    ref_year = _infer_reference_year(file_path, labels)
+    parsed_dates = _label_calendar_dates(labels, ref_year)
+    day0_date = parsed_dates[0] if parsed_dates else None
+
     result: List[str] = []
     v_seen = 0
     baseline_day = 0.0
-    for label in labels:
+
+    for label, label_date in zip(labels, parsed_dates):
         token = str(label).strip().split(' ')[0]
+
         if token.upper().startswith('V'):
             if v_seen < len(fraction_days):
                 baseline_day = fraction_days[v_seen]
             v_seen += 1
             result.append(str(int(round(baseline_day))))
-        else:
-            try:
-                offset = int(token)
-            except ValueError:
-                offset = 0
-            result.append(str(int(round(baseline_day + offset))))
+            continue
+
+        try:
+            nominal = int(token)
+        except ValueError:
+            nominal = 0
+
+        if day0_date is not None and label_date is not None and v_seen < len(fraction_days):
+            current_mismatch = abs((label_date - (day0_date + timedelta(days=baseline_day + nominal))).days)
+            best_idx, best_baseline, best_mismatch = None, baseline_day, current_mismatch
+            for idx in range(v_seen, len(fraction_days)):
+                candidate_baseline = fraction_days[idx]
+                candidate_mismatch = abs(
+                    (label_date - (day0_date + timedelta(days=candidate_baseline + nominal))).days)
+                if candidate_mismatch < best_mismatch:
+                    best_idx, best_baseline, best_mismatch = idx, candidate_baseline, candidate_mismatch
+            if best_idx is not None and (current_mismatch - best_mismatch) >= _REBASE_SWITCH_THRESHOLD_DAYS:
+                baseline_day = best_baseline
+                v_seen = best_idx + 1
+
+        result.append(str(int(round(baseline_day + nominal))))
+
     return result
 
 
@@ -279,15 +363,10 @@ def extract_survival_events(file_path: str) -> List[RatSurvivalEvent]:
     fraction_days = _cumulative_days_from_gaps_hours(schedule_hours)
 
     raw_labels = [str(item) for item in data.iloc[1, 1:]]
-    rebased_days = [int(v) for v in _rebase_time_point_labels(raw_labels, fraction_days)]
+    rebased_days = [int(v) for v in _rebase_time_point_labels(raw_labels, fraction_days, file_path)]
 
-    ref_year = datetime.now().year
-    first_v_label = next((lbl for lbl in raw_labels if lbl.strip().split(' ')[0].upper().startswith('V')), None)
-    if first_v_label is not None:
-        first_v_date = _parse_calendar_date(first_v_label, ref_year)
-        if first_v_date is not None:
-            ref_year = first_v_date.year
-    column_dates = [_parse_calendar_date(lbl, ref_year) for lbl in raw_labels]
+    ref_year = _infer_reference_year(file_path, raw_labels)
+    column_dates = _label_calendar_dates(raw_labels, ref_year)
 
     file_name = os.path.basename(file_path)
     tumor_data = data.iloc[2:, :].copy()
@@ -342,6 +421,23 @@ def _normalize_tumor_cell(value) -> str:
     return str(value).strip().replace(',', '.').replace(' -', '-')
 
 
+def _to_skin_reaction_value(value) -> float:
+    """
+    Преобразует сырую ячейку кожной реакции в float, NaN для пустых ячеек и любых
+    маркеров события ('⊗', 'death', 'выгрызла' и т.п.) — иначе при попадании
+    нечислового текста в матрицу numpy приводит ВЕСЬ массив к строковому dtype, и
+    дальнейшая арифметика (np.nanmean и т.п.) падает с UFuncTypeError. Сами маркеры
+    разбираются отдельно через extract_survival_events, читающий исходный файл заново.
+    """
+    if pd.isna(value):
+        return float('nan')
+    text = str(value).strip().replace(',', '.')
+    try:
+        return float(text)
+    except ValueError:
+        return float('nan')
+
+
 def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str], List[List[float]]]:
     """
     Обрабатывает данные из указанного файла Excel, содержащего информацию о реакциях кожи на эксперименты.
@@ -364,9 +460,10 @@ def process_skin_data_excel(file_path) -> Tuple[List[str], List[str], List[str],
 
     skin_data = data.iloc[2:, :].copy()  # Копируем данные, начиная с третьей строки
     time_data = _rebase_time_point_labels(
-        [str(item) for item in data.iloc[1, 1:]], fraction_days)  # Преобразуем метки времени
+        [str(item) for item in data.iloc[1, 1:]], fraction_days, file_path)  # Преобразуем метки времени
     rat_labels = skin_data.iloc[:, 0].tolist()  # Извлекаем метки крыс из первого столбца
-    skin_reactions = skin_data.iloc[:, 1:].to_numpy().tolist()  # Преобразуем оставшиеся данные в список списков
+    skin_reactions = skin_data.iloc[:, 1:].apply(
+        lambda column: column.map(_to_skin_reaction_value)).to_numpy().tolist()
 
     # Извлечение и форматирование даты из имени файла
     formatted_date = extract_date_from_filename(file_path)
@@ -431,7 +528,7 @@ def process_tumor_data_excel(file_path) -> Tuple[List[str], List[str], List[str]
     fraction_days = _cumulative_days_from_gaps_hours(schedule_hours)
 
     tumor_data = data.iloc[2:, :].copy()
-    time_data = _rebase_time_point_labels([str(item) for item in data.iloc[1, 1:]], fraction_days)
+    time_data = _rebase_time_point_labels([str(item) for item in data.iloc[1, 1:]], fraction_days, file_path)
 
     # Преобразование данных об объемах опухолей
     tumor_data = tumor_data.apply(lambda column: column.map(_normalize_tumor_cell))

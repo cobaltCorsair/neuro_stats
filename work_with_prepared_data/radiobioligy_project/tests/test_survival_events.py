@@ -10,9 +10,12 @@ for path in (str(WORKSPACE_ROOT), str(REPO_ROOT)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
+import numpy as np
+
 from data_processing.excel_data_processor import (
     extract_survival_events,
     parse_irradiation_schedule,
+    process_skin_data_excel,
 )
 
 
@@ -110,6 +113,66 @@ class TestExtractSurvivalEvents(unittest.TestCase):
 
     def test_day_unit_sutki_parses_into_schedule_hours(self):
         self.assertEqual(parse_irradiation_schedule("t = 5 сут", ["p", "p"]), [120.0])
+
+    def test_multiday_gap_rebase_without_explicit_v_promezhut_row(self):
+        # тот же p,p t=5 сут случай, но без строки 'V промежут.' (как в файлах кожных
+        # реакций той же серии измерений) - переразметка должна сработать по календарной
+        # дате подписи '2 сут. - 27.05', которая совпадает с днём 7 (5 + 2), а не днём 2.
+        header = ["p = 25.1 Гр", "p = 25.1 Гр", "t = 5 сут"]
+        labels = ["Метка", "V исх. - 20.05.26", "2 сут. - 27.05", "4 сут. - 29.05"]
+        rows = [["rat1", "1.0-1.0-1.0", "1.1-1.1-1.1", "⊗"]]
+        path = _write_xlsx(self.tmp_path, "multiday_gap_no_v_row.xlsx", header, labels, rows)
+        events = extract_survival_events(path)
+        self.assertTrue(events[0].event_observed)
+        self.assertEqual(events[0].day, 9.0)
+
+    def test_small_labeling_offset_does_not_trigger_false_rebase(self):
+        # обычный режим без многосуточных перерывов (фракции в пределах ~суток друг от
+        # друга): устойчивое расхождение подписи 'N сут.' с календарной датой на 1 сутки
+        # не должно переключать базовую точку - номинальная цифра используется как есть.
+        header = ["n = 2.36 Гр", "p = 18.8 Гр", "n = 2.36 Гр", "p = 18.8 Гр", "t1 = 2 ч/24 ч/1 ч 45 мин"]
+        labels = ["Метка", "V исх. - 23.03.26", "3 сут. - 27.03", "6 сут. - 1.04"]
+        rows = [["rat1", "1.1-1.1-1.1", "1.2-1.2-1.2", "⊗"]]
+        path = _write_xlsx(self.tmp_path, "small_offset_no_rebase.xlsx", header, labels, rows)
+        events = extract_survival_events(path)
+        self.assertTrue(events[0].event_observed)
+        self.assertEqual(events[0].day, 6.0)
+
+
+class TestProcessSkinDataExcelWithDeathMarker(unittest.TestCase):
+    """
+    process_skin_data_excel раньше возвращал сырые ячейки без приведения к float.
+    Стоило в матрице появиться маркеру события ('⊗', 'death', ...), numpy приводил
+    ВЕСЬ массив к строковому dtype, и np.nanmean (используется во всех графиках кожных
+    реакций) падал с UFuncTypeError при попытке сложения строк.
+    """
+
+    def setUp(self):
+        import tempfile
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self._tmpdir.name)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_death_marker_becomes_nan_not_string_and_array_stays_numeric(self):
+        header = ["p = 25.1 Гр", "p = 25.1 Гр", "t = 5 сут"]
+        labels = ["Метка", "V исх. - 20.05.26", "2 сут. - 27.05", "4 сут. - 29.05"]
+        rows = [
+            ["rat1", 0, 245, "⊗"],
+            ["rat2", 0, 295, 390],
+        ]
+        path = _write_xlsx(self.tmp_path, "skin_death_marker.xlsx", header, labels, rows)
+
+        _, _, _, skin_reactions = process_skin_data_excel(path)
+
+        self.assertTrue(all(isinstance(v, float) for row in skin_reactions for v in row))
+        self.assertTrue(np.isnan(skin_reactions[0][2]))
+
+        arr = np.array(skin_reactions)
+        self.assertEqual(arr.dtype, np.float64)
+        mean = np.nanmean(arr, axis=0)  # не должно бросать UFuncTypeError
+        self.assertAlmostEqual(mean[1], 270.0)
 
 
 if __name__ == "__main__":

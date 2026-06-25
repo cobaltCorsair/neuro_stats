@@ -38,6 +38,19 @@ class KaplanMeierResult:
     median_survival: Optional[float]
 
 
+@dataclass(frozen=True)
+class HazardRatioResult:
+    """
+    Приближённая оценка отношения рисков (Mantel-Haenszel) группы A относительно
+    группы B, выведенная из тех же слагаемых, что и лог-ранговый тест.
+
+    HR > 1 означает более высокий риск смерти (худшую выживаемость) в группе A.
+    """
+    hazard_ratio: float
+    ci_lower: float
+    ci_upper: float
+
+
 def _valid_observations(events: Sequence[RatSurvivalEvent]) -> List[Tuple[float, bool]]:
     return [(float(e.day), bool(e.event_observed)) for e in events if e.day is not None]
 
@@ -119,16 +132,58 @@ def kaplan_meier_estimate(events: Sequence[RatSurvivalEvent], *, confidence: flo
     )
 
 
-def log_rank_test(events_a: Sequence[RatSurvivalEvent], events_b: Sequence[RatSurvivalEvent]) -> Tuple[float, float]:
+def median_survival_ci(km: KaplanMeierResult) -> Tuple[Optional[float], Optional[float]]:
     """
-    Лог-ранговый тест (Mantel-Haenszel) для сравнения времени до смерти между двумя группами.
+    Доверительный интервал медианы выживаемости (метод Брукмейера-Кроули, см. Klein &
+    Moeschberger, разд. 4.4): инвертирует доверительные полосы S(t) — границы медианы там,
+    где нижняя/верхняя полоса пересекает уровень 0.5, а не точечная оценка S(t).
 
-    Args:
-        events_a, events_b: списки RatSurvivalEvent для каждой из двух сравниваемых групп.
+    L = inf{t: НИЖНЯЯ граница ДИ для S(t) ≤ 0.5} — медиана не может быть раньше: даже в
+        пессимистичном сценарии (нижняя граница) S(t) только сейчас опустилась до 0.5.
+    U = inf{t: ВЕРХНЯЯ граница ДИ для S(t) ≤ 0.5} — медиана не может быть позже: даже в
+        оптимистичном сценарии (верхняя граница) S(t) уже опустилась до 0.5.
 
     Returns:
-        (chi2_statistic, p_value) с 1 степенью свободы.
+        (нижняя граница, верхняя граница) в днях. None на любой стороне, если
+        соответствующая полоса не достигает 0.5 в пределах наблюдения (граница не достигнута).
     """
+    lower_bound: Optional[float] = None
+    upper_bound: Optional[float] = None
+    for t, lower in zip(km.times, km.ci_lower):
+        if lower <= 0.5:
+            lower_bound = t
+            break
+    for t, upper in zip(km.times, km.ci_upper):
+        if upper <= 0.5:
+            upper_bound = t
+            break
+    return lower_bound, upper_bound
+
+
+def restricted_mean_survival_time(km: KaplanMeierResult, tau: Optional[float] = None) -> float:
+    """
+    Restricted mean survival time — площадь под ступенчатой кривой S(t) от 0 до tau
+    (по умолчанию — последний наблюдённый момент). Содержательная сводная характеристика
+    даже когда медиана не достигнута (S(t) не опускается до 0.5 за время наблюдения).
+    """
+    if len(km.times) < 2:
+        return 0.0
+    cutoff = km.times[-1] if tau is None else float(tau)
+    area = 0.0
+    for i in range(len(km.times) - 1):
+        t0, t1 = km.times[i], km.times[i + 1]
+        if t0 >= cutoff:
+            break
+        segment_end = min(t1, cutoff)
+        area += km.survival[i] * (segment_end - t0)
+    return area
+
+
+def _log_rank_components(
+        events_a: Sequence[RatSurvivalEvent], events_b: Sequence[RatSurvivalEvent]
+) -> Tuple[float, float]:
+    """(observed_minus_expected, variance_sum) для группы A — общие слагаемые
+    лог-рангового теста и приближённой оценки hazard ratio (Mantel-Haenszel)."""
     obs_a = _valid_observations(events_a)
     obs_b = _valid_observations(events_b)
     all_times = sorted(set(t for t, _ in obs_a) | set(t for t, _ in obs_b))
@@ -157,12 +212,95 @@ def log_rank_test(events_a: Sequence[RatSurvivalEvent], events_b: Sequence[RatSu
                 d_total * (at_risk_a / n_at_t) * (at_risk_b / n_at_t) * (n_at_t - d_total)
             ) / (n_at_t - 1)
 
+    return observed_minus_expected, variance_sum
+
+
+def log_rank_test(events_a: Sequence[RatSurvivalEvent], events_b: Sequence[RatSurvivalEvent]) -> Tuple[float, float]:
+    """
+    Лог-ранговый тест (Mantel-Haenszel) для сравнения времени до смерти между двумя группами.
+
+    Args:
+        events_a, events_b: списки RatSurvivalEvent для каждой из двух сравниваемых групп.
+
+    Returns:
+        (chi2_statistic, p_value) с 1 степенью свободы.
+    """
+    observed_minus_expected, variance_sum = _log_rank_components(events_a, events_b)
     if variance_sum <= 0.0:
         return 0.0, 1.0
 
     chi2_stat = (observed_minus_expected ** 2) / variance_sum
     p_value = float(chi2.sf(chi2_stat, df=1))
     return float(chi2_stat), p_value
+
+
+def hazard_ratio_log_rank(
+        events_a: Sequence[RatSurvivalEvent],
+        events_b: Sequence[RatSurvivalEvent],
+        *,
+        confidence: float = 0.95,
+) -> Optional[HazardRatioResult]:
+    """
+    Приближённая оценка hazard ratio (Mantel-Haenszel) группы A относительно группы B,
+    из тех же O-E/V, что и лог-ранговый тест: ln(HR) = (O-E)/V, SE(ln HR) = sqrt(1/V).
+    Это стандартное упрощение, принятое наравне с лог-рангом (не полноценная Cox-регрессия).
+
+    Returns:
+        HazardRatioResult, либо None если дисперсия нулевая (нет общих интервалов риска
+        с хотя бы одним событием — оценка не определена).
+    """
+    observed_minus_expected, variance_sum = _log_rank_components(events_a, events_b)
+    if variance_sum <= 0.0:
+        return None
+
+    z = float(norm.ppf(0.5 + confidence / 2.0))
+    log_hr = observed_minus_expected / variance_sum
+    se_log_hr = 1.0 / np.sqrt(variance_sum)
+    hr = float(np.exp(log_hr))
+    ci_lower = float(np.exp(log_hr - z * se_log_hr))
+    ci_upper = float(np.exp(log_hr + z * se_log_hr))
+    return HazardRatioResult(hr, ci_lower, ci_upper)
+
+
+def _n_at_risk_at_time(events: Sequence[RatSurvivalEvent], t: float) -> int:
+    """Число животных, для которых день события/цензуры >= t (т.е. ещё под наблюдением в момент t)."""
+    return sum(1 for e in events if e.day is not None and e.day >= t)
+
+
+def risk_table_time_points(groups: Dict[str, Sequence[RatSurvivalEvent]], n_points: int = 7) -> List[float]:
+    """
+    n_points равномерно распределённых моментов времени (целые сутки, без повторов)
+    в пределах диапазона наблюдения — для отображения таблицы «число в риске».
+    """
+    max_time = 0.0
+    for events in groups.values():
+        for e in events:
+            if e.day is not None:
+                max_time = max(max_time, e.day)
+    if max_time <= 0:
+        return [0.0]
+
+    points: List[float] = []
+    seen = set()
+    for raw in np.linspace(0, max_time, num=max(2, n_points)):
+        rounded = round(raw)
+        if rounded not in seen:
+            seen.add(rounded)
+            points.append(float(rounded))
+    return points
+
+
+def n_at_risk_table(
+        groups: Dict[str, Sequence[RatSurvivalEvent]], time_points: Sequence[float]
+) -> Dict[str, List[int]]:
+    """{имя группы: [число в риске на каждый момент из time_points]}."""
+    return {name: [_n_at_risk_at_time(events, t) for t in time_points] for name, events in groups.items()}
+
+
+def max_observed_day(events: Sequence[RatSurvivalEvent]) -> Optional[float]:
+    """Последний день наблюдения в группе (смерть/цензура), None если нет ни одного события."""
+    days = [e.day for e in events if e.day is not None]
+    return max(days) if days else None
 
 
 def _step_value_at(km: KaplanMeierResult, t: float) -> float:
@@ -188,6 +326,10 @@ def plot_kaplan_meier(
     """
     Рисует ступенчатые кривые Каплана-Майера для одной или нескольких групп животных.
 
+    Таблицу «число в риске» график не включает — см. risk_table_time_points()/
+    n_at_risk_table() и отдельный QTableWidget в KaplanMeierWindow: встраивание этой
+    таблицы прямо в matplotlib-рисунок плохо масштабировалось при показе в Qt-окне.
+
     Args:
         groups:              {имя группы: список RatSurvivalEvent}
         show_censored_ticks: отмечать моменты цензурирования крестиком на кривой
@@ -197,7 +339,8 @@ def plot_kaplan_meier(
         (fig, ax)
     """
     with sns.axes_style("whitegrid", rc={'font.family': PLOT_FONT_FAMILY}):
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+
         for label, events in groups.items():
             km = kaplan_meier_estimate(events)
             line, = ax.step(km.times, km.survival, where='post', label=label, linewidth=2)
@@ -218,5 +361,5 @@ def plot_kaplan_meier(
         ax.set_ylabel(y_label)
         ax.set_ylim(-0.02, 1.05)
         ax.legend(fontsize=14)
-        fig.tight_layout()
+
         return fig, ax
