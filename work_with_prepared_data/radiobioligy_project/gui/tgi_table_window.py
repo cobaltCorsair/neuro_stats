@@ -1,12 +1,12 @@
-import numbers
-
 import pandas as pd
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem, \
     QTabWidget, QVBoxLayout, QWidget
 
+from gui.dataframe_table_widget import DataFrameTableMixin
 
-class TumorGrowthInhibitionTableWindow(QDialog):
+
+class TumorGrowthInhibitionTableWindow(QDialog, DataFrameTableMixin):
     """Отдельное окно для отображения основной таблицы ТРО и попарной сводки."""
 
     MODE_CONTROL_DAYS = "control_days"
@@ -40,6 +40,8 @@ class TumorGrowthInhibitionTableWindow(QDialog):
         self.main_table = None
         self.summary_table = None
         self.summary_tab = None
+        self.tgd_table = None
+        self.tgd_tab = None
 
         self._tables_by_mode = {}
         self._setup_ui()
@@ -86,6 +88,13 @@ class TumorGrowthInhibitionTableWindow(QDialog):
         main_tab_layout.addWidget(self.main_table)
         self.tabs.addTab(main_tab, "ТРО по времени")
 
+        self.tgd_tab = QWidget()
+        tgd_tab_layout = QVBoxLayout(self.tgd_tab)
+        self.tgd_table = QTableWidget()
+        self._configure_data_table(self.tgd_table, stretch_last_section=True)
+        tgd_tab_layout.addWidget(self.tgd_table)
+        self.tabs.addTab(self.tgd_tab, "TGD")
+
         self.summary_tab = QWidget()
         summary_tab_layout = QVBoxLayout(self.summary_tab)
         self.summary_table = QTableWidget()
@@ -108,6 +117,13 @@ class TumorGrowthInhibitionTableWindow(QDialog):
 
         selected_mode = previous_mode if previous_mode in tables_by_mode else self._preferred_mode(tables_by_mode)
         self._set_mode(selected_mode)
+
+    def set_tgd_table(self, tgd_df):
+        """TGD не зависит от выбора сетки времени (ТРО по контролю/ежедневная интерполяция) —
+        это один скаляр на группу, поэтому таблица не входит в _tables_by_mode."""
+        if tgd_df is None:
+            tgd_df = pd.DataFrame(columns=["Группа", "TGD, сут"])
+        self._populate_table(self.tgd_table, tgd_df, {}, show_missing_as_dash=True)
 
     @classmethod
     def _normalize_tables_by_mode(cls, tables_or_tgi_df, pairwise_summary_df):
@@ -242,52 +258,6 @@ class TumorGrowthInhibitionTableWindow(QDialog):
 
         self.legend_table.resizeRowsToContents()
 
-    def _populate_table(self, table_widget, df, column_tooltips, show_missing_as_dash):
-        table_widget.clearContents()
-        table_widget.setRowCount(df.shape[0])
-        table_widget.setColumnCount(df.shape[1])
-        table_widget.setHorizontalHeaderLabels([str(column) for column in df.columns])
-
-        for column_index, column_name in enumerate(df.columns):
-            header_item = table_widget.horizontalHeaderItem(column_index)
-            if header_item is None:
-                header_item = QTableWidgetItem(str(column_name))
-                table_widget.setHorizontalHeaderItem(column_index, header_item)
-            header_item.setToolTip(column_tooltips.get(column_name, str(column_name)))
-
-        for row_index, (_, row) in enumerate(df.iterrows()):
-            for column_index, value in enumerate(row):
-                display_value = self._format_cell_value(value, column_index, show_missing_as_dash)
-                item = QTableWidgetItem(display_value)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                item.setToolTip(display_value)
-                if display_value == "—":
-                    item.setForeground(table_widget.palette().mid())
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                elif isinstance(value, numbers.Real) and not pd.isna(value):
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                else:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-                table_widget.setItem(row_index, column_index, item)
-
-        table_widget.resizeColumnsToContents()
-        table_widget.resizeRowsToContents()
-
-    @staticmethod
-    def _format_cell_value(value, column_index, show_missing_as_dash):
-        if pd.isna(value):
-            return "—" if show_missing_as_dash else ""
-        if isinstance(value, numbers.Integral):
-            return str(int(value))
-        if isinstance(value, numbers.Real):
-            numeric_value = float(value)
-            if column_index == 0 and numeric_value.is_integer():
-                return str(int(numeric_value))
-            if numeric_value.is_integer():
-                return str(int(numeric_value))
-            return f"{numeric_value:.3f}"
-        return str(value)
-
     @staticmethod
     def _configure_legend_table(table_widget):
         table_widget.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -323,17 +293,6 @@ class TumorGrowthInhibitionTableWindow(QDialog):
             }
             """
         )
-
-    @staticmethod
-    def _configure_data_table(table_widget, stretch_last_section):
-        table_widget.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        table_widget.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
-        table_widget.setWordWrap(False)
-        table_widget.setAlternatingRowColors(True)
-        table_widget.verticalHeader().setVisible(False)
-        table_widget.horizontalHeader().setStretchLastSection(stretch_last_section)
-        table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        table_widget.setSortingEnabled(False)
 
     def _ensure_summary_tab(self):
         if self.tabs.indexOf(self.summary_tab) == -1:

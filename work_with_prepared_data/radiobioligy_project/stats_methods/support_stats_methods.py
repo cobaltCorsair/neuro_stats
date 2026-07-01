@@ -1,5 +1,5 @@
 # файл support_stats_methods.py
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -11,6 +11,7 @@ from sklearn.neighbors import KernelDensity
 from sklearn.ensemble import IsolationForest
 from scipy.stats import chi2
 from scipy.spatial.distance import mahalanobis
+from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 
 
 class ExtractOutliers:
@@ -477,6 +478,44 @@ class SupportingFunctions:
         return np.trapz(y, x)
 
     @staticmethod
+    def holm_correction(p_values: List[Optional[float]], alpha: float = 0.05) -> List[bool]:
+        """
+        Пошаговая (step-down) поправка Холма-Бонферрони для контроля FWER при множественных
+        сравнениях.
+
+        None/NaN элементы не входят в число сравнений m и в результате помечаются False —
+        иначе тесты, пропущенные из-за нехватки данных в конкретной точке, занижали бы m и
+        тем самым ослабляли поправку для остальных.
+
+        Args:
+            p_values (List[Optional[float]]): Список p-значений (может содержать None/NaN).
+            alpha (float): Уровень семейственной ошибки первого рода.
+
+        Returns:
+            List[bool]: Список той же длины и в том же порядке, что и p_values — True,
+                если сравнение значимо после поправки Холма.
+        """
+        result = [False] * len(p_values)
+        indexed = [
+            (i, p) for i, p in enumerate(p_values)
+            if p is not None and not (isinstance(p, float) and np.isnan(p))
+        ]
+        m = len(indexed)
+        if m == 0:
+            return result
+
+        indexed.sort(key=lambda ip: ip[1])
+        still_rejecting = True
+        for rank, (orig_idx, p) in enumerate(indexed, start=1):
+            threshold = alpha / (m - rank + 1)
+            if still_rejecting and p <= threshold:
+                result[orig_idx] = True
+            else:
+                still_rejecting = False
+                result[orig_idx] = False
+        return result
+
+    @staticmethod
     def calculate_tumor_growth_inhibition(control_volumes, experiment_volumes):
         """
         Расчет торможения роста опухоли между контрольной и экспериментальными группами.
@@ -490,6 +529,228 @@ class SupportingFunctions:
         """
         return [(control - experiment) / control * 100 for control, experiment in
                 zip(control_volumes, experiment_volumes)]
+
+    @staticmethod
+    def _skin_reactions_to_rtog_matrix(skin_reactions: List[List[float]]) -> np.ndarray:
+        """
+        Переводит сырые баллы кожной реакции КАЖДОГО животного в степень RTOG (0-4) по уже
+        проверенным на реальных данных порогам map_to_rtog. Общий шаг для aggregate_rtog_grades
+        и calculate_rtog_iqr — оба должны агрегировать ПОСЛЕ перевода в RTOG, а не до.
+
+        Returns:
+            np.ndarray: Матрица степеней RTOG той же формы (животные x дни), NaN сохраняются.
+        """
+        # Локальный импорт: from_our_scale_to_rtog.py при загрузке модуля применяет глобальные
+        # стили seaborn/matplotlib (sns.set_theme, plt.rcParams.update) — нежелательный побочный
+        # эффект для любого, кто просто импортирует SupportingFunctions.
+        from stats_methods.from_our_scale_to_rtog import SkinReactionAnalyzer
+
+        arr = np.array(skin_reactions, dtype=float)
+        if arr.size == 0:
+            return arr
+
+        rtog_arr = np.full_like(arr, np.nan)
+        valid_mask = ~np.isnan(arr)
+        rtog_arr[valid_mask] = [SkinReactionAnalyzer.map_to_rtog(v) for v in arr[valid_mask]]
+        return rtog_arr
+
+    @staticmethod
+    def aggregate_rtog_grades(skin_reactions: List[List[float]]) -> List[float]:
+        """
+        Переводит сырой балл кожной реакции каждого животного в степень RTOG, затем агрегирует
+        МЕДИАНОЙ по животным на каждый день. RTOG - порядковая шкала, поэтому медиана корректнее
+        среднего: перевод уже усреднённого по группе сырого балла может дать степень, которой не
+        было ни у одного животного (например, при поровну расколотой группе вокруг порога).
+
+        Args:
+            skin_reactions (List[List[float]]): Сырые баллы по животным (строки) и дням
+                (столбцы), как self.skin_reactions в SkinReactionsVisualizer. Может содержать NaN.
+
+        Returns:
+            List[float]: Медианная степень RTOG по дням (NaN, если все животные NaN в этот день).
+        """
+        rtog_arr = SupportingFunctions._skin_reactions_to_rtog_matrix(skin_reactions)
+        if rtog_arr.size == 0:
+            return []
+
+        with np.errstate(invalid='ignore'):
+            return np.nanmedian(rtog_arr, axis=0).tolist()
+
+    @staticmethod
+    def calculate_rtog_iqr(skin_reactions: List[List[float]]) -> Tuple[List[float], List[float]]:
+        """
+        Межквартильный интервал [Q1, Q3] степени RTOG по дням — показатель разброса,
+        согласованный с медианной агрегацией aggregate_rtog_grades (в отличие от SEM,
+        который предполагает нормальное распределение непрерывной величины, а не порядковую
+        шкалу 0-4).
+
+        Returns:
+            Tuple[List[float], List[float]]: (Q1 по дням, Q3 по дням).
+        """
+        rtog_arr = SupportingFunctions._skin_reactions_to_rtog_matrix(skin_reactions)
+        if rtog_arr.size == 0:
+            return [], []
+
+        with np.errstate(invalid='ignore'):
+            q1 = np.nanpercentile(rtog_arr, 25, axis=0)
+            q3 = np.nanpercentile(rtog_arr, 75, axis=0)
+        return q1.tolist(), q3.tolist()
+
+    @staticmethod
+    def calculate_skin_reaction_peak(time_data: List[float], values: List[float]) -> Tuple[float, float]:
+        """
+        Пиковый балл кожной реакции и день его достижения (на уже агрегированной по группе
+        кривой, например усреднённой). При плато на максимуме возвращается ПЕРВЫЙ день.
+
+        Returns:
+            Tuple[float, float]: (peak_value, peak_day).
+
+        Raises:
+            ValueError: если нет ни одного валидного измерения.
+        """
+        pairs = [
+            (t, v) for t, v in zip(time_data, values)
+            if v is not None and not (isinstance(v, float) and np.isnan(v))
+        ]
+        if not pairs:
+            raise ValueError("Нет валидных измерений для расчёта пика кожной реакции")
+
+        peak_value = max(v for _, v in pairs)
+        peak_day = next(t for t, v in pairs if v == peak_value)
+        return peak_value, peak_day
+
+    @staticmethod
+    def calculate_skin_reaction_duration_above_threshold(
+            time_data: List[float], values: List[float], threshold: float) -> Tuple[float, bool]:
+        """
+        Суммарная продолжительность (сут), в течение которой кривая >= threshold. Учитывает ВСЕ
+        эпизоды превышения порога за период наблюдения (не только первый), с линейной
+        интерполяцией моментов входа/выхода между соседними измерениями.
+
+        Returns:
+            Tuple[float, bool]: (duration_days, censored). censored=True, если на последней
+                точке наблюдения кривая всё ещё >= threshold (эпизод не завершён).
+        """
+        pairs = [
+            (t, v) for t, v in zip(time_data, values)
+            if v is not None and not (isinstance(v, float) and np.isnan(v))
+        ]
+        if not pairs:
+            return 0.0, False
+        pairs.sort(key=lambda tv: tv[0])
+
+        total_duration = 0.0
+        in_episode = pairs[0][1] >= threshold
+        episode_start = pairs[0][0] if in_episode else None
+
+        for i in range(1, len(pairs)):
+            t_prev, v_prev = pairs[i - 1]
+            t_curr, v_curr = pairs[i]
+
+            if v_prev < threshold <= v_curr:
+                entry_t = t_prev + (threshold - v_prev) / (v_curr - v_prev) * (t_curr - t_prev)
+                episode_start = entry_t
+                in_episode = True
+            elif v_prev >= threshold > v_curr:
+                exit_t = t_prev + (threshold - v_prev) / (v_curr - v_prev) * (t_curr - t_prev)
+                total_duration += exit_t - episode_start
+                in_episode = False
+                episode_start = None
+
+        censored = in_episode
+        if in_episode:
+            total_duration += pairs[-1][0] - episode_start
+
+        return total_duration, censored
+
+    @staticmethod
+    def calculate_skin_reaction_time_to_normalization(
+            time_data: List[float], values: List[float], normalization_grade: float = 1.0) -> Tuple[float, bool]:
+        """
+        День устойчивой нормализации кожной реакции (возврат к normalization_grade и ниже,
+        БЕЗ последующего повторного превышения до конца наблюдения).
+
+        В отличие от calculate_tgd_threshold_day (первое пересечение — необратимая потеря
+        контроля над опухолью), здесь ищется ПОСЛЕДНЕЕ пересечение сверху вниз: кратковременный
+        провал балла в середине пика не должен ошибочно засчитываться как нормализация, пока
+        реакция фактически продолжается.
+
+        Returns:
+            Tuple[float, bool]: (day, censored). censored=True, если кривая так и не опустилась
+                устойчиво до normalization_grade к концу наблюдения; day в этом случае — последний
+                наблюдённый день (нижняя граница).
+
+        Raises:
+            ValueError: если нет ни одного валидного измерения.
+        """
+        pairs = [
+            (t, v) for t, v in zip(time_data, values)
+            if v is not None and not (isinstance(v, float) and np.isnan(v))
+        ]
+        if not pairs:
+            raise ValueError("Нет валидных измерений для расчёта времени нормализации")
+        pairs.sort(key=lambda tv: tv[0])
+
+        if pairs[-1][1] > normalization_grade:
+            return pairs[-1][0], True
+
+        for i in range(len(pairs) - 1, 0, -1):
+            t_prev, v_prev = pairs[i - 1]
+            t_curr, v_curr = pairs[i]
+            if v_prev > normalization_grade >= v_curr:
+                t_cross = t_prev + (normalization_grade - v_prev) / (v_curr - v_prev) * (t_curr - t_prev)
+                return t_cross, False
+
+        # Кривая ни разу не поднималась выше порога — реакция отсутствовала с самого начала.
+        return pairs[0][0], False
+
+    @staticmethod
+    def calculate_tgd_threshold_day(time_data: List[float], volumes: List[float], k: float = 1.5) -> Tuple[float, bool]:
+        """
+        Задержка роста опухоли (TGD): находит первый момент времени, когда объём впервые
+        достигает k * V(0) (линейная интерполяция между соседними точками наблюдения).
+
+        Сообщается ПЕРВОЕ пересечение порога, даже если кривая немонотонна (опухоль
+        регрессировала, затем повторно достигла порога) — это стандартное определение TGD
+        в радиобиологии: момент потери контроля над опухолью, а не последующая динамика.
+
+        Args:
+            time_data (List[float]): Временные точки наблюдения.
+            volumes (List[float]): Объёмы опухоли в эти моменты (может содержать NaN).
+            k (float): Кратность исходного объёма, определяющая порог. По умолчанию 1.5.
+
+        Returns:
+            Tuple[float, bool]: (день_пересечения, censored). censored=True означает, что
+                порог не достигнут в пределах наблюдения — возвращённый день является
+                нижней границей (последний наблюдённый день).
+
+        Raises:
+            ValueError: если нет ни одного валидного (не-NaN) измерения объёма.
+        """
+        pairs = [
+            (t, v) for t, v in zip(time_data, volumes)
+            if v is not None and not (isinstance(v, float) and np.isnan(v))
+        ]
+        if not pairs:
+            raise ValueError("Нет валидных измерений объёма для расчёта TGD")
+        pairs.sort(key=lambda tv: tv[0])
+
+        t0, v0 = pairs[0]
+        threshold = k * v0
+
+        if v0 >= threshold:
+            # k > 1, поэтому это достижимо лишь при v0 <= 0 (патологические данные) —
+            # возвращаем без деления на ноль вместо падения.
+            return t0, False
+
+        for i in range(1, len(pairs)):
+            t_prev, v_prev = pairs[i - 1]
+            t_curr, v_curr = pairs[i]
+            if v_curr >= threshold:
+                t_cross = t_prev + (threshold - v_prev) / (v_curr - v_prev) * (t_curr - t_prev)
+                return t_cross, False
+
+        return pairs[-1][0], True
 
     @staticmethod
     def trim_data_to_timepoint(time_data, values, last_timepoint):
@@ -640,8 +901,9 @@ class SupportingFunctions:
         # Задаем фиксированный отступ для аннотаций (например, 2% от диапазона Y)
         fixed_offset = y_range * offset_ratio
 
-        # Собираем все аннотации перед их нанесением
-        annotations = []
+        # Сначала собираем p-значения ВСЕХ попарных поточечных сравнений этого вызова
+        # (одно "семейство" тестов для поправки Холма), и только потом решаем, что значимо.
+        collected = []
         for i in range(num_experiments):
             for j in range(i + 1, num_experiments):
                 group1 = all_reactions[i]['reactions']
@@ -654,19 +916,33 @@ class SupportingFunctions:
                     if len(values1) > 0 and len(values2) > 0:
                         # Выполняем тест Манна-Уитни
                         _, p_value = mannwhitneyu(values1, values2, alternative='two-sided')
+                        collected.append((time_point, p_value))
 
-                        # Определяем уровень значимости
-                        annotation = '*' if p_value < 0.05 else ''
+        # Поправка Холма включается/выключается чекбоксом "Поправка Холма" в интерфейсе.
+        if graph_manager.is_holm_correction_enabled():
+            holm_significant = SupportingFunctions.holm_correction([p for _, p in collected])
+        else:
+            holm_significant = [False] * len(collected)
 
-                        if annotation:
-                            # Получаем верхнюю границу для текущей временной точки
-                            upper_bound = upper_bounds_by_time[time_point]
+        # Собираем все аннотации перед их нанесением
+        annotations = []
+        for (time_point, p_value), is_holm_significant in zip(collected, holm_significant):
+            if is_holm_significant:
+                annotation = '*'  # Значимо после поправки Холма
+            elif p_value < 0.05:
+                annotation = '(*)' if graph_manager.is_holm_correction_enabled() else '*'
+            else:
+                annotation = ''
 
-                            # Устанавливаем y-координату для аннотации с фиксированным отступом
-                            y_annotation = upper_bound + fixed_offset
+            if annotation:
+                # Получаем верхнюю границу для текущей временной точки
+                upper_bound = upper_bounds_by_time[time_point]
 
-                            # Сохраняем аннотацию для последующего нанесения
-                            annotations.append((time_point, y_annotation, annotation))
+                # Устанавливаем y-координату для аннотации с фиксированным отступом
+                y_annotation = upper_bound + fixed_offset
+
+                # Сохраняем аннотацию для последующего нанесения
+                annotations.append((time_point, y_annotation, annotation))
 
         # Если есть аннотации, обновляем пределы оси Y, чтобы вместить все аннотации
         if annotations:

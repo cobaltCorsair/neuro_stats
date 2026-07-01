@@ -6,30 +6,41 @@ from typing import Union, List
 import numpy as np
 import os
 
-# Установка современного стиля seaborn
 palette = 'Spectral'
-sns.set_theme(style="ticks", palette=palette)
 
-# Настройка параметров matplotlib для более современного вида
-plt.rcParams.update({
-    'figure.figsize': (16, 8),
-    'axes.titlesize': 20,
-    'axes.labelsize': 16,
-    'legend.fontsize': 14,
-    'legend.title_fontsize': 16,
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
-    'lines.linewidth': 2.5,
-    'lines.markersize': 10,
-    'font.family': 'sans-serif',
-    'font.sans-serif': ['Arial'],
-    'grid.color': '#e0e0e0',
-    'grid.linestyle': '--',
-    'grid.linewidth': 0.8,
-    'savefig.dpi': 300,
-    'savefig.format': 'png',
-    'savefig.bbox': 'tight',
-})
+
+def _apply_standalone_plot_style():
+    """
+    Стиль для САМОСТОЯТЕЛЬНОГО запуска этого файла как скрипта (см. main()/if __name__ == '__main__').
+
+    ВАЖНО: не вызывать на уровне модуля — sns.set_theme()/plt.rcParams.update() меняют
+    ГЛОБАЛЬНОЕ состояние matplotlib (шрифты, цветовой цикл) для всего процесса, включая
+    основной GUI-комплекс. Если вызвать это при импорте файла (а его импортирует
+    SupportingFunctions.aggregate_rtog_grades для перевода в шкалу RTOG), все графики
+    приложения после первого использования RTOG необратимо переключаются на шрифт Arial и
+    палитру Spectral вместо стиля, заданного MatplotlibConfigurator — то есть стили "ломаются"
+    для вообще всех последующих графиков, а не только для тех, где включён RTOG.
+    """
+    sns.set_theme(style="ticks", palette=palette)
+    plt.rcParams.update({
+        'figure.figsize': (16, 8),
+        'axes.titlesize': 20,
+        'axes.labelsize': 16,
+        'legend.fontsize': 14,
+        'legend.title_fontsize': 16,
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        'lines.linewidth': 2.5,
+        'lines.markersize': 10,
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial'],
+        'grid.color': '#e0e0e0',
+        'grid.linestyle': '--',
+        'grid.linewidth': 0.8,
+        'savefig.dpi': 300,
+        'savefig.format': 'png',
+        'savefig.bbox': 'tight',
+    })
 
 # Данные для коррекции по дням
 day_corrections = {
@@ -389,6 +400,8 @@ class CombinedAnalyzer(SkinReactionAnalyzer):
 
 
 def main(file_path: str, save_plots: bool = False, save_dir: str = "plots"):
+    _apply_standalone_plot_style()
+
     # Загрузка данных
     data = pd.read_excel(file_path)
     data.columns = data.iloc[0]  # Установка имен колонок из первой строки

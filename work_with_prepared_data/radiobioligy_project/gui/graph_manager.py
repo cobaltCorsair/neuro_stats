@@ -3,6 +3,36 @@
 visualizers = []
 current_legend_position = 'best'  # По умолчанию
 rat_labels = []
+holm_correction_enabled = True  # Поправка Холма на множественность поточечных сравнений
+show_date_in_legend = True  # Показывать "Дата: ..." в подписях экспериментов
+
+
+def set_holm_correction_enabled(enabled: bool):
+    global holm_correction_enabled
+    holm_correction_enabled = enabled
+
+
+def is_holm_correction_enabled() -> bool:
+    return holm_correction_enabled
+
+
+def set_show_date_in_legend(enabled: bool):
+    global show_date_in_legend
+    show_date_in_legend = enabled
+
+
+def is_show_date_in_legend() -> bool:
+    return show_date_in_legend
+
+
+def build_significance_test_legend_label(test_name: str) -> str:
+    """
+    Текст для отдельной легенды на графике, поясняющей, какой критерий значимости
+    использован и применена ли поправка Холма — без этого на графике видны только
+    маркеры '*'/'(*)' без объяснения, что они означают.
+    """
+    holm_status = "с поправкой Холма" if holm_correction_enabled else "без поправки Холма"
+    return f"{test_name}, {holm_status}"
 
 
 def register_visualizer(visualizer):

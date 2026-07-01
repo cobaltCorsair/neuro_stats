@@ -23,7 +23,15 @@ class AucLegendPositionTests(unittest.TestCase):
         plt.close("all")
         graph_manager.update_legend_position("best")
 
-    def test_tumor_auc_comparison_uses_selected_legend_position(self) -> None:
+    def test_tumor_auc_comparison_always_places_legend_below_chart(self) -> None:
+        """
+        Подписи экспериментов на AUC-графике длинные и при расположении внутри осей
+        (включая любое значение из comboBox_3) налезают на столбцы, поэтому это
+        расположение теперь игнорируется для позиционирования — легенда всегда
+        выносится под график (upper center + bbox_to_anchor с отрицательным y).
+        comboBox_3 / graph_manager по-прежнему решает только "показывать легенду
+        вообще или нет" (см. test_none_position_hides_legend ниже).
+        """
         data_root = PROJECT_ROOT / "work_with_prepared_data" / "datas" / "control"
         file_paths = [
             str(data_root / "16.03.2023_n_22.xlsx"),
@@ -36,7 +44,21 @@ class AucLegendPositionTests(unittest.TestCase):
 
         legend = plt.gca().get_legend()
         self.assertIsNotNone(legend)
-        self.assertEqual(6, legend._loc)
+        self.assertEqual(9, legend._loc)  # 9 == "upper center"
+        self.assertLess(legend._bbox_to_anchor._bbox.y0, 0)  # ниже осей, не внутри них
+
+    def test_none_position_still_hides_auc_legend(self) -> None:
+        data_root = PROJECT_ROOT / "work_with_prepared_data" / "datas" / "control"
+        file_paths = [
+            str(data_root / "16.03.2023_n_22.xlsx"),
+            str(data_root / "02.02.2023_n_12.xlsx"),
+            str(data_root / "02.02.2023_n_18.xlsx"),
+        ]
+
+        graph_manager.update_legend_position(None)
+        TumorDataVisualizer.plot_auc_comparison(file_paths)
+
+        self.assertIsNone(plt.gca().get_legend())
 
     def test_separate_legend_keeps_shapiro_off_plot_but_extractable(self) -> None:
         data_root = PROJECT_ROOT / "work_with_prepared_data" / "datas" / "control"

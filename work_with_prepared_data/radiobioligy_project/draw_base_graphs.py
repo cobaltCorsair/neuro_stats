@@ -5,16 +5,14 @@ from typing import List
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
-import math
 import pandas as pd
 import re
 
-from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator, PLOT_FONT_FAMILY
+from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator, PLOT_FONT_FAMILY, add_legend_below_chart
 from stats_methods.support_stats_methods import SupportingFunctions, ExtractOutliers
 from data_processing.excel_data_processor import process_tumor_data_excel
 from data_processing.data_processing import TumorDataProcessor
 from utils.visualizer import GraphVisualizer
-from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -383,33 +381,58 @@ class TumorDataVisualizer:
 
             # --- Barplot по числовой оси X (doses) ---
             plt.figure(figsize=(12, 7))
-            bar_width = 2.5 if len(unique_doses) < 10 else 0.8
+            # Ширина столбца не должна превышать реальный минимальный зазор между соседними
+            # дозами — иначе при близко расположенных дозах столбцы налезают друг на друга
+            # (фиксированная ширина 2.5 годится только если дозы расставлены достаточно широко).
+            if len(unique_doses) >= 2:
+                min_dose_gap = min(b - a for a, b in zip(unique_doses, unique_doses[1:]))
+                bar_width = min(2.5, min_dose_gap * 0.6)
+            else:
+                bar_width = 2.5 if len(unique_doses) < 10 else 0.8
             value_label_fontsize = plt.rcParams.get("legend.fontsize", 16)
             legend_fontsize = 18
 
             # Паттерны для разделения файлов в одной дозе
             hatches = ['', '///', '\\\\\\', '|||', '---', '+++', 'xxx', '...', 'ooo']
 
+            def _safe_sem(sem):
+                """
+                SEM не определён (NaN) для групп из одного животного (std с ddof=1 делит на
+                n-1=0). matplotlib молча НЕ рисует error bar и НЕ рисует текст с NaN-координатой
+                (без исключения) — из-за этого у такого столбца пропадали и доверительный
+                интервал, и сама подпись AUC. 0.0 рисуется как отсутствие интервала, но не
+                ломает расчёт позиции подписи.
+                """
+                return 0.0 if (sem is None or np.isnan(sem)) else sem
+
             # Рисуем столбцы для каждой дозы
             bars = []
             dose_positions = []
+            # Автомасштабирование оси Y учитывает только столбцы и error bar, но не текст
+            # поверх них (plt.text не влияет на dataLim) — если подпись/символ значимости
+            # оказывается выше автоматического верхнего предела, её обрезает по границе
+            # области построения. Запоминаем максимальную точку, где рисуется текст, и
+            # в конце принудительно расширяем ylim, если авто-предела не хватает.
+            max_annotation_top = 0.0
             for dose in unique_doses:
                 files_in_dose = dose_groups[dose]
 
                 if len(files_in_dose) == 1:
                     # Один файл - простой столбец
                     data = files_in_dose[0]
-                    bar = plt.bar(dose, data['auc_mean'], yerr=data['auc_sem'],
+                    auc_sem = _safe_sem(data['auc_sem'])
+                    bar = plt.bar(dose, data['auc_mean'], yerr=(auc_sem or None),
                                  width=bar_width, color=data['color'],
                                  edgecolor="black", zorder=2, capsize=8)
 
                     # Подпись AUC НАД столбцом (над error bar)
-                    label_y = data['auc_mean'] + data['auc_sem'] + 0.02 * data['auc_mean']
+                    label_y = data['auc_mean'] + auc_sem + 0.02 * data['auc_mean']
                     plt.text(dose, label_y, f"{data['auc_mean']:.2f}",
                             ha='center', va='bottom', fontsize=value_label_fontsize,
                             fontweight='bold', color='black')
+                    max_annotation_top = max(max_annotation_top, label_y)
 
-                    bars.append((bar, dose, data['auc_mean'], data['auc_sem']))
+                    bars.append((bar, dose, data['auc_mean'], auc_sem))
                 else:
                     # Несколько файлов - отдельные столбцы с промежутками (stacked с gap)
                     # Находим максимальный AUC для расчета промежутка
@@ -422,22 +445,24 @@ class TumorDataVisualizer:
                     for idx, data in enumerate(files_in_dose):
                         hatch = hatches[idx % len(hatches)]
                         segment_height = data['auc_mean']
+                        auc_sem = _safe_sem(data['auc_sem'])
 
                         # Рисуем столбец с error bar
                         plt.bar(dose, segment_height, bottom=bottom,
                                width=bar_width, color=data['color'],
                                hatch=hatch, edgecolor="black", linewidth=1.5,
-                               yerr=data['auc_sem'], capsize=8, zorder=2,
+                               yerr=(auc_sem or None), capsize=8, zorder=2,
                                error_kw={'ecolor': 'black', 'linewidth': 2, 'zorder': 3})
 
                         # Подпись AUC НАД столбцом (над error bar)
-                        label_y = bottom + segment_height + data['auc_sem'] + 0.02 * max_auc_in_group
+                        label_y = bottom + segment_height + auc_sem + 0.02 * max_auc_in_group
                         plt.text(dose, label_y, f"{data['auc_mean']:.2f}",
                                 ha='center', va='bottom', fontsize=value_label_fontsize,
                                 fontweight='bold', color='black', zorder=10)
+                        max_annotation_top = max(max_annotation_top, label_y)
 
                         # Обновляем максимальную высоту для Mann-Whitney
-                        current_top = bottom + segment_height + data['auc_sem']
+                        current_top = bottom + segment_height + auc_sem
                         if current_top > max_height_with_error:
                             max_height_with_error = current_top
 
@@ -475,10 +500,9 @@ class TumorDataVisualizer:
                 legend.set_visible(False)
                 plt.gca().add_artist(legend)
             else:
-                legend_position = graph_manager.get_current_legend_position()
-                if legend_position is not None:
-                    legend = plt.legend(handles=legend_patches, loc=legend_position,
-                                   ncol=1, fontsize=legend_fontsize, handletextpad=0.8)
+                # Подписи экспериментов длинные, при расположении внутри осей ("best" и т.п.)
+                # легенда налезает на столбцы — поэтому всегда выносится под график.
+                add_legend_below_chart(legend_patches, fontsize=legend_fontsize)
 
 
             # Критерий Манна-Уитни
@@ -525,6 +549,7 @@ class TumorDataVisualizer:
                                     plt.text(dose, y_position, symbols_text,
                                            ha='center', va='bottom',
                                            fontsize=20, color='black', fontweight='bold')
+                                    max_annotation_top = max(max_annotation_top, y_position)
                                     break
 
                 # Если используется старый формат (один контроль)
@@ -547,6 +572,7 @@ class TumorDataVisualizer:
                                             plt.text(dose, y_position, '*',
                                                    ha='center', va='bottom',
                                                    fontsize=20, color='black', fontweight='bold')
+                                            max_annotation_top = max(max_annotation_top, y_position)
                                             break
                             except Exception as e:
                                 print(f"Ошибка при выполнении теста для файла {file_idx}: {e}")
@@ -608,6 +634,14 @@ class TumorDataVisualizer:
                             bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
                                       edgecolor='lightgray', alpha=0.9),
                         )
+
+            # Расширяем верхнюю границу оси, если подписи AUC/символы значимости вышли
+            # выше автомасштаба (тот учитывает только столбцы и error bar, но не текст).
+            if max_annotation_top > 0:
+                current_top = plt.ylim()[1]
+                required_top = max_annotation_top * 1.12
+                if required_top > current_top:
+                    plt.ylim(top=required_top)
 
             if show_separate_legend:
                 plt.tight_layout()  # Легенда отдельно - не нужно дополнительное место

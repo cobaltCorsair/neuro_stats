@@ -6,9 +6,8 @@ from typing import List
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
-import math
 import pandas as pd
-from utils.plotting_helpers import format_experiment_params, MatplotlibConfigurator, custom_fill_between, PLOT_FONT_FAMILY
+from utils.plotting_helpers import format_experiment_params, MatplotlibConfigurator, custom_fill_between, PLOT_FONT_FAMILY, add_legend_below_chart
 from stats_methods.support_stats_methods import SupportingFunctions
 from data_processing.excel_data_processor import process_skin_data_excel
 from data_processing.data_processing import SkinReactionsDataProcessor
@@ -19,6 +18,12 @@ from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 plt.fill_between = custom_fill_between
 configurator = MatplotlibConfigurator()
 configurator.apply_custom_styles()
+
+# Шкала RTOG дискретна и ограничена 0-4. Если зафиксировать plt.ylim() ровно на (0, 4), точки
+# и засечки доверительного интервала, лежащие ровно на границе (а степень 4 — частый случай,
+# это максимум шкалы), визуально обрезаются рамкой осей matplotlib. Небольшой отступ убирает
+# этот артефакт, не меняя смысла шкалы.
+RTOG_YLIM = (-0.15, 4.15)
 
 class SkinReactionsVisualizer:
     def __init__(self, file_path: str):
@@ -89,7 +94,7 @@ class SkinReactionsVisualizer:
             drawgraph.add_plot(clean_time_data, clean_reactions, {}, label)
         drawgraph.finalize_figure(self.file_path, 'Метки крыс', 2, 18)
 
-    def plot_mean_skin_reactions(self):
+    def plot_mean_skin_reactions(self, show_rtog: bool = False):
         """
             Визуализация средних кожных реакций всех крыс на одном графике.
 
@@ -101,7 +106,9 @@ class SkinReactionsVisualizer:
             и может быть использован для сравнения с другими экспериментальными группами или условиями.
 
             Args:
-                Не принимает аргументов.
+                show_rtog (bool): Если True, вместо сырого балла строится степень RTOG
+                    (медиана по животным) — отдельный график на шкале 0-4, без наложения на
+                    сырые баллы (двойная ось только запутывает сравнение).
 
             Returns:
                 Ничего не возвращает. Результатом выполнения является отображение графика со средними кожными реакциями.
@@ -110,26 +117,44 @@ class SkinReactionsVisualizer:
                 visualizer = SkinReactionsVisualizer("путь/к/файлу.xlsx")
                 visualizer.plot_mean_skin_reactions()  # Визуализация средних кожных реакций
             """
+        y_label = "Степень RTOG (медиана по животным)" if show_rtog else "Средние кожные реакции, абс. ед."
         drawgraph = GraphVisualizer(
             f"Средние кожные реакции, Параметры эксперимента: {format_experiment_params(self.experiment_params)}",
             "Время, сут.",
-            "Средние кожные реакции, абс. ед.",
+            y_label,
             figsize=(12, 7)
         )
         drawgraph.auc_scale_factor = 100
         drawgraph.setup_figure()
-        # Получение средних кожных реакций и их статистических характеристик
-        mean_reactions, std_dev, error_margin = self.data_processor.get_mean_skin_reactions()
 
         # Проверяем, нужно ли вычислять AUC
         calculate_auc = getattr(self, 'use_AUC', False)
 
-        # Добавление данных на график
-        drawgraph.add_plot(self.time_data, mean_reactions, self.experiment_params, "", None, calculate_auc=calculate_auc)
+        if show_rtog:
+            rtog_grades = SupportingFunctions.aggregate_rtog_grades(self.skin_reactions)
+            drawgraph.add_plot(self.time_data, rtog_grades, self.experiment_params, "", None,
+                               calculate_auc=calculate_auc)
+            # Межквартильный интервал (а не SEM — RTOG порядковая шкала, агрегированная медианой)
+            q1, q3 = SupportingFunctions.calculate_rtog_iqr(self.skin_reactions)
+            primary_color = drawgraph.lines[-1].get_color()
+            plt.fill_between(self.time_data, q1, q3, color=primary_color, alpha=0.2)
+            plt.ylim(*RTOG_YLIM)
+        else:
+            # Получение средних кожных реакций и их статистических характеристик
+            mean_reactions, std_dev, error_margin = self.data_processor.get_mean_skin_reactions()
+            drawgraph.add_plot(self.time_data, mean_reactions, self.experiment_params, "", None,
+                               calculate_auc=calculate_auc)
+
         drawgraph.finalize_figure('', '', 1, 18)
+        if show_rtog:
+            # finalize_figure -> save_plot() безусловно делает plt.ylim(bottom=0), сбрасывая
+            # нижний отступ RTOG_YLIM (актуален, т.к. степень 0 — частое начальное значение).
+            # Переустанавливаем уже ПОСЛЕ finalize_figure, не трогая save_plot для остальных
+            # графиков, где bottom=0 — корректное и желаемое поведение.
+            plt.ylim(*RTOG_YLIM)
 
     @staticmethod
-    def plot_multiple_experiments_from_visualizers(visualizers: List['SkinReactionsVisualizer'], use_AUC: bool = False, apply_statistical_test: bool = False):
+    def plot_multiple_experiments_from_visualizers(visualizers: List['SkinReactionsVisualizer'], use_AUC: bool = False, apply_statistical_test: bool = False, show_rtog: bool = False):
         """
         Сравнение кожных реакций между экспериментами используя уже созданные и модифицированные визуализаторы.
         Этот метод позволяет использовать визуализаторы с уже применёнными исключениями крыс.
@@ -138,12 +163,17 @@ class SkinReactionsVisualizer:
             visualizers (List[SkinReactionsVisualizer]): Список визуализаторов (могут быть модифицированы).
             use_AUC (bool): Если True, вычисляется и отображается площадь под кривой (AUC).
             apply_statistical_test (bool): Флаг для выполнения теста Манна-Уитни.
+            show_rtog (bool): Если True, строится не сырой балл, а степень RTOG (медиана по
+                животным) на шкале 0-4 — вместо наложения на сырые баллы, чтобы не путать
+                сравнение двойной осью. Статистика Манна-Уитни при этом всё равно считается
+                по сырым баллам (это первичная, более чувствительная шкала).
         """
         # Инициализация объекта GraphVisualizer
+        y_label = "Степень RTOG (медиана по животным)" if show_rtog else "Кожные реакции, усл. ед."
         drawgraph = GraphVisualizer(
             "Сравнение кожных реакций между экспериментами",
             "Время, сут.",
-            "Кожные реакции, усл. ед.",
+            y_label,
             figsize=(12, 7)
         )
         drawgraph.auc_scale_factor = 100
@@ -170,28 +200,38 @@ class SkinReactionsVisualizer:
             time_data = _to_float_list(vis.time_data)
             individual = [_to_float_list(row) for row in vis.skin_reactions]
 
-            # среднее/стд/SEM ПОВЕРХ родной сетки времени
+            # среднее/стд/SEM ПОВЕРХ родной сетки времени (нужны для теста Манна-Уитни ниже
+            # независимо от show_rtog — статистика всегда считается по сырым баллам)
             reactions_arr = np.array(individual, dtype=float)
             mean_reaction = np.nanmean(reactions_arr, axis=0)
             std_reaction = np.nanstd(reactions_arr, axis=0)
             n_at_risk = np.sum(~np.isnan(reactions_arr), axis=0)
             sem_reaction = std_reaction / np.sqrt(n_at_risk)
 
-            # error bars через функцию погрешности (n — число животных, давших измерение в
-            # этой точке, а не общее число животных — иначе SEM занижается при выбывании)
-            error_margin = [SupportingFunctions.calculate_error_margin(s, n) for s, n in zip(std_reaction, n_at_risk)]
-
             label_text = format_experiment_params(vis.experiment_params)
 
-            # рисуем на СВОИХ днях
-            drawgraph.add_plot(
-                time_data,
-                mean_reaction.tolist(),
-                params={},
-                label=label_text,
-                error_margin=error_margin,
-                calculate_auc=use_AUC
-            )
+            if show_rtog:
+                rtog_grades = SupportingFunctions.aggregate_rtog_grades(vis.skin_reactions)
+                # Доверительный интервал в виде межквартильного размаха [Q1, Q3] — а не SEM,
+                # который предполагает нормальное распределение непрерывной величины, а не
+                # порядковую шкалу 0-4, агрегированную медианой.
+                drawgraph.add_plot(
+                    time_data, rtog_grades, params={}, label=label_text,
+                    error_margin=None, calculate_auc=use_AUC
+                )
+                q1, q3 = SupportingFunctions.calculate_rtog_iqr(vis.skin_reactions)
+                primary_color = drawgraph.lines[-1].get_color()
+                plt.fill_between(time_data, q1, q3, color=primary_color, alpha=0.2)
+            else:
+                # error bars через функцию погрешности (n — число животных, давших измерение
+                # в этой точке, а не общее число животных — иначе SEM занижается при выбывании)
+                error_margin = [
+                    SupportingFunctions.calculate_error_margin(s, n) for s, n in zip(std_reaction, n_at_risk)
+                ]
+                drawgraph.add_plot(
+                    time_data, mean_reaction.tolist(), params={}, label=label_text,
+                    error_margin=error_margin, calculate_auc=use_AUC
+                )
 
             all_experiments.append({
                 "time_data": time_data,
@@ -204,6 +244,8 @@ class SkinReactionsVisualizer:
 
         # авто-границы осей с учётом всех X
         drawgraph.update_axes_limits(x_data_lists)
+        if show_rtog:
+            plt.ylim(*RTOG_YLIM)
 
         # опциональная статистика Манна–Уитни
         if apply_statistical_test and len(all_experiments) >= 2:
@@ -243,12 +285,23 @@ class SkinReactionsVisualizer:
                 annotation_fontsize=18
             )
 
+            # Отдельная легенда на графике (не подпись под ним), поясняющая, какой критерий
+            # использован и применена ли поправка Холма — иначе '*'/'(*)' ничего не объясняют.
+            drawgraph.add_legend(
+                graph_manager.build_significance_test_legend_label("Манна-Уитни"),
+                title="Критерий значимости", loc="lower right", display_marker=False
+            )
+
         # финализация
         base = "skin_reactions_comparison.png"
         drawgraph.finalize_figure(base, ncol=1, legend_fontsize=18)
+        if show_rtog:
+            # save_plot() внутри finalize_figure сбрасывает нижнюю границу на 0 — см.
+            # подробное обоснование в plot_mean_skin_reactions.
+            plt.ylim(*RTOG_YLIM)
 
     @staticmethod
-    def plot_multiple_experiments(file_paths: List[str], use_AUC: bool = False, apply_statistical_test: bool = False):
+    def plot_multiple_experiments(file_paths: List[str], use_AUC: bool = False, apply_statistical_test: bool = False, show_rtog: bool = False):
         """
         Сравнение кожных реакций между экспериментами без общей сетки времени.
         Каждая кривая рисуется на СВОИХ временных точках. При apply_statistical_test=True
@@ -258,12 +311,15 @@ class SkinReactionsVisualizer:
             use_AUC (bool): Если True, вычисляется и отображается площадь под кривой (AUC).
             apply_statistical_test (bool): Флаг для выполнения теста Манна-Уитни.
                                            Если True, тест выполняется и значимые различия отображаются на графике.
+            show_rtog (bool): Если True, строится не сырой балл, а степень RTOG (медиана по
+                животным) на шкале 0-4, вместо наложения на сырые баллы.
         """
         # Инициализация объекта GraphVisualizer с согласованным стилем
+        y_label = "Степень RTOG (медиана по животным)" if show_rtog else "Кожные реакции, усл. ед."
         drawgraph = GraphVisualizer(
             "Сравнение кожных реакций между экспериментами",
             "Время, сут.",
-            "Кожные реакции, усл. ед.",
+            y_label,
             figsize=(12, 7)
         )
         drawgraph.auc_scale_factor = 100
@@ -292,28 +348,35 @@ class SkinReactionsVisualizer:
             time_data = _to_float_list(vis.time_data)
             individual = [_to_float_list(row) for row in vis.skin_reactions]
 
-            # среднее/стд/SEM ПОВЕРХ родной сетки времени
+            # среднее/стд/SEM ПОВЕРХ родной сетки времени (нужны для теста Манна-Уитни ниже
+            # независимо от show_rtog — статистика всегда считается по сырым баллам)
             reactions_arr = np.array(individual, dtype=float)
             mean_reaction = np.nanmean(reactions_arr, axis=0)
             std_reaction = np.nanstd(reactions_arr, axis=0)
             n_at_risk = np.sum(~np.isnan(reactions_arr), axis=0)
             sem_reaction = std_reaction / np.sqrt(n_at_risk)
 
-            # error bars через твою функцию погрешности (n — число животных, давших измерение
-            # в этой точке, а не общее число животных — иначе SEM занижается при выбывании)
-            error_margin = [SupportingFunctions.calculate_error_margin(s, n) for s, n in zip(std_reaction, n_at_risk)]
-
             label_text = format_experiment_params(vis.experiment_params)
 
-            # рисуем на СВОИХ днях
-            drawgraph.add_plot(
-                time_data,
-                mean_reaction.tolist(),
-                params={},
-                label=label_text,
-                error_margin=error_margin,
-                calculate_auc=use_AUC
-            )
+            if show_rtog:
+                rtog_grades = SupportingFunctions.aggregate_rtog_grades(vis.skin_reactions)
+                drawgraph.add_plot(
+                    time_data, rtog_grades, params={}, label=label_text,
+                    error_margin=None, calculate_auc=use_AUC
+                )
+                q1, q3 = SupportingFunctions.calculate_rtog_iqr(vis.skin_reactions)
+                primary_color = drawgraph.lines[-1].get_color()
+                plt.fill_between(time_data, q1, q3, color=primary_color, alpha=0.2)
+            else:
+                # error bars через функцию погрешности (n — число животных, давших измерение
+                # в этой точке, а не общее число животных — иначе SEM занижается при выбывании)
+                error_margin = [
+                    SupportingFunctions.calculate_error_margin(s, n) for s, n in zip(std_reaction, n_at_risk)
+                ]
+                drawgraph.add_plot(
+                    time_data, mean_reaction.tolist(), params={}, label=label_text,
+                    error_margin=error_margin, calculate_auc=use_AUC
+                )
 
             all_experiments.append({
                 "time_data": time_data,
@@ -326,6 +389,8 @@ class SkinReactionsVisualizer:
 
         # авто-границы осей с учётом всех X
         drawgraph.update_axes_limits(x_data_lists)
+        if show_rtog:
+            plt.ylim(*RTOG_YLIM)
 
         # ----- опциональная статистика Манна–Уитни -----
         if apply_statistical_test and len(all_experiments) >= 2:
@@ -371,9 +436,18 @@ class SkinReactionsVisualizer:
                 annotation_fontsize=18
             )
 
+            drawgraph.add_legend(
+                graph_manager.build_significance_test_legend_label("Манна-Уитни"),
+                title="Критерий значимости", loc="lower right", display_marker=False
+            )
+
         # финализация
         base = '_'.join([os.path.splitext(os.path.basename(fp))[0] for fp in file_paths]) + "_comparison.png"
         drawgraph.finalize_figure(base, ncol=1, legend_fontsize=18)
+        if show_rtog:
+            # save_plot() внутри finalize_figure сбрасывает нижнюю границу на 0 — см.
+            # подробное обоснование в plot_mean_skin_reactions.
+            plt.ylim(*RTOG_YLIM)
 
     @staticmethod
     def plot_all_individual_curves_from_visualizers(visualizers: List['SkinReactionsVisualizer']):
@@ -528,14 +602,15 @@ class SkinReactionsVisualizer:
                 plt.text(bar.get_x() + bar.get_width() / 2, y_text, f"{auc / 100:.1f}",
                          ha='center', va='top', fontsize=12, fontweight='bold', color='black')
 
-            # Легенда
+            # Легенда — подписи экспериментов длинные, при расположении внутри осей
+            # ("best" и т.п.) легенда налезает на столбцы, поэтому всегда выносится под график.
             legend_patches = [mpatches.Patch(color=col, label=lab)
                               for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
-            ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
-            legend_position = graph_manager.get_current_legend_position()
-            if legend_position is not None:
-                plt.legend(handles=legend_patches, loc=legend_position,
-                           ncol=ncol, fontsize=12, handletextpad=0.5, columnspacing=2.5)
+            add_legend_below_chart(legend_patches, fontsize=12, handletextpad=0.5, columnspacing=2.5)
+
+            # Автомасштаб не учитывает текст поверх столбцов — если символ значимости
+            # окажется выше авто-предела оси, его обрежет по границе области построения.
+            max_annotation_top = 0.0
 
             # Критерий Манна-Уитни
             if perform_stat_test and len(all_individual_aucs) > 1:
@@ -577,6 +652,7 @@ class SkinReactionsVisualizer:
                             plt.text(bar.get_x() + bar.get_width()/2, y_position,
                                    symbols_text, ha='center', va='bottom',
                                    fontsize=20, color='black', fontweight='bold')
+                            max_annotation_top = max(max_annotation_top, y_position)
 
                 # Если используется старый формат (один контроль)
                 elif control_index < len(all_individual_aucs):
@@ -594,6 +670,7 @@ class SkinReactionsVisualizer:
                                     plt.text(bar.get_x() + bar.get_width()/2, y_position,
                                            '*', ha='center', va='bottom',
                                            fontsize=20, color='black', fontweight='bold')
+                                    max_annotation_top = max(max_annotation_top, y_position)
                             except Exception as e:
                                 print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
 
@@ -609,6 +686,13 @@ class SkinReactionsVisualizer:
                         symbols_used.append(f"{symbol} - {name}")
                     explanation_text += ", ".join(symbols_used)
                     plt.figtext(0.5, 0.02, explanation_text, ha='center', fontsize=10, style='italic')
+
+            # Расширяем верхнюю границу оси, если символы значимости вышли выше автомасштаба.
+            if max_annotation_top > 0:
+                current_top = plt.ylim()[1]
+                required_top = max_annotation_top * 1.12
+                if required_top > current_top:
+                    plt.ylim(top=required_top)
 
             plt.tight_layout()
 
@@ -690,14 +774,15 @@ class SkinReactionsVisualizer:
                 plt.text(bar.get_x() + bar.get_width() / 2, y_text, f"{auc / 100:.1f}",
                          ha='center', va='top', fontsize=12, fontweight='bold', color='black')
 
-            # Легенда
+            # Легенда — подписи экспериментов длинные, при расположении внутри осей
+            # ("best" и т.п.) легенда налезает на столбцы, поэтому всегда выносится под график.
             legend_patches = [mpatches.Patch(color=col, label=lab)
                               for col, lab in zip(colors[:len(labels_for_legend)], labels_for_legend)]
-            ncol = math.ceil(len(labels_for_legend) / 2) if len(labels_for_legend) > 4 else len(labels_for_legend)
-            legend_position = graph_manager.get_current_legend_position()
-            if legend_position is not None:
-                plt.legend(handles=legend_patches, loc=legend_position,
-                           ncol=ncol, fontsize=12, handletextpad=0.5, columnspacing=2.5)
+            add_legend_below_chart(legend_patches, fontsize=12, handletextpad=0.5, columnspacing=2.5)
+
+            # Автомасштаб не учитывает текст поверх столбцов — если символ значимости
+            # окажется выше авто-предела оси, его обрежет по границе области построения.
+            max_annotation_top = 0.0
 
             # Критерий Манна-Уитни
             if perform_stat_test and len(all_individual_aucs) > 1:
@@ -739,6 +824,7 @@ class SkinReactionsVisualizer:
                             plt.text(bar.get_x() + bar.get_width()/2, y_position,
                                    symbols_text, ha='center', va='bottom',
                                    fontsize=20, color='black', fontweight='bold')
+                            max_annotation_top = max(max_annotation_top, y_position)
 
                 # Если используется старый формат (один контроль)
                 elif control_index < len(all_individual_aucs):
@@ -756,6 +842,7 @@ class SkinReactionsVisualizer:
                                     plt.text(bar.get_x() + bar.get_width()/2, y_position,
                                            '*', ha='center', va='bottom',
                                            fontsize=20, color='black', fontweight='bold')
+                                    max_annotation_top = max(max_annotation_top, y_position)
                             except Exception as e:
                                 print(f"Ошибка при выполнении теста для дозы {dose}: {e}")
 
@@ -772,8 +859,66 @@ class SkinReactionsVisualizer:
                     explanation_text += ", ".join(symbols_used)
                     plt.figtext(0.5, 0.02, explanation_text, ha='center', fontsize=10, style='italic')
 
+            # Расширяем верхнюю границу оси, если символы значимости вышли выше автомасштаба.
+            if max_annotation_top > 0:
+                current_top = plt.ylim()[1]
+                required_top = max_annotation_top * 1.12
+                if required_top > current_top:
+                    plt.ylim(top=required_top)
+
             plt.tight_layout()
             # plt.savefig("auc_comparison_plot.png")
+
+    @staticmethod
+    def build_summary_table(visualizers: List['SkinReactionsVisualizer'], threshold: float,
+                            normalization_grade: float = None) -> pd.DataFrame:
+        """
+        Сводная таблица производных показателей кожной реакции (пик, длительность реакции
+        выше порога, время нормализации) по группе визуализаторов, на усреднённой по группе
+        кривой "старой" (авторской МРНЦ) шкалы.
+
+        normalization_grade по умолчанию равен threshold: единое заданное пороговое значение
+        используется и для длительности превышения, и для определения момента возврата ниже
+        этого же порога — как описано в разделе "Конечные точки исследования" отчёта.
+
+        Args:
+            visualizers (List[SkinReactionsVisualizer]): Группы для сводки.
+            threshold (float): Пороговое значение балла (задаётся исследователем).
+            normalization_grade (float, optional): Порог нормализации. По умолчанию = threshold.
+        """
+        if normalization_grade is None:
+            normalization_grade = threshold
+
+        rows = []
+        for vis in visualizers:
+            mean_reactions, _, _ = vis.data_processor.get_mean_skin_reactions()
+            # time_data приходит из Excel как сырые строковые метки (например, "2 сут. - 21.06"),
+            # а не как float — без преобразования арифметика внутри calculate_skin_reaction_*
+            # падает с TypeError при вычитании строк.
+            time_data = SupportingFunctions.to_float_list(vis.time_data)
+            label = format_experiment_params(vis.experiment_params)
+
+            peak_value, peak_day = SupportingFunctions.calculate_skin_reaction_peak(time_data, mean_reactions)
+            duration, duration_censored = SupportingFunctions.calculate_skin_reaction_duration_above_threshold(
+                time_data, mean_reactions, threshold
+            )
+            normalization_day, normalization_censored = (
+                SupportingFunctions.calculate_skin_reaction_time_to_normalization(
+                    time_data, mean_reactions, normalization_grade
+                )
+            )
+
+            rows.append({
+                'Группа': label,
+                'Пик, балл': peak_value,
+                'День пика': peak_day,
+                'Длительность >= порога, сут': duration,
+                'Цензурировано (длительность)': duration_censored,
+                'День нормализации': normalization_day,
+                'Цензурировано (нормализация)': normalization_censored,
+            })
+
+        return pd.DataFrame(rows)
 
 
 if __name__ == '__main__':

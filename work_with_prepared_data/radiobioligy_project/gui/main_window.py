@@ -17,7 +17,7 @@ from PyQt6.QtCore import QFileInfo, Qt, QUrl, QTimer
 from PyQt6.QtGui import QAction, QDesktopServices, QStandardItemModel, QStandardItem, QPixmap, QPalette, QColor, QBrush
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QHeaderView, QSizePolicy, QVBoxLayout, QLabel, \
     QTableWidget, QTableWidgetItem, QMessageBox, QButtonGroup, QComboBox, QListView, QStyledItemDelegate, \
-    QStyle, QStyleOptionViewItem
+    QStyle, QStyleOptionViewItem, QInputDialog
 
 # Импорт сгенерированного класса из gui.py
 from work_with_prepared_data.radiobioligy_project.gui.gui import Ui_MainWindow
@@ -33,6 +33,7 @@ from work_with_prepared_data.radiobioligy_project.stats_methods.support_stats_me
 from work_with_prepared_data.radiobioligy_project.gui.checkable_combobox import CheckableComboBox
 from work_with_prepared_data.radiobioligy_project.gui.legend_window import LegendManager
 from work_with_prepared_data.radiobioligy_project.gui.tgi_table_window import TumorGrowthInhibitionTableWindow
+from work_with_prepared_data.radiobioligy_project.gui.skin_reaction_summary_window import SkinReactionSummaryWindow
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -202,6 +203,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.use_ttest = False
         self.use_shapiro = False
         self.use_AUC = False
+        self.show_rtog = False
         self.annotation_multiplier = 0
         self.data_processor = DataProcessor()
         self.legend_manager = LegendManager()
@@ -210,7 +212,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.geant4_pipeline_window = None
         self.tumor_3d_viewer_window = None
         self.tgi_table_window = None
+        self.skin_reaction_summary_window = None
         self.kaplan_meier_window = None
+        self.kaplan_meier_calculator_window = None
         self.cached_visualizer = None  # Кеш для модифицированного визуализатора
         self.cache_key = None  # Ключ для проверки актуальности кеша
         self.show_legend_separately = False  # Флаг для отображения легенды отдельно
@@ -223,6 +227,42 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Вставляем чекбокс перед label_6 (положение основной легенды)
         label_index = self.horizontalLayout_7.indexOf(self.label_6)
         self.horizontalLayout_7.insertWidget(label_index, self.checkBox_separate_legend)
+
+        # Чекбокс "Дата в легенде" — опционально скрывает "Дата: ..." из подписей
+        # экспериментов в легенде графика (format_experiment_params). Включён по умолчанию
+        # (сохраняет прежнее поведение).
+        self.checkBox_show_date = QCheckBox("Дата в легенде", self.centralwidget)
+        self.checkBox_show_date.setObjectName("checkBox_show_date")
+        self.checkBox_show_date.setChecked(True)
+        self.horizontalLayout_7.insertWidget(label_index + 1, self.checkBox_show_date)
+        self.checkBox_show_date.stateChanged.connect(self.on_show_date_changed)
+
+        # Чекбокс "Шкала RTOG" — рядом с остальными опциями графика кожных реакций
+        # (checkBox_5/checkBox_6 в этом же layout).
+        self.checkBox_rtog = QCheckBox("Шкала RTOG", self.centralwidget)
+        self.checkBox_rtog.setObjectName("checkBox_rtog")
+        self.horizontalLayout_10.addWidget(self.checkBox_rtog)
+        self.checkBox_rtog.stateChanged.connect(self.on_rtog_changed)
+
+        # Чекбокс "Поправка Холма" — отдельная опция, а не встроенное поведение. Включена по
+        # умолчанию (сохраняет прежнее поведение для тех, кто ничего не трогает), но её можно
+        # выключить, чтобы увидеть значимость по сырому p<0.05 без коррекции на множественность
+        # поточечных сравнений. Вставляем сразу после checkBox (Критерий Стьюдента), перед
+        # checkBox_shapiro — она относится только к Манна-Уитни/Стьюденту, не к Шапиро-Уилку.
+        self.checkBox_holm = QCheckBox("Поправка Холма", self.centralwidget)
+        self.checkBox_holm.setObjectName("checkBox_holm")
+        self.checkBox_holm.setChecked(True)
+        self.checkBox_holm.setToolTip(
+            "Пошаговая поправка Холма на множественность поточечных сравнений по нескольким "
+            "временным точкам в одном сравнении (контроль FWER).\n"
+            "Включена: '*' — значимо после поправки Холма; "
+            "'(*)' — значимо только по сырому p<0.05, поправку не прошло.\n"
+            "Выключена: '*' — значимо по сырому p<0.05, без коррекции."
+        )
+        student_index = self.horizontalLayout.indexOf(self.checkBox)
+        self.horizontalLayout.insertWidget(student_index + 1, self.checkBox_holm)
+        self.checkBox_holm.stateChanged.connect(self.on_holm_correction_changed)
+
         self.tools_menu = self.menubar.addMenu("Инструменты")
         self.action_open_survival_fitter = QAction("LQ fitter и радиобиология", self)
         self.action_open_survival_fitter.triggered.connect(self.open_survival_fitter)
@@ -239,6 +279,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.action_open_kaplan_meier = QAction("Каплан-Майер (выживаемость)", self)
         self.action_open_kaplan_meier.triggered.connect(self.handle_kaplan_meier)
         self.tools_menu.addAction(self.action_open_kaplan_meier)
+        self.action_open_kaplan_meier_calculator = QAction("Калькулятор Каплана-Майера (ручной ввод)", self)
+        self.action_open_kaplan_meier_calculator.triggered.connect(self.open_kaplan_meier_calculator)
+        self.tools_menu.addAction(self.action_open_kaplan_meier_calculator)
+        self.action_skin_reaction_summary = QAction("Сводка кожных реакций (пик/длительность/нормализация)", self)
+        self.action_skin_reaction_summary.triggered.connect(self.handle_skin_reaction_summary_table)
+        self.tools_menu.addAction(self.action_skin_reaction_summary)
         self.action_about_docs = QAction("О программе", self)
         self.action_about_docs.triggered.connect(self.open_project_documentation)
         self.menubar.addAction(self.action_about_docs)
@@ -269,6 +315,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.checkBox_7.setDisabled(True)
         self.checkBox.setDisabled(True)
         self.checkBox_shapiro.setDisabled(True)
+        self.checkBox_rtog.setDisabled(True)
+        self.checkBox_holm.setDisabled(True)
         self.pushButton_4.setCheckable(False)
         self.pushButton_8.setCheckable(False)
         # Биндинг кнопок
@@ -583,6 +631,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             QTableView::item {
                 padding: 3px 8px;
                 border: none;
+                color: #1C2733;
             }
             QHeaderView::section {
                 background: qlineargradient(
@@ -825,6 +874,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         return result
 
     def set_state_of_auc_and_tests_checkbox(self):
+        # checkBox_rtog осмысленен только там, где реально строится усреднённая кривая кожных
+        # реакций (pushButton_2 — одна группа, pushButton_4 — сравнение групп; именно эти ветки
+        # вызывают plot_mean_skin_reactions/plot_multiple_experiments(_from_visualizers), куда
+        # подключён RTOG) — для объёмов опухоли (pushButton/pushButton_3) он неприменим.
+        is_skin_reactions_view = (
+            (self.pushButton_2.isEnabled() or self.pushButton_4.isEnabled())
+            and self.checkBox_6.isChecked()
+        )
+        self.checkBox_rtog.setEnabled(is_skin_reactions_view)
+        if not is_skin_reactions_view:
+            self.checkBox_rtog.setChecked(False)
+
         if self.pushButton_3.isEnabled() and self.checkBox_6.isChecked():
             self.checkBox_2.setEnabled(True)
             self.checkBox_7.setEnabled(True)
@@ -867,6 +928,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             self.checkBox_shapiro.setEnabled(False)
             self.checkBox_shapiro.setChecked(False)
+
+        # Поправка Холма относится только к поточечным сравнениям Манна-Уитни/Стьюдента —
+        # включаем доступность чекбокса, только когда один из этих критериев реально активен
+        # (учитываем уже скорректированное выше состояние checkBox_7/checkBox в этом вызове).
+        # Сохраняем CHECKED-состояние при отключении (не сбрасываем, в отличие от checkBox_rtog):
+        # это глобальный флаг (graph_manager), который читается только в момент реального
+        # построения теста, а не привязан к текущему режиму просмотра — сброс по умолчанию ON
+        # должен сохраняться между переключениями режимов, пока пользователь сам его не снимет.
+        mann_whitney_or_student_active = (
+            (self.checkBox_7.isEnabled() and self.checkBox_7.isChecked())
+            or (self.checkBox.isEnabled() and self.checkBox.isChecked())
+        )
+        self.checkBox_holm.setEnabled(mann_whitney_or_student_active)
 
     def on_legend_position_changed(self):
         selected_position = self.comboBox_3.currentText()
@@ -1463,20 +1537,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.draw_graphic(selected_paths, TumorDataVisualizer,
                               TumorDataVisualizer.plot_relative_divergence_per_rat)
 
-    def handle_kaplan_meier(self):
+    def build_kaplan_meier_groups_from_selection(self):
         """
-        Строит кривые Каплана-Майера по крысам из выбранных файлов.
+        Возвращает {имя группы: List[RatSurvivalEvent]} по текущему выбору в главной
+        таблице, либо None, если ничего не выбрано.
 
         Файлы, явно отмеченные группой A или B (столбец «Группа» в таблице),
         объединяются в одну кривую на группу — так можно слить крыс из нескольких
         файлов одного режима в одну выборку. Любой выбранный файл БЕЗ группы
         становится отдельной кривой (по умолчанию — каждый выбранный файл это
         своё сравнение, а не один общий пул).
+
+        Используется и окном сравнения групп (handle_kaplan_meier), и калькулятором
+        (кнопка «Загрузить из выбранных файлов») — единая точка построения групп.
         """
         selected_paths = self.get_selected_experiments()
         if not selected_paths:
-            QMessageBox.information(self, "Каплан-Майер", "Выберите хотя бы один файл.")
-            return
+            return None
 
         from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import (
             extract_survival_events,
@@ -1487,16 +1564,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         paths_b = [p for p in selected_paths if groups_assignment.get(p) == 'B']
         paths_other = [p for p in selected_paths if groups_assignment.get(p) is None]
 
+        groups = {}
+        if paths_a:
+            groups["Группа A"] = [e for p in paths_a for e in extract_survival_events(p)]
+        if paths_b:
+            groups["Группа B"] = [e for p in paths_b for e in extract_survival_events(p)]
+        for path in paths_other:
+            groups[Path(path).stem] = extract_survival_events(path)
+        return groups
+
+    def handle_kaplan_meier(self):
+        """Строит кривые Каплана-Майера по крысам из выбранных файлов (см. build_kaplan_meier_groups_from_selection)."""
         try:
-            groups = {}
-            if paths_a:
-                groups["Группа A"] = [e for p in paths_a for e in extract_survival_events(p)]
-            if paths_b:
-                groups["Группа B"] = [e for p in paths_b for e in extract_survival_events(p)]
-            for path in paths_other:
-                groups[Path(path).stem] = extract_survival_events(path)
+            groups = self.build_kaplan_meier_groups_from_selection()
         except Exception as error:
             self._show_tool_open_error("Каплан-Майер", error)
+            return
+
+        if groups is None:
+            QMessageBox.information(self, "Каплан-Майер", "Выберите хотя бы один файл.")
             return
 
         if self.kaplan_meier_window is None:
@@ -1538,10 +1624,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Обновляем состояние переменных
         self.perform_stat_test = self.checkBox_7.isChecked()
         self.use_ttest = self.checkBox.isChecked()
+        # checkBox_holm должен реагировать на CHECKED-состояние самих критериев, а не только на
+        # пересчёт их доступности (тот идёт через on_checkbox_pair_changed для checkBox_3/4/5/6,
+        # которая не запускается при переключении checkBox_7/checkBox).
+        self.set_state_of_auc_and_tests_checkbox()
 
     def on_shapiro_changed(self):
         """Обновляет флаг теста Шапиро–Уилка."""
         self.use_shapiro = self.checkBox_shapiro.isChecked()
+
+    def on_rtog_changed(self):
+        """Обновляет флаг отображения шкалы RTOG на графиках кожных реакций."""
+        self.show_rtog = self.checkBox_rtog.isChecked()
+
+    def on_holm_correction_changed(self):
+        """Включает/выключает поправку Холма для поточечных сравнений Манна-Уитни/Стьюдента."""
+        graph_manager.set_holm_correction_enabled(self.checkBox_holm.isChecked())
+
+    def on_show_date_changed(self):
+        """Включает/выключает показ "Дата: ..." в подписях экспериментов в легенде графика."""
+        graph_manager.set_show_date_in_legend(self.checkBox_show_date.isChecked())
+        if self.figure is not None:
+            self.create_graphic()
 
     def handle_all_of_rats(self):
         """
@@ -1694,6 +1798,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             control_visualizer,
             experiment_visualizers
         )
+        # create_tumor_growth_inhibition_tables уже нормализовала time_data визуализаторов
+        # (normalize_time_data_min внутри _build_tumor_growth_inhibition_series) —
+        # повторная нормализация здесь не нужна.
+        tgd_df = visualizer.create_tgd_table(
+            control_visualizer,
+            experiment_visualizers,
+            normalize_time=False
+        )
 
         # Очистка layout перед добавлением нового содержимого
         if self.tgi_table_window is None:
@@ -1701,11 +1813,41 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         # Проверка, существует ли layout. Если нет, создаем новый.
         self.tgi_table_window.set_tables(tables_by_mode)
+        self.tgi_table_window.set_tgd_table(tgd_df)
         self.tgi_table_window.show()
         self.tgi_table_window.raise_()
         self.tgi_table_window.activateWindow()
 
         # Создание QTableWidget и заполнение его данными из DataFrame
+
+    def handle_skin_reaction_summary_table(self):
+        selected_paths = self.get_selected_experiments()
+        if len(selected_paths) < 1:
+            print("Выберите хотя бы один эксперимент")
+            return
+
+        # Единое пороговое значение задаётся исследователем (раздел "Конечные точки
+        # исследования": "продолжительность реакции выше ЗАДАННОГО порогового значения") —
+        # используется и для длительности превышения, и для нормализации (возврат ниже него).
+        threshold, ok = QInputDialog.getDouble(
+            self,
+            "Порог кожной реакции",
+            "Пороговое значение балла (используется для длительности реакции и нормализации):",
+            decimals=1
+        )
+        if not ok:
+            return
+
+        visualizers = [SkinReactionsVisualizer(path) for path in selected_paths]
+        summary_df = SkinReactionsVisualizer.build_summary_table(visualizers, threshold=threshold)
+
+        if self.skin_reaction_summary_window is None:
+            self.skin_reaction_summary_window = SkinReactionSummaryWindow(self)
+
+        self.skin_reaction_summary_window.set_summary_table(summary_df)
+        self.skin_reaction_summary_window.show()
+        self.skin_reaction_summary_window.raise_()
+        self.skin_reaction_summary_window.activateWindow()
 
     def handle_pushButton_4(self):
         # Определяем тип графика в зависимости от выбранных чекбоксов
@@ -1792,7 +1934,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if isinstance(visualizer, list) and len(visualizer) > 0 and isinstance(visualizer[0], SkinReactionsVisualizer):
                 # Используем модифицированные экземпляры визуализаторов
                 if self.current_plot_type == 'multiple_experiments':
-                    SkinReactionsVisualizer.plot_multiple_experiments_from_visualizers(visualizer, self.use_AUC, self.perform_stat_test)
+                    SkinReactionsVisualizer.plot_multiple_experiments_from_visualizers(visualizer, self.use_AUC, self.perform_stat_test, self.show_rtog)
                 elif self.current_plot_type == 'auc_comparison':
                     # Получить информацию о контрольных группах
                     control_groups_info = self._get_control_groups_info()
@@ -1806,7 +1948,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             elif isinstance(visualizer, SkinReactionsVisualizer) and len(self.current_selected_paths) > 1:
                 # Вызов статического метода для рисования графика из путей (для обратной совместимости)
                 if self.current_plot_type == 'multiple_experiments':
-                    SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC, self.perform_stat_test)
+                    SkinReactionsVisualizer.plot_multiple_experiments(self.current_selected_paths, self.use_AUC, self.perform_stat_test, self.show_rtog)
                 elif self.current_plot_type == 'auc_comparison':
                     # Получить информацию о контрольных группах
                     control_groups_info = self._get_control_groups_info()
@@ -1826,6 +1968,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 elif self.current_control is not None and plotting_func == TumorDataComparatorAdvanced.compare_tumor_growth_inhibition_with_multiple_experiments:
                     experiment_visualizers = [TumorDataVisualizer(path) for path in self.current_selected_paths]
                     plotting_func(visualizer, self.current_control, experiment_visualizers)
+                elif plotting_func == SkinReactionsVisualizer.plot_mean_skin_reactions:
+                    plotting_func(visualizer, show_rtog=self.show_rtog)
                 else:
                     plotting_func(visualizer)
                     # Шапиро–Уилк для одиночного эксперимента
@@ -2214,6 +2358,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._show_child_window("tumor_3d_viewer_window", Tumor3DViewerWindow)
         except Exception as error:
             self._show_tool_open_error("3D геометрия опухоли", error)
+
+    def open_kaplan_meier_calculator(self):
+        try:
+            from work_with_prepared_data.radiobioligy_project.gui.kaplan_meier_calculator_window import (
+                KaplanMeierCalculatorWindow,
+            )
+            # передаём self как parent, чтобы калькулятор мог подтянуть выбор файлов
+            # из главного окна (кнопка «Загрузить из выбранных файлов»)
+            self._show_child_window("kaplan_meier_calculator_window", lambda: KaplanMeierCalculatorWindow(self))
+        except Exception as error:
+            self._show_tool_open_error("Калькулятор Каплана-Майера", error)
 
     def open_project_documentation(self):
         """Open the project overview HTML page in the default browser."""

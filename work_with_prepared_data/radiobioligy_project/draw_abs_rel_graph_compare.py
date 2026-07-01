@@ -10,6 +10,7 @@ from controls import ControlGroupVisualizer
 from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions
 from utils.visualizer import GraphVisualizer
+from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 
 # Переопределяем функцию
 plt.fill_between = custom_fill_between
@@ -42,6 +43,19 @@ class TumorDataComparatorAdvanced:
         self._use_ttest = False
         self._use_shapiro = False
         self._use_AUC = False
+
+    def _add_significance_test_legend_if_active(self, drawgraph):
+        """
+        Отдельная легенда на графике (не подпись под ним), поясняющая, какой критерий
+        использован и применена ли поправка Холма — иначе '*'/'(*)' ничего не объясняют.
+        Вызывать ПЕРЕД finalize_figure, только если реально запрашивалось сравнение.
+        """
+        if self.perform_stat_test or self.use_ttest:
+            test_name = "Стьюдента" if self.use_ttest else "Манна-Уитни"
+            drawgraph.add_legend(
+                graph_manager.build_significance_test_legend_label(test_name),
+                title="Критерий значимости", loc="lower right", display_marker=False
+            )
 
     @property
     def perform_stat_test(self):
@@ -128,6 +142,7 @@ class TumorDataComparatorAdvanced:
             self.use_shapiro,
             )
 
+        self._add_significance_test_legend_if_active(drawgraph)
         drawgraph.finalize_figure('', legend_fontsize=18)
 
     def compare_relative_volumes(self):
@@ -185,6 +200,7 @@ class TumorDataComparatorAdvanced:
         time_labels = [f"Интервал: {interval}" for interval in time_intervals]
         # drawgraph.add_legend(time_labels, "Интервалы между облучениями", "lower right")
 
+        self._add_significance_test_legend_if_active(drawgraph)
         # Увеличиваем размер шрифта легенды для относительных графиков сравнения
         drawgraph.finalize_figure('', legend_fontsize=18)
 
@@ -250,6 +266,7 @@ class TumorDataComparatorAdvanced:
             self.use_shapiro,
         )
 
+        self._add_significance_test_legend_if_active(drawgraph)
         drawgraph.finalize_figure('', legend_fontsize=18)
 
     def compare_tumor_growth_inhibition_with_multiple_experiments(self, control_visualizer: TumorDataVisualizer,
@@ -366,6 +383,42 @@ class TumorDataComparatorAdvanced:
             tgi_series_by_experiment.append((experiment_name, series))
 
         return tgi_series_by_experiment
+
+    def _build_tgd_table(self, control_visualizer, experiment_visualizers, k=1.5, normalize_time=True):
+        """
+        Строит таблицу задержки роста опухоли (TGD, сут) по группам относительно контроля.
+
+        normalize_time=False позволяет вызвать этот метод после того, как нормализация времени
+        (normalize_time_data_min) уже была выполнена вызывающим кодом для этого же набора
+        визуализаторов — повторный вызов на уже сдвинутых данных безопасен лишь случайно
+        (минимум после первого сдвига равен 0), поэтому явный флаг лучше, чем полагаться на эту
+        случайную идемпотентность.
+        """
+        if normalize_time:
+            SupportingFunctions.normalize_time_data_min([control_visualizer] + experiment_visualizers)
+
+        control_times = SupportingFunctions.to_float_list(control_visualizer.time_data)
+        control_mean = SupportingFunctions.to_float_list(control_visualizer.data_processor.get_mean_tumor_volumes())
+        control_day, control_censored = SupportingFunctions.calculate_tgd_threshold_day(
+            control_times, control_mean, k
+        )
+
+        experiment_names = self._build_experiment_names(experiment_visualizers)
+        rows = []
+        for experiment_name, experiment_visualizer in zip(experiment_names, experiment_visualizers):
+            exp_times = SupportingFunctions.to_float_list(experiment_visualizer.time_data)
+            exp_mean = SupportingFunctions.to_float_list(
+                experiment_visualizer.data_processor.get_mean_tumor_volumes()
+            )
+            exp_day, exp_censored = SupportingFunctions.calculate_tgd_threshold_day(exp_times, exp_mean, k)
+            rows.append({
+                'Группа': experiment_name,
+                'TGD, сут': exp_day - control_day,
+                'Цензурировано (эксперимент)': exp_censored,
+                'Цензурировано (контроль)': control_censored,
+            })
+
+        return pd.DataFrame(rows)
 
     @staticmethod
     def _build_control_time_grid(control_visualizer):
@@ -506,6 +559,12 @@ class TumorDataComparatorAdvanced:
                 self._create_pairwise_tgi_summary(daily_interpolated_series)
             ),
         }
+
+    def create_tgd_table(self, control_visualizer, experiment_visualizers, k=1.5, normalize_time=True):
+        """Возвращает таблицу задержки роста опухоли (TGD, сут) по группам относительно контроля."""
+        return self._build_tgd_table(
+            control_visualizer, experiment_visualizers, k=k, normalize_time=normalize_time
+        )
 
     def create_tumor_growth_inhibition_tables(self, control_visualizer, experiment_visualizers):
         """

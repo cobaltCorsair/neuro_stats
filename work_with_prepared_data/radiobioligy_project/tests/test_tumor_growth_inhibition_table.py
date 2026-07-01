@@ -168,6 +168,64 @@ class TumorGrowthInhibitionTableTests(unittest.TestCase):
         self.assertEqual(summary_row[COUNT_COLUMN], 12)
 
 
+class TgdTableTests(unittest.TestCase):
+    @staticmethod
+    def _build_control(time_data, mean_tumor_volumes):
+        return StubVisualizer(time_data, mean_tumor_volumes, "control")
+
+    @staticmethod
+    def _build_experiment(time_data, mean_tumor_volumes, experiment_name):
+        return StubVisualizer(time_data, mean_tumor_volumes, experiment_name)
+
+    @patch("draw_abs_rel_graph_compare.format_experiment_params", side_effect=lambda params: params[0])
+    def test_tgd_table_basic_two_experiments(self, _format_params):
+        # control: V(0)=10, порог 15, пересечение между (5,12) и (10,16) -> t=8.75
+        control = self._build_control([0, 5, 10, 15], [10, 12, 16, 24])
+        # exp1: V(0)=10, порог 15, пересечение между (10,12) и (15,20) -> t=11.875
+        experiment = self._build_experiment([0, 5, 10, 15], [10, 11, 12, 20], "exp1")
+
+        comparator = TumorDataComparatorAdvanced(experiment)
+        tgd_df = comparator.create_tgd_table(control, [experiment])
+
+        self.assertEqual(
+            list(tgd_df.columns),
+            ["Группа", "TGD, сут", "Цензурировано (эксперимент)", "Цензурировано (контроль)"]
+        )
+        row = tgd_df.iloc[0]
+        self.assertEqual(row["Группа"], "exp1")
+        self.assertAlmostEqual(row["TGD, сут"], 11.875 - 8.75, places=6)
+        self.assertFalse(row["Цензурировано (эксперимент)"])
+        self.assertFalse(row["Цензурировано (контроль)"])
+
+    @patch("draw_abs_rel_graph_compare.format_experiment_params", side_effect=lambda params: params[0])
+    def test_tgd_table_marks_censored_experiment(self, _format_params):
+        control = self._build_control([0, 5, 10, 15], [10, 12, 16, 24])  # не цензурирован, день 8.75
+        experiment = self._build_experiment([0, 5, 10, 15], [10, 11, 12, 13], "exp1")  # никогда не достигает 15
+
+        comparator = TumorDataComparatorAdvanced(experiment)
+        tgd_df = comparator.create_tgd_table(control, [experiment])
+
+        row = tgd_df.iloc[0]
+        self.assertTrue(row["Цензурировано (эксперимент)"])
+        self.assertFalse(row["Цензурировано (контроль)"])
+        self.assertAlmostEqual(row["TGD, сут"], 15.0 - 8.75, places=6)
+
+    @patch("draw_abs_rel_graph_compare.format_experiment_params", side_effect=lambda params: params[0])
+    def test_tgd_table_control_censored_flagged_separately_not_ored(self, _format_params):
+        control = self._build_control([0, 5, 10, 15], [10, 10, 10, 10])  # не растёт -> цензурирован, день 15
+        experiment = self._build_experiment([0, 5, 10, 15], [10, 20, 30, 40], "exp1")  # быстро пересекает, день 2.5
+
+        comparator = TumorDataComparatorAdvanced(experiment)
+        tgd_df = comparator.create_tgd_table(control, [experiment])
+
+        row = tgd_df.iloc[0]
+        # Ключевая проверка: эксперимент НЕ цензурирован, хотя контроль цензурирован —
+        # раздельные столбцы, а не один OR'енный флаг.
+        self.assertFalse(row["Цензурировано (эксперимент)"])
+        self.assertTrue(row["Цензурировано (контроль)"])
+        self.assertAlmostEqual(row["TGD, сут"], 2.5 - 15.0, places=6)
+
+
 class TumorGrowthInhibitionTableGuiSmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -214,16 +272,28 @@ class TumorGrowthInhibitionTableGuiSmokeTests(unittest.TestCase):
                     TumorDataComparatorAdvanced.TGI_TIME_GRID_DAILY_INTERPOLATION: build_table([0, 1, 2, 3]),
                 }
 
+            def create_tgd_table(self, control_visualizer, experiment_visualizers, normalize_time=True):
+                return pd.DataFrame({
+                    "Группа": [f"exp{i + 1}" for i in range(len(experiment_visualizers))],
+                    "TGD, сут": [1.0] * len(experiment_visualizers),
+                    "Цензурировано (эксперимент)": [False] * len(experiment_visualizers),
+                    "Цензурировано (контроль)": [False] * len(experiment_visualizers),
+                })
+
         class FakeTableWindow:
             def __init__(self, parent=None):
                 self.parent = parent
                 self.tables_calls = []
+                self.tgd_calls = []
                 self.show_called = False
                 self.raise_called = False
                 self.activate_called = False
 
             def set_tables(self, tables_by_mode):
                 self.tables_calls.append(tables_by_mode)
+
+            def set_tgd_table(self, tgd_df):
+                self.tgd_calls.append(tgd_df)
 
             def show(self):
                 self.show_called = True
@@ -247,6 +317,7 @@ class TumorGrowthInhibitionTableGuiSmokeTests(unittest.TestCase):
 
                 self.assertIsInstance(window.tgi_table_window, FakeTableWindow)
                 self.assertEqual(len(window.tgi_table_window.tables_calls), 1)
+                self.assertEqual(len(window.tgi_table_window.tgd_calls), 1)
                 self.assertTrue(window.tgi_table_window.show_called)
                 self.assertTrue(window.tgi_table_window.raise_called)
                 self.assertTrue(window.tgi_table_window.activate_called)

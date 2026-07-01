@@ -365,16 +365,22 @@ class GraphVisualizer:
         # Создаем словарь для быстрого доступа к upper_bounds по time_point
         upper_bounds_by_time = dict(zip(time_data, upper_bounds))
 
+        # Поправка Холма на множественность поточечных сравнений в рамках этого вызова
+        # (все p_values, переданные одним вызовом, образуют одно "семейство" тестов) —
+        # включается/выключается чекбоксом "Поправка Холма" в интерфейсе.
+        if graph_manager.is_holm_correction_enabled():
+            holm_significant = SupportingFunctions.holm_correction(list(p_values))
+        else:
+            holm_significant = [False] * len(p_values)
+
         # Проходим по p-value и добавляем аннотации
-        for p_value, x_position in zip(p_values, x_positions):
+        for p_value, x_position, is_holm_significant in zip(p_values, x_positions, holm_significant):
             if p_value is None:
                 continue  # Пропускаем, если p-value не рассчитано
-            # if p_value < 0.001:
-            #     annotation = '***'  # Сильно значимо
-            # elif p_value < 0.01:
-            #     annotation = '**'  # Значимо
-            if p_value < 0.05:
-                annotation = '*'  # Умеренно значимо
+            if is_holm_significant:
+                annotation = '*'  # Значимо после поправки Холма
+            elif p_value < 0.05:
+                annotation = '(*)' if graph_manager.is_holm_correction_enabled() else '*'
             else:
                 annotation = ''  # Не значимо
 

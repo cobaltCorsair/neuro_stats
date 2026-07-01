@@ -1,7 +1,9 @@
 # файл plotting_helpers.py
-from typing import List
+from typing import List, Optional
 
 import matplotlib.pyplot as plt
+
+from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 
 
 PLOT_FONT_FAMILY = ['Times New Roman', 'DejaVu Serif']
@@ -117,10 +119,37 @@ def format_experiment_params(params: List[str]) -> str:
 
     if irradiation_time_str:
         parts.append(f"Интервал: {irradiation_time_str}")
-    if date_str:
+    if date_str and graph_manager.is_show_date_in_legend():
         parts.append(f"Дата: {date_str}")
 
     return ', '.join(parts)
+
+
+def add_legend_below_chart(handles, fontsize=16, handletextpad=0.8,
+                            columnspacing=None, ncol=1, y_offset=-0.22) -> Optional[plt.legend]:
+    """
+    Легенда на столбчатых AUC-графиках (подписи по дозам) состоит из длинных строк с
+    параметрами эксперимента и почти при любом расположении внутри осей (в т.ч. "best")
+    перекрывает столбцы. Поэтому для таких графиков легенда всегда выносится под график —
+    общий выбор расположения (comboBox_3 / graph_manager.current_legend_position) при этом
+    по-прежнему управляет только тем, показывать легенду вообще (None -> скрыта) или нет,
+    но не тем, где именно она рисуется.
+
+    ncol по умолчанию 1 (список в столбик): при длинных подписях эксперимента даже 2 колонки
+    легко перестают помещаться по ширине фигуры и tight_layout не может подобрать поля
+    (проверено на реальном наборе подписей — с ncol>1 здесь возникает
+    "Tight layout not applied: margins cannot be made large enough").
+
+    Возвращает объект Legend либо None, если легенда должна быть скрыта или нечего рисовать.
+    """
+    legend_position = graph_manager.get_current_legend_position()
+    if legend_position is None or not handles:
+        return None
+    kwargs = dict(handles=handles, loc="upper center", bbox_to_anchor=(0.5, y_offset),
+                  ncol=ncol, fontsize=fontsize, handletextpad=handletextpad)
+    if columnspacing is not None:
+        kwargs["columnspacing"] = columnspacing
+    return plt.legend(**kwargs)
 
 
 def custom_fill_between(x, y1, y2=0, color=None, alpha=None, **kwargs):
