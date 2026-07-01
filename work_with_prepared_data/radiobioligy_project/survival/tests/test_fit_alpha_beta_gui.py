@@ -84,6 +84,16 @@ class FitAlphaBetaGuiTests(unittest.TestCase):
             window.close()
             self.app.processEvents()
 
+    def test_exclude_dead_check_exists_and_unchecked_by_default(self) -> None:
+        # Опционально, как и остальные переключатели фиттера (verbose/aggregate/dedupe) --
+        # не должно менять поведение существующих пользователей по умолчанию.
+        window = FitAlphaBetaWindow()
+        try:
+            self.assertFalse(window.exclude_dead_check.isChecked())
+        finally:
+            window.close()
+            self.app.processEvents()
+
     def test_tcp_and_ntcp_plots_use_compact_defaults(self) -> None:
         window = FitAlphaBetaWindow()
         try:

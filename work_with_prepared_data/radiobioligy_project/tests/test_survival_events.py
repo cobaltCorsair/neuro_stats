@@ -14,6 +14,7 @@ import numpy as np
 
 from data_processing.excel_data_processor import (
     extract_survival_events,
+    find_rats_that_died_before_experiment_end,
     parse_irradiation_schedule,
     process_skin_data_excel,
 )
@@ -137,6 +138,74 @@ class TestExtractSurvivalEvents(unittest.TestCase):
         events = extract_survival_events(path)
         self.assertTrue(events[0].event_observed)
         self.assertEqual(events[0].day, 6.0)
+
+
+class TestFindRatsThatDiedBeforeExperimentEnd(unittest.TestCase):
+    """
+    Общий детектор "умер в середине эксперимента" для автоматического исключения животных
+    (ExtractOutliers.exclude_dead_rats, LQ fitter) — переиспользует extract_survival_events,
+    не парсит файл заново."""
+
+    def setUp(self):
+        import tempfile
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self._tmpdir.name)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_death_strictly_before_last_day_is_included(self):
+        header = ["без облучения"]
+        labels = ["Метка", "V исх. - 24.03.26", "3 сут. - 27.03", "6 сут. - 30.03", "8 сут. - 1.04"]
+        rows = [
+            ["rat1", "1.0-1.0-1.0", "1.1-1.1-1.1", "⊗", None],  # умерла на 6 сут.
+            ["rat2", "1.0-1.0-1.0", "1.1-1.1-1.1", "1.2-1.2-1.2", "1.3-1.3-1.3"],  # дожила до 8 сут.
+        ]
+        path = _write_xlsx(self.tmp_path, "mid_death.xlsx", header, labels, rows)
+        self.assertEqual(find_rats_that_died_before_experiment_end(path), ["rat1"])
+
+    def test_death_exactly_on_last_day_is_not_included(self):
+        # Единственное животное, маркер смерти ровно в последнем столбце -> его день
+        # смерти совпадает с last_day, а не строго меньше него.
+        header = ["без облучения"]
+        labels = ["Метка", "V исх. - 24.03.26", "3 сут. - 27.03", "6 сут. - 30.03"]
+        rows = [["rat1", "1.0-1.0-1.0", "1.1-1.1-1.1", "⊗"]]
+        path = _write_xlsx(self.tmp_path, "death_on_last_day.xlsx", header, labels, rows)
+        self.assertEqual(find_rats_that_died_before_experiment_end(path), [])
+
+    def test_censoring_marker_is_not_treated_as_death(self):
+        header = ["без облучения"]
+        labels = ["Метка", "V исх. - 24.03.26", "3 сут. - 27.03", "6 сут. - 30.03", "8 сут. - 1.04"]
+        rows = [
+            ["rat1", "1.0-1.0-1.0", "1.1-1.1-1.1", "выгрызла", None],  # цензурирована на 6 сут.
+            ["rat2", "1.0-1.0-1.0", "1.1-1.1-1.1", "1.2-1.2-1.2", "1.3-1.3-1.3"],  # дожила до 8 сут.
+        ]
+        path = _write_xlsx(self.tmp_path, "censored_not_death.xlsx", header, labels, rows)
+        self.assertEqual(find_rats_that_died_before_experiment_end(path), [])
+
+    def test_no_marker_survives_to_end_is_not_included(self):
+        header = ["без облучения"]
+        labels = ["Метка", "V исх. - 24.03.26", "3 сут. - 27.03", "6 сут. - 30.03"]
+        rows = [["rat1", "1.0-1.0-1.0", "1.1-1.1-1.1", "1.2-1.2-1.2"]]
+        path = _write_xlsx(self.tmp_path, "no_marker.xlsx", header, labels, rows)
+        self.assertEqual(find_rats_that_died_before_experiment_end(path), [])
+
+    def test_mixed_group_returns_only_early_deaths_in_file_order(self):
+        header = ["без облучения"]
+        labels = ["Метка", "V исх. - 24.03.26", "3 сут. - 27.03", "6 сут. - 30.03", "8 сут. - 1.04"]
+        rows = [
+            ["rat1", "1.0-1.0-1.0", "⊗", None, None],               # умерла на 3 сут.
+            ["rat2", "1.0-1.0-1.0", "1.1-1.1-1.1", "⊗", None],       # умерла на 6 сут.
+            ["rat3", "1.0-1.0-1.0", "1.1-1.1-1.1", "1.2-1.2-1.2", "1.3-1.3-1.3"],  # дожила до 8 сут.
+        ]
+        path = _write_xlsx(self.tmp_path, "mixed_group.xlsx", header, labels, rows)
+        self.assertEqual(find_rats_that_died_before_experiment_end(path), ["rat1", "rat2"])
+
+    def test_empty_file_returns_empty_list(self):
+        header = ["без облучения"]
+        labels = ["Метка", "V исх. - 24.03.26"]
+        path = _write_xlsx(self.tmp_path, "empty.xlsx", header, labels, [])
+        self.assertEqual(find_rats_that_died_before_experiment_end(path), [])
 
 
 class TestProcessSkinDataExcelWithDeathMarker(unittest.TestCase):

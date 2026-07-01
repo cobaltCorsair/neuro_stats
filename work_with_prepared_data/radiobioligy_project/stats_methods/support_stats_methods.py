@@ -12,7 +12,10 @@ from sklearn.ensemble import IsolationForest
 from scipy.stats import chi2
 from scipy.spatial.distance import mahalanobis
 from work_with_prepared_data.radiobioligy_project.gui import graph_manager
-from data_processing.excel_data_processor import RatSurvivalEvent
+from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import (
+    RatSurvivalEvent,
+    find_rats_that_died_before_experiment_end,
+)
 
 
 class ExtractOutliers:
@@ -399,6 +402,16 @@ class ExtractOutliers:
                 setattr(self.base_class.data_processor, data_attribute_name, updated_data)
             elif data_attribute_name == 'tumor_volumes' and hasattr(self.base_class.data_processor, 'tumor_volumes'):
                 self.base_class.data_processor.tumor_volumes = getattr(self.base_class, data_attribute_name)
+
+    def exclude_dead_rats(self):
+        """
+        Автоматически исключает животных, подтверждённо умерших до конца наблюдения в этом
+        же файле (см. find_rats_that_died_before_experiment_end) — в отличие от остальных
+        методов этого класса, не статистический выброс, а прямое чтение маркеров смерти
+        (тех же, что уже используются для Каплана-Майера) из исходного файла эксперимента.
+        """
+        dead_labels = find_rats_that_died_before_experiment_end(self.base_class.file_path)
+        self.exclude_rats(dead_labels)
 
 class SupportingFunctions:
 

@@ -414,6 +414,28 @@ def extract_survival_events(file_path: str) -> List[RatSurvivalEvent]:
     return events
 
 
+def find_rats_that_died_before_experiment_end(file_path: str) -> List[str]:
+    """
+    Возвращает метки животных с подтверждённой смертью (event_observed=True) СТРОГО ДО
+    последнего наблюдённого дня в этом же файле — то есть тех, чья кривая объёма опухоли
+    обрывается раньше остальных из-за гибели, а не обычного цензурирования (потеря бирки
+    и т.п.) или дожития до конца наблюдения.
+
+    Сравнение идёт с максимальным днём внутри того же списка событий (а не с отдельно
+    посчитанной сеткой time_data), чтобы не зависеть от согласованности двух независимых
+    расчётов дней.
+    """
+    events = extract_survival_events(file_path)
+    days = [event.day for event in events if event.day is not None]
+    if not days:
+        return []
+    last_day = max(days)
+    return [
+        event.label for event in events
+        if event.event_observed and event.day is not None and event.day < last_day
+    ]
+
+
 def _normalize_tumor_cell(value) -> str:
     """Normalize raw Excel cell contents before tumor-volume parsing."""
     if pd.isna(value):

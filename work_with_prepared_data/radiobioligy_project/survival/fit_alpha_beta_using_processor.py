@@ -34,6 +34,7 @@ from work_with_prepared_data.radiobioligy_project.data_processing.data_processin
     TumorDataProcessor,
 )
 from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import (
+    find_rats_that_died_before_experiment_end,
     process_tumor_data_excel,
 )
 try:
@@ -1397,6 +1398,7 @@ class Fitter:
         repair_fast_fraction: float = 0.6,
         aggregate_regimens: bool = False,
         dedupe_regimens: bool = False,
+        exclude_dead_animals: bool = False,
     ):
         self.sf_mode = sf_mode
         self.min_sf = min_sf
@@ -1408,6 +1410,7 @@ class Fitter:
         self.verbose = verbose
         self.aggregate_regimens = aggregate_regimens
         self.dedupe_regimens = dedupe_regimens
+        self.exclude_dead_animals = exclude_dead_animals
         self.raw_experiments: List[RawTumorSeries] = []
         self.controls: Dict[Path, np.ndarray] = {}
         self.experiments: List[TumorExperiment] = []
@@ -2133,6 +2136,35 @@ class Fitter:
             experiment_count=sum(1 for row in updated_rows if row.role != "control"),
         )
 
+    def _apply_dead_animal_exclusion(
+        self, path: Path, rat_labels: List[str], volumes: List[List[float]]
+    ) -> np.ndarray:
+        """
+        Если exclude_dead_animals включён, убирает из volumes строки животных, подтверждённо
+        умерших до конца наблюдения в этом же файле (find_rats_that_died_before_experiment_end
+        переиспользует детектор смерти, изначально написанный для Каплана-Майера). Иначе
+        просто конвертирует volumes в ndarray без изменений — как раньше.
+        """
+        volumes_array = np.asarray(volumes, dtype=float)
+        if not self.exclude_dead_animals:
+            return volumes_array
+
+        dead_labels = set(find_rats_that_died_before_experiment_end(str(path)))
+        if not dead_labels:
+            return volumes_array
+
+        keep_mask = [label not in dead_labels for label in rat_labels]
+        if not any(keep_mask):
+            # Исключены были бы все животные файла — отменяем исключение для этого файла,
+            # тот же принцип защиты, что и у ExtractOutliers.exclude_rats в основном GUI.
+            return volumes_array
+
+        if self.verbose:
+            dropped = [label for label in rat_labels if label in dead_labels]
+            print(f"INFO {path.name}: excluding animals that died mid-experiment: {dropped}")
+
+        return volumes_array[keep_mask]
+
     def collect(
         self,
         files: List[Path],
@@ -2150,15 +2182,16 @@ class Fitter:
 
         self.controls = {}
         for path in controls:
-            _, _, _, volumes = process_tumor_data_excel(str(path))
-            self.controls[path] = np.asarray(volumes, dtype=float)
+            _, _, rat_labels, volumes = process_tumor_data_excel(str(path))
+            self.controls[path] = self._apply_dead_animal_exclusion(path, rat_labels, volumes)
             if self.verbose:
                 print(f"INFO {path.name}: registered as CONTROL")
 
         sole_control_path = controls[0] if len(controls) == 1 else None
         self.raw_experiments = []
         for path in others:
-            params, time_data, _, volumes = process_tumor_data_excel(str(path))
+            params, time_data, rat_labels, volumes = process_tumor_data_excel(str(path))
+            volumes = self._apply_dead_animal_exclusion(path, rat_labels, volumes)
             fractions = tuple(parse_fractions(params))
             if not fractions:
                 if self.verbose:
@@ -2192,7 +2225,7 @@ class Fitter:
                     path=path,
                     fractions=fractions,
                     family=family,
-                    volumes=np.asarray(volumes, dtype=float),
+                    volumes=volumes,
                     let_kev_um=FAMILY_LET_DEFAULTS.get(family or ""),
                     time_days=time_days,
                     schedule_days=schedule_days,
@@ -4700,6 +4733,7 @@ def analyze_files(
     verbose: bool,
     cross_validate_loo: bool = True,
     control_map: Optional[Mapping[object, Optional[object]]] = None,
+    exclude_dead_animals: bool = False,
 ) -> Tuple[Fitter, List[AnalysisRunResult]]:
     """Collect Excel files and run structured analysis results."""
     paths = [Path(file).resolve() for file in files] if files else sorted(Path.cwd().glob("*.xlsx"))
@@ -4714,6 +4748,7 @@ def analyze_files(
         verbose=verbose,
         aggregate_regimens=aggregate_regimens,
         dedupe_regimens=dedupe_regimens,
+        exclude_dead_animals=exclude_dead_animals,
     )
     fitter.collect(paths, control_map=control_map)
     results = analyze_fitter(

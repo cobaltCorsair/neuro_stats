@@ -933,6 +933,14 @@ class FitAlphaBetaWindow(QMainWindow):
         self.verbose_check = QCheckBox("Verbose terminal log", self)
         layout.addWidget(self.verbose_check, 7, 0, 1, 3)
 
+        self.exclude_dead_check = QCheckBox("Exclude animals that died mid-experiment", self)
+        self.exclude_dead_check.setToolTip(
+            "Detects confirmed deaths before the last observed time point in each file "
+            "(same death markers used by the Kaplan-Meier tool) and drops those animals' "
+            "rows before fitting, for both control and experiment files."
+        )
+        layout.addWidget(self.exclude_dead_check, 7, 3, 1, 3)
+
         layout.addWidget(QLabel("Summary CSV"), 8, 0)
         self.summary_csv_edit = QLineEdit(self)
         self.summary_csv_edit.setPlaceholderText("optional path for summary csv")
@@ -1786,6 +1794,7 @@ class FitAlphaBetaWindow(QMainWindow):
                 bootstrap_seed=bootstrap_seed,
                 verbose=self.verbose_check.isChecked(),
                 control_map=api_control_map,
+                exclude_dead_animals=self.exclude_dead_check.isChecked(),
             )
             self.run_results = results
             self.populate_results()

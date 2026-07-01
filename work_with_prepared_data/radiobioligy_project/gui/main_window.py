@@ -1105,6 +1105,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             elif self.selected_outlier_method == 8:  # Метод для KL-дивергенции
                 outlier_extractor.remove_outliers_kl_divergence(bandwidth=coefficient,
                                                                 percentile_threshold=90)  # Используем bandwidth
+            elif self.selected_outlier_method == 9:  # Умершие в ходе эксперимента
+                # exclude_dead_rats -> exclude_rats уже безопасно ничего не делает, если
+                # исключать некого или это исключило бы всех крыс — доп. проверки не нужны.
+                outlier_extractor.exclude_dead_rats()
 
             # Добавляем обновленный визуализатор в список обновленных экземпляров
             updated_instances.append(outlier_extractor.base_class)

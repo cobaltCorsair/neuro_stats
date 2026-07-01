@@ -9,8 +9,12 @@ for path in (str(WORKSPACE_ROOT), str(REPO_ROOT)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from stats_methods.support_stats_methods import SupportingFunctions as SF
-from data_processing.excel_data_processor import RatSurvivalEvent
+from stats_methods.support_stats_methods import ExtractOutliers, SupportingFunctions as SF
+# RatSurvivalEvent импортируется тем же (длинным) путём, что и в support_stats_methods.py —
+# иначе isinstance() ниже сравнивает с ДРУГИМ классом: Python кеширует модули по полному
+# импортируемому пути, короткий "data_processing.excel_data_processor" даёт второй,
+# независимый экземпляр модуля со своим отдельным классом RatSurvivalEvent.
+from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import RatSurvivalEvent
 
 
 class TestCalculateStdDev(unittest.TestCase):
@@ -377,6 +381,74 @@ class TestCalculateSkinReactionTimeToNormalization(unittest.TestCase):
         day, censored = SF.calculate_skin_reaction_time_to_normalization(time_data, values)
         self.assertAlmostEqual(day, 2.0, places=9)
         self.assertTrue(censored)
+
+
+class TestExtractOutliersExcludeDeadRats(unittest.TestCase):
+    """exclude_dead_rats переиспользует find_rats_that_died_before_experiment_end на реальном
+    xlsx-файле — животное с маркером смерти до конца наблюдения исключается вместе со своей
+    строкой в tumor_volumes, а животные без такого маркера остаются нетронутыми."""
+
+    def setUp(self):
+        import tempfile
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self._tmpdir.name)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_xlsx(self, name, header_row, time_labels, data_rows):
+        import pandas as pd
+        width = max(len(header_row), len(time_labels), max((len(r) for r in data_rows), default=0))
+
+        def pad(row):
+            return list(row) + [None] * (width - len(row))
+
+        rows = [pad(header_row), pad(time_labels)] + [pad(r) for r in data_rows]
+        df = pd.DataFrame(rows)
+        file_path = self.tmp_path / name
+        df.to_excel(file_path, header=False, index=False, engine="openpyxl")
+        return str(file_path)
+
+    def test_dead_rat_row_removed_survivor_kept(self):
+        import types
+
+        header = ["без облучения"]
+        labels = ["Метка", "V исх. - 24.03.26", "3 сут. - 27.03", "6 сут. - 30.03", "8 сут. - 1.04"]
+        rows = [
+            ["rat1", "1.0-1.0-1.0", "1.1-1.1-1.1", "⊗", None],  # умерла на 6 сут.
+            ["rat2", "1.0-1.0-1.0", "1.1-1.1-1.1", "1.2-1.2-1.2", "1.3-1.3-1.3"],  # дожила до 8 сут.
+        ]
+        path = self._write_xlsx("dead_and_survivor.xlsx", header, labels, rows)
+
+        visualizer = types.SimpleNamespace(
+            file_path=path,
+            rat_labels=["rat1", "rat2"],
+            tumor_volumes=[[1.0, 1.1, 1.2, None], [1.0, 1.1, 1.2, 1.3]],
+        )
+
+        ExtractOutliers(visualizer).exclude_dead_rats()
+
+        self.assertEqual(visualizer.rat_labels, ["rat2"])
+        self.assertEqual(visualizer.tumor_volumes, [[1.0, 1.1, 1.2, 1.3]])
+
+    def test_no_dead_rats_leaves_data_unchanged(self):
+        import types
+
+        header = ["без облучения"]
+        labels = ["Метка", "V исх. - 24.03.26", "3 сут. - 27.03"]
+        rows = [["rat1", "1.0-1.0-1.0", "1.1-1.1-1.1"]]
+        path = self._write_xlsx("all_alive.xlsx", header, labels, rows)
+
+        visualizer = types.SimpleNamespace(
+            file_path=path,
+            rat_labels=["rat1"],
+            tumor_volumes=[[1.0, 1.1]],
+        )
+
+        ExtractOutliers(visualizer).exclude_dead_rats()
+
+        self.assertEqual(visualizer.rat_labels, ["rat1"])
+        self.assertEqual(visualizer.tumor_volumes, [[1.0, 1.1]])
 
     def test_never_above_threshold_normalized_from_start(self):
         time_data = [0, 1, 2]
