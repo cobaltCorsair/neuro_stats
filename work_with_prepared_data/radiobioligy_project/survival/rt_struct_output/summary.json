@@ -1,0 +1,52 @@
+{
+  "structure_name": "PTV_High",
+  "schedule_days": [
+    0.0
+  ],
+  "schedule_dose_gy": [
+    12.655594310781956
+  ],
+  "mixed_field": false,
+  "component_family_map": {},
+  "let_params": {
+    "alpha_0": 0.1,
+    "lambda_alpha": 0.0,
+    "beta_0": 0.02,
+    "lambda_beta": 0.0,
+    "alpha_r_squared": null,
+    "beta_r_squared": null
+  },
+  "aggregated": {
+    "structure_name": "PTV_High",
+    "voxel_count": 3352,
+    "grid_shape": [
+      284,
+      284,
+      243
+    ],
+    "voxel_size_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "mean_sf": 0.1911038115605326,
+    "volume_weighted_sf": 0.1911038115605326,
+    "mean_dose_gy": 12.655594310781956,
+    "mean_let_kev_um": 0.0,
+    "d90": 0.030458972360772,
+    "d50": 16.012112553544725,
+    "v20": 0.0,
+    "effective_alpha": 0.09999999999999999,
+    "effective_beta": 0.019999999999999997,
+    "equivalent_uniform_dose": 6.933818109766354,
+    "initial_volume_mm3": 3352.0,
+    "mixed_field": false
+  },
+  "output_files": [
+    "C:\\dev\\neuro_stats\\work_with_prepared_data\\radiobioligy_project\\survival\\rt_struct_output\\dvh_PTV_High.csv",
+    "C:\\dev\\neuro_stats\\work_with_prepared_data\\radiobioligy_project\\survival\\rt_struct_output\\sf_per_voxel.csv",
+    "C:\\dev\\neuro_stats\\work_with_prepared_data\\radiobioligy_project\\survival\\rt_struct_output\\aggregated_params.json",
+    "C:\\dev\\neuro_stats\\work_with_prepared_data\\radiobioligy_project\\survival\\rt_struct_output\\growth_curve.csv",
+    "C:\\dev\\neuro_stats\\work_with_prepared_data\\radiobioligy_project\\survival\\rt_struct_output\\bed_eqd2_table.csv"
+  ]
+}

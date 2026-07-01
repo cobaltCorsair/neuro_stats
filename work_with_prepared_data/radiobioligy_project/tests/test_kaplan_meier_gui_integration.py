@@ -18,7 +18,12 @@ import gui.main_window as main_window_module
 from gui.main_window import MainWindow
 # handle_kaplan_meier импортирует KaplanMeierWindow по полному пути (work_with_prepared_data...) —
 # используем тот же путь здесь, иначе isinstance видит "два разных класса" из-за двойного импорта модуля.
-from work_with_prepared_data.radiobioligy_project.gui.kaplan_meier_window import KaplanMeierWindow, _ScalingImageLabel
+from work_with_prepared_data.radiobioligy_project.gui.kaplan_meier_window import KaplanMeierWindow
+from work_with_prepared_data.radiobioligy_project.gui.scaling_image_label import (
+    ScalingImageLabel,
+    fit_plot_frame_to_available_space,
+    measure_other_content_height,
+)
 
 
 def _write_xlsx(tmp_path: Path, name: str, header_row, time_labels, data_rows) -> str:
@@ -54,6 +59,11 @@ class TestHandleKaplanMeier(unittest.TestCase):
         window.kaplan_meier_window = None
         window.get_selected_experiments = lambda: list(selected_paths)
         window.get_group_assignment = lambda: dict(group_assignment)
+        # вызывает настоящую реализацию из MainWindow, привязанную к этой заглушке как self —
+        # handle_kaplan_meier делегирует построение групп туда же, что и калькулятор
+        window.build_kaplan_meier_groups_from_selection = (
+            lambda: MainWindow.build_kaplan_meier_groups_from_selection(window)
+        )
         window._show_tool_open_error = lambda *a, **k: (_ for _ in ()).throw(AssertionError("unexpected error path"))
         return window
 
@@ -175,7 +185,7 @@ class TestRiskTableDashBeyondGroupRange(unittest.TestCase):
 class TestScalingImageLabel(unittest.TestCase):
     """
     setFixedSize() на лейбле графика не реагирует на последующий resize окна — при
-    сужении картинка обрезалась вместо уменьшения. _ScalingImageLabel хранит исходный
+    сужении картинка обрезалась вместо уменьшения. ScalingImageLabel хранит исходный
     pixmap и пересчитывает масштаб (с сохранением пропорций) на каждый resizeEvent.
     """
 
@@ -186,7 +196,7 @@ class TestScalingImageLabel(unittest.TestCase):
     def test_shrinking_the_label_scales_pixmap_down_without_cropping(self):
         from PyQt6.QtGui import QPixmap
 
-        label = _ScalingImageLabel()
+        label = ScalingImageLabel()
         original = QPixmap(1000, 600)
         original.fill()
         label.set_original_pixmap(original)
@@ -203,7 +213,7 @@ class TestScalingImageLabel(unittest.TestCase):
     def test_growing_the_label_scales_pixmap_up(self):
         from PyQt6.QtGui import QPixmap
 
-        label = _ScalingImageLabel()
+        label = ScalingImageLabel()
         original = QPixmap(400, 300)
         original.fill()
         label.set_original_pixmap(original)
@@ -217,7 +227,7 @@ class TestScalingImageLabel(unittest.TestCase):
     def test_size_hint_matches_original_pixmap_for_initial_window_sizing(self):
         from PyQt6.QtGui import QPixmap
 
-        label = _ScalingImageLabel()
+        label = ScalingImageLabel()
         original = QPixmap(1000, 600)
         original.fill()
         label.set_original_pixmap(original)
@@ -227,7 +237,7 @@ class TestScalingImageLabel(unittest.TestCase):
     def test_clearing_pixmap_does_not_reappear_after_resize(self):
         from PyQt6.QtGui import QPixmap
 
-        label = _ScalingImageLabel()
+        label = ScalingImageLabel()
         original = QPixmap(1000, 600)
         original.fill()
         label.set_original_pixmap(original)
@@ -237,6 +247,130 @@ class TestScalingImageLabel(unittest.TestCase):
         self._app.processEvents()
 
         self.assertTrue(label.pixmap() is None or label.pixmap().isNull())
+
+
+class TestFitPlotFrameToAvailableSpace(unittest.TestCase):
+    """
+    Рамка с stretch=1 растягивается на всю ширину диалога независимо от пропорций
+    картинки внутри — при сужении окна по высоте (но не по ширине) это оставляло
+    пустые поля внутри рамки вокруг уменьшенной (с сохранением пропорций) картинки.
+    fit_plot_frame_to_available_space пересчитывает размер рамки так, чтобы она
+    точно облегала текущий масштаб картинки, без пустых полей.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _build_dialog(other_content_height=604):
+        from PyQt6.QtWidgets import QDialog, QFrame, QLabel as QLabelWidget, QVBoxLayout
+
+        dialog = QDialog()
+        layout = QVBoxLayout(dialog)
+        frame = QFrame()
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(12, 12, 12, 12)
+        label = ScalingImageLabel()
+        frame_layout.addWidget(label)
+        layout.addWidget(frame, stretch=1)
+        other = QLabelWidget()
+        other.setFixedHeight(other_content_height)
+        layout.addWidget(other)
+        return dialog, frame, label
+
+    @staticmethod
+    def _waste(frame, label):
+        margin = 24
+        pixmap = label.pixmap()
+        return (
+            frame.width() - margin - pixmap.width(),
+            frame.height() - margin - pixmap.height(),
+        )
+
+    def test_frame_tightly_wraps_image_when_window_is_wide_and_short(self):
+        from PyQt6.QtGui import QPixmap
+
+        dialog, frame, label = self._build_dialog()
+        label.set_original_pixmap(QPixmap(1000, 600))
+        other_h = measure_other_content_height(dialog, frame)
+        dialog.show()
+
+        dialog.resize(1310, 1100)  # шире и при этом ниже "естественного" размера
+        self._app.processEvents()
+        fit_plot_frame_to_available_space(dialog, frame, label, other_h)
+        self._app.processEvents()
+
+        waste_w, waste_h = self._waste(frame, label)
+        self.assertLessEqual(abs(waste_w), 5)
+        self.assertLessEqual(abs(waste_h), 5)
+
+    def test_frame_tightly_wraps_image_when_window_is_tall_and_narrow(self):
+        from PyQt6.QtGui import QPixmap
+
+        dialog, frame, label = self._build_dialog()
+        label.set_original_pixmap(QPixmap(1000, 600))
+        other_h = measure_other_content_height(dialog, frame)
+        dialog.show()
+
+        dialog.resize(700, 1300)
+        self._app.processEvents()
+        fit_plot_frame_to_available_space(dialog, frame, label, other_h)
+        self._app.processEvents()
+
+        waste_w, waste_h = self._waste(frame, label)
+        self.assertLessEqual(abs(waste_w), 5)
+        self.assertLessEqual(abs(waste_h), 5)
+
+    def test_frame_never_shrinks_below_labels_own_minimum(self):
+        """
+        Регрессия: при экстремальном сжатии расчётный размер рамки уходил НИЖЕ
+        minimumSize самого label, и Qt всё равно не давал label сжаться — картинка
+        оказывалась больше рамки (вылезала за границу).
+        """
+        from PyQt6.QtGui import QPixmap
+
+        dialog, frame, label = self._build_dialog()
+        label.set_original_pixmap(QPixmap(1000, 600))
+        other_h = measure_other_content_height(dialog, frame)
+        dialog.show()
+
+        dialog.resize(550, 500)  # ниже минимума диалога - будет clamped, всё равно проверяем
+        self._app.processEvents()
+        fit_plot_frame_to_available_space(dialog, frame, label, other_h)
+        self._app.processEvents()
+
+        margin = 24
+        label_min = label.minimumSize()
+        self.assertGreaterEqual(frame.width() - margin, label_min.width())
+        self.assertGreaterEqual(frame.height() - margin, label_min.height())
+
+        pixmap = label.pixmap()
+        self.assertLessEqual(pixmap.width(), frame.width() - margin)
+        self.assertLessEqual(pixmap.height(), frame.height() - margin)
+
+    def test_measure_other_content_height_matches_fixed_sibling_height(self):
+        from PyQt6.QtGui import QPixmap
+
+        dialog, frame, label = self._build_dialog(other_content_height=400)
+        label.set_original_pixmap(QPixmap(1000, 600))
+        dialog.show()
+
+        other_h = measure_other_content_height(dialog, frame)
+        # допускаем небольшой запас на отступы/рамки самого layout'а диалога
+        self.assertAlmostEqual(other_h, 400, delta=40)
+
+    def test_does_nothing_when_other_content_height_is_none(self):
+        from PyQt6.QtGui import QPixmap
+
+        dialog, frame, label = self._build_dialog()
+        label.set_original_pixmap(QPixmap(1000, 600))
+        dialog.show()
+        before = frame.size()
+
+        fit_plot_frame_to_available_space(dialog, frame, label, None)
+
+        self.assertEqual(frame.size(), before)
 
 
 if __name__ == "__main__":

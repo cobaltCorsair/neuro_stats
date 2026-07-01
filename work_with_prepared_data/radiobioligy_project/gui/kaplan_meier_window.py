@@ -1,5 +1,5 @@
 import io
-from typing import Dict, Optional, Sequence
+from typing import Dict, Sequence
 
 import matplotlib.pyplot as plt
 from PyQt6.QtCore import QStandardPaths, Qt
@@ -10,6 +10,11 @@ from PyQt6.QtWidgets import (
 )
 
 from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import RatSurvivalEvent
+from work_with_prepared_data.radiobioligy_project.gui.scaling_image_label import (
+    ScalingImageLabel,
+    fit_plot_frame_to_available_space,
+    measure_other_content_height,
+)
 from work_with_prepared_data.radiobioligy_project.stats_methods.kaplan_meier import (
     hazard_ratio_log_rank,
     kaplan_meier_estimate,
@@ -23,45 +28,6 @@ from work_with_prepared_data.radiobioligy_project.stats_methods.kaplan_meier imp
 )
 
 
-class _ScalingImageLabel(QLabel):
-    """
-    QLabel, хранящий исходный pixmap в полном размере и пересчитывающий масштаб
-    (с сохранением пропорций) при каждом изменении размера — иначе при сужении
-    окна картинка не уменьшается, а обрезается (setFixedSize/обычный setPixmap
-    не реагируют на последующий resize виджета).
-    """
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._original_pixmap: Optional[QPixmap] = None
-        self.setMinimumSize(300, 200)
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-    def set_original_pixmap(self, pixmap: Optional[QPixmap]):
-        self._original_pixmap = pixmap
-        if pixmap is None or pixmap.isNull():
-            self.clear()
-        else:
-            self._rescale()
-
-    def sizeHint(self):
-        if self._original_pixmap is not None and not self._original_pixmap.isNull():
-            return self._original_pixmap.size()
-        return super().sizeHint()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._rescale()
-
-    def _rescale(self):
-        if self._original_pixmap is None or self._original_pixmap.isNull():
-            return
-        scaled = self._original_pixmap.scaled(
-            self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
-        )
-        self.setPixmap(scaled)
-
-
 class KaplanMeierWindow(QDialog):
     """Отдельное окно для кривых выживаемости (Каплан-Майер) по группам крыс."""
 
@@ -72,12 +38,18 @@ class KaplanMeierWindow(QDialog):
         self.setMinimumSize(550, 500)
 
         self.plot_label = None
+        self.plot_frame = None
         self.risk_table = None
         self.summary_table = None
         self.log_rank_label = None
         self.action_save_graph = None
         self._current_figure = None
+        self._other_content_height = None
         self._setup_ui()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        fit_plot_frame_to_available_space(self, self.plot_frame, self.plot_label, self._other_content_height)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -88,16 +60,16 @@ class KaplanMeierWindow(QDialog):
         title_label.setStyleSheet("font-size: 16px; font-weight: 600;")
         layout.addWidget(title_label)
 
-        plot_frame = QFrame()
-        plot_frame.setObjectName("kmPlotFrame")
-        plot_frame.setStyleSheet(
+        self.plot_frame = QFrame()
+        self.plot_frame.setObjectName("kmPlotFrame")
+        self.plot_frame.setStyleSheet(
             "#kmPlotFrame { border: 1px solid #c0c0c0; border-radius: 4px; background-color: white; }"
         )
-        plot_frame_layout = QVBoxLayout(plot_frame)
+        plot_frame_layout = QVBoxLayout(self.plot_frame)
         plot_frame_layout.setContentsMargins(12, 12, 12, 12)
-        self.plot_label = _ScalingImageLabel()
+        self.plot_label = ScalingImageLabel()
         plot_frame_layout.addWidget(self.plot_label)
-        layout.addWidget(plot_frame, stretch=1)
+        layout.addWidget(self.plot_frame, stretch=1, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         risk_table_label = QLabel("Число в риске")
         risk_table_label.setStyleSheet("font-weight: 600;")
@@ -167,7 +139,9 @@ class KaplanMeierWindow(QDialog):
         self._populate_risk_table(groups)
         self._populate_summary_table(groups)
         self._update_log_rank_label(groups)
-        self.resize(self.sizeHint())
+
+        self._other_content_height = measure_other_content_height(self, self.plot_frame)
+        fit_plot_frame_to_available_space(self, self.plot_frame, self.plot_label, self._other_content_height)
 
     def _handle_save_graph(self):
         """Сохраняет текущий график в файл — повторяет save_graph() главного окна."""

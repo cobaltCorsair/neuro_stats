@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 
 from data_processing.excel_data_processor import RatSurvivalEvent
 from stats_methods.kaplan_meier import (
+    format_calculation_steps,
     hazard_ratio_log_rank,
     kaplan_meier_estimate,
     log_rank_test,
@@ -186,6 +187,27 @@ class TestRiskTableHelpers(unittest.TestCase):
     def test_max_observed_day_is_none_when_no_events(self):
         self.assertIsNone(max_observed_day([]))
         self.assertIsNone(max_observed_day([RatSurvivalEvent("X", None, False, "")]))
+
+
+class TestFormatCalculationSteps(unittest.TestCase):
+    def test_matches_ten_patient_textbook_example(self):
+        # Стандартный учебный пример: 10 пациентов, 5 лет наблюдения.
+        events = _events([
+            ("1", 0.5, True), ("2", 1.2, True), ("3", 1.5, False), ("4", 2.0, True),
+            ("5", 2.3, False), ("6", 3.0, True), ("7", 3.5, False), ("8", 4.0, True),
+            ("9", 4.5, False), ("10", 5.0, False),
+        ])
+        km = kaplan_meier_estimate(events)
+        steps = format_calculation_steps(km)
+
+        self.assertEqual(steps[0], "t=0.5: n=10, d=1 → S(0.5) = 1 × (1 − 1/10) = 0.9000")
+        self.assertEqual(steps[1], "t=1.2: n=9, d=1 → S(1.2) = 0.9000 × (1 − 1/9) = 0.8000")
+        self.assertEqual(steps[2], "t=1.5: цензурировано 1 → S(1.5) = 0.8000 (без изменений)")
+        self.assertAlmostEqual(km.survival[-1], 0.366, places=3)
+
+    def test_empty_result_gives_no_steps(self):
+        km = kaplan_meier_estimate([])
+        self.assertEqual(format_calculation_steps(km), [])
 
 
 if __name__ == "__main__":

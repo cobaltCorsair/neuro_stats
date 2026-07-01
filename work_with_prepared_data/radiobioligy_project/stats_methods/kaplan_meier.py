@@ -132,6 +132,32 @@ def kaplan_meier_estimate(events: Sequence[RatSurvivalEvent], *, confidence: flo
     )
 
 
+def format_calculation_steps(km: KaplanMeierResult) -> List[str]:
+    """
+    Пошаговое текстовое объяснение расчёта S(t) по готовому KaplanMeierResult —
+    для обучения/демонстрации метода (калькулятор с ручным вводом данных).
+
+    Пропускает t=0 (старт, S=1 по определению). Один пункт на каждый следующий момент:
+    смерть(и) показывают саму формулу умножения, цензурирование — что S(t) не меняется.
+    """
+    lines: List[str] = []
+    prev_survival_text = "1"
+    for i in range(1, len(km.times)):
+        t = km.times[i]
+        n = km.n_at_risk[i]
+        d = km.n_events[i]
+        c = km.n_censored[i]
+        s = km.survival[i]
+        if d > 0:
+            lines.append(
+                f"t={t:g}: n={n}, d={d} → S({t:g}) = {prev_survival_text} × (1 − {d}/{n}) = {s:.4f}"
+            )
+            prev_survival_text = f"{s:.4f}"
+        elif c > 0:
+            lines.append(f"t={t:g}: цензурировано {c} → S({t:g}) = {s:.4f} (без изменений)")
+    return lines
+
+
 def median_survival_ci(km: KaplanMeierResult) -> Tuple[Optional[float], Optional[float]]:
     """
     Доверительный интервал медианы выживаемости (метод Брукмейера-Кроули, см. Klein &
