@@ -56,15 +56,24 @@ class TestBuildSignificanceTestLegendLabel(unittest.TestCase):
 
     def test_label_mentions_test_name_and_holm_enabled(self):
         graph_manager.set_holm_correction_enabled(True)
-        label = graph_manager.build_significance_test_legend_label("Манна-Уитни")
-        self.assertIn("Манна-Уитни", label)
-        self.assertIn("с поправкой Холма", label)
+        lines = graph_manager.build_significance_test_legend_label("Манна-Уитни")
+        joined = " ".join(lines)
+        self.assertIn("Манна-Уитни", joined)
+        self.assertIn("с поправкой Холма", joined)
+        # При включённой поправке Холма на графике встречаются оба маркера ('*' и '(*)'),
+        # значит легенда обязана объяснять оба, а не только основной.
+        self.assertTrue(any(line.startswith("*") for line in lines))
+        self.assertTrue(any(line.startswith("(*)") for line in lines))
 
     def test_label_mentions_no_holm_when_disabled(self):
         graph_manager.set_holm_correction_enabled(False)
-        label = graph_manager.build_significance_test_legend_label("Стьюдента")
-        self.assertIn("Стьюдента", label)
-        self.assertIn("без поправки Холма", label)
+        lines = graph_manager.build_significance_test_legend_label("Стьюдента")
+        joined = " ".join(lines)
+        self.assertIn("Стьюдента", joined)
+        self.assertIn("без поправки Холма", joined)
+        # Без поправки Холма маркер '(*)' не используется вообще (только '*'),
+        # поэтому его объяснение в легенде не нужно.
+        self.assertFalse(any(line.startswith("(*)") for line in lines))
 
 
 class TestTumorVolumeSignificanceLegend(unittest.TestCase):
@@ -87,7 +96,7 @@ class TestTumorVolumeSignificanceLegend(unittest.TestCase):
         comparator._add_significance_test_legend_if_active(mock_drawgraph)
         mock_drawgraph.add_legend.assert_called_once()
         label = mock_drawgraph.add_legend.call_args[0][0]
-        self.assertIn("Манна-Уитни", label)
+        self.assertIn("Манна-Уитни", " ".join(label))
         kwargs = mock_drawgraph.add_legend.call_args.kwargs
         self.assertEqual(kwargs.get("loc"), "lower right")
         self.assertFalse(kwargs.get("display_marker"))
@@ -98,7 +107,7 @@ class TestTumorVolumeSignificanceLegend(unittest.TestCase):
         mock_drawgraph = MagicMock()
         comparator._add_significance_test_legend_if_active(mock_drawgraph)
         label = mock_drawgraph.add_legend.call_args[0][0]
-        self.assertIn("Стьюдента", label)
+        self.assertIn("Стьюдента", " ".join(label))
 
 
 class _StubSkinDataProcessor:
