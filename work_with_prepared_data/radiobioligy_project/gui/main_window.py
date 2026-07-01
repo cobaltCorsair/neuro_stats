@@ -263,6 +263,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.horizontalLayout.insertWidget(student_index + 1, self.checkBox_holm)
         self.checkBox_holm.stateChanged.connect(self.on_holm_correction_changed)
 
+        # Кнопка открывает окно с ДВУМЯ вкладками (ТРО по времени и TGD) — из одной подписи
+        # на кнопке этого не видно, поэтому явно называем обе метрики в тексте и подсказке.
+        self.pushButton_6.setToolTip(
+            "Открывает таблицы по времени наблюдения — ТРО и TGD (задержка роста опухоли) "
+            "на отдельных вкладках."
+        )
+
         self.tools_menu = self.menubar.addMenu("Инструменты")
         self.action_open_survival_fitter = QAction("LQ fitter и радиобиология", self)
         self.action_open_survival_fitter.triggered.connect(self.open_survival_fitter)
@@ -1900,6 +1907,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         selected_paths = self.get_selected_experiments()
         if len(selected_paths) < 1:
             print("Выберите хотя бы один эксперимент")
+            return
+
+        # В отличие от pushButton_4/pushButton_8 (см. update_fourth_button_state) это пункт
+        # меню "Инструменты", а не кнопка с состоянием, завязанным на model.itemChanged —
+        # поэтому тип файлов (кожные реакции vs объёмы опухоли, различаются только по
+        # подстроке "skin_reactions" в пути) не проверялся вообще, и файлы объёмов опухоли
+        # молча читались как баллы кожной реакции, выдавая бессмысленные числа.
+        if any("skin_reactions" not in path for path in selected_paths):
+            QMessageBox.warning(
+                self,
+                "Неверный тип файлов",
+                "Сводка кожных реакций строится только по файлам кожных реакций "
+                "(с «skin_reactions» в имени файла). Среди выбранных есть файлы объёмов опухоли."
+            )
             return
 
         # Единое пороговое значение задаётся исследователем (раздел "Конечные точки

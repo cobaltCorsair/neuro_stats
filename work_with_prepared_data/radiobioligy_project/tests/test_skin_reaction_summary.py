@@ -149,12 +149,32 @@ class TestHandleSkinReactionSummaryTableWiring(unittest.TestCase):
         import types
         window = types.SimpleNamespace()
         window.skin_reaction_summary_window = None
-        window.get_selected_experiments = lambda: ["exp1.xlsx"]
+        window.get_selected_experiments = lambda: ["exp1_skin_reactions.xlsx"]
 
         with patch.object(main_window_module, "QInputDialog") as mock_dialog:
             mock_dialog.getDouble.return_value = (0.0, False)  # пользователь нажал "Отмена"
             main_window_module.MainWindow.handle_skin_reaction_summary_table(window)
 
+        self.assertIsNone(window.skin_reaction_summary_window)
+
+    def test_rejects_files_without_skin_reactions_in_path_with_warning(self):
+        """
+        Регрессия: пункт меню "Сводка кожных реакций" не проверял тип выбранных файлов (в
+        отличие от pushButton_4/pushButton_8, см. update_fourth_button_state) — файлы объёмов
+        опухоли молча читались как баллы кожной реакции и выдавали бессмысленные числа вместо
+        явной ошибки.
+        """
+        import types
+        window = types.SimpleNamespace()
+        window.skin_reaction_summary_window = None
+        window.get_selected_experiments = lambda: ["exp1_skin_reactions.xlsx", "exp2_in_peak.xlsx"]
+
+        with patch.object(main_window_module, "QMessageBox") as mock_msgbox, \
+                patch.object(main_window_module, "QInputDialog") as mock_dialog:
+            main_window_module.MainWindow.handle_skin_reaction_summary_table(window)
+
+        mock_msgbox.warning.assert_called_once()
+        mock_dialog.getDouble.assert_not_called()
         self.assertIsNone(window.skin_reaction_summary_window)
 
     def test_confirmed_dialog_opens_window_with_summary(self):
@@ -184,7 +204,7 @@ class TestHandleSkinReactionSummaryTableWiring(unittest.TestCase):
 
         window = types.SimpleNamespace()
         window.skin_reaction_summary_window = None
-        window.get_selected_experiments = lambda: ["exp1.xlsx"]
+        window.get_selected_experiments = lambda: ["exp1_skin_reactions.xlsx"]
 
         fake_df = pd.DataFrame({"Группа": ["exp1"]})
 
