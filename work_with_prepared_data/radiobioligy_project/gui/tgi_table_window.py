@@ -1,9 +1,49 @@
 import pandas as pd
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem, \
-    QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtGui import QBrush, QColor, QPalette
+from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QHBoxLayout, QLabel, QListView, QStyle, \
+    QStyledItemDelegate, QStyleOptionViewItem, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
 
 from gui.dataframe_table_widget import DataFrameTableMixin
+
+
+class _ComboPopupItemDelegate(QStyledItemDelegate):
+    """Исключает нативную чёрную подсветку в popup-списках QComboBox — дублирует
+    ComboPopupItemDelegate из main_window.py: это отдельное top-level окно (QDialog), стиль
+    MainWindow на него не каскадируется, а чистый QSS (background-color: palette(base)) здесь
+    не работает и рендерит попап с чёрным фоном (см. main_window._fix_combo_palette)."""
+
+    _base_color = QColor('#F0F5FA')
+    _text_color = QColor('#243040')
+    _highlight_color = QColor('#C5D9EE')
+    _highlight_text_color = QColor('#1A3050')
+
+    def paint(self, painter, option, index):
+        item_option = QStyleOptionViewItem(option)
+        self.initStyleOption(item_option, index)
+
+        is_highlighted = bool(
+            item_option.state & QStyle.StateFlag.State_MouseOver
+            or item_option.state & QStyle.StateFlag.State_Selected
+        )
+        background = self._highlight_color if is_highlighted else self._base_color
+        foreground = self._highlight_text_color if is_highlighted else self._text_color
+
+        painter.fillRect(item_option.rect, background)
+        item_option.backgroundBrush = QBrush(background)
+        item_option.palette.setColor(QPalette.ColorRole.Base, background)
+        item_option.palette.setColor(QPalette.ColorRole.Window, background)
+        item_option.palette.setColor(QPalette.ColorRole.Text, foreground)
+        item_option.palette.setColor(QPalette.ColorRole.WindowText, foreground)
+        item_option.state &= ~QStyle.StateFlag.State_Selected
+        item_option.state &= ~QStyle.StateFlag.State_MouseOver
+        item_option.state &= ~QStyle.StateFlag.State_HasFocus
+        super().paint(painter, item_option, index)
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setHeight(max(size.height() + 8, 30))
+        return size
 
 
 class TumorGrowthInhibitionTableWindow(QDialog, DataFrameTableMixin):
@@ -270,29 +310,62 @@ class TumorGrowthInhibitionTableWindow(QDialog, DataFrameTableMixin):
 
     @staticmethod
     def _configure_mode_selector(combo_box):
-        combo_box.setStyleSheet(
-            """
-            QComboBox QAbstractItemView {
-                background-color: palette(base);
-                color: palette(text);
-                selection-background-color: #dbe8f6;
-                selection-color: #1f2d3d;
+        """
+        Регрессия: чистый QSS (background-color: palette(base)) для popup-списка QComboBox
+        рендерил чёрный фон в этом отдельном top-level окне — palette(base) здесь не
+        разрешается в тот же светлый цвет, что и в MainWindow (стиль MainWindow сюда не
+        каскадируется). Тот же класс проблемы уже решён в main_window._fix_combo_palette
+        через явную палитру + кастомный item delegate вместо QSS; дублируем то же решение.
+        """
+        combo_box.setView(QListView(combo_box))
+        view = combo_box.view()
+        view.setMouseTracking(True)
+        view.setSpacing(0)
+        view.setUniformItemSizes(True)
+        view.setAutoFillBackground(True)
+        view.viewport().setAutoFillBackground(True)
+        view.viewport().setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        view.setItemDelegate(_ComboPopupItemDelegate(view))
+
+        palette = view.palette()
+        combo_colors = {
+            QPalette.ColorRole.Base: QColor('#F0F5FA'),
+            QPalette.ColorRole.AlternateBase: QColor('#F0F5FA'),
+            QPalette.ColorRole.Window: QColor('#F0F5FA'),
+            QPalette.ColorRole.Text: QColor('#243040'),
+            QPalette.ColorRole.WindowText: QColor('#243040'),
+            QPalette.ColorRole.ButtonText: QColor('#243040'),
+            QPalette.ColorRole.Highlight: QColor('#C5D9EE'),
+            QPalette.ColorRole.HighlightedText: QColor('#1A3050'),
+        }
+        for color_group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+            for color_role, color in combo_colors.items():
+                palette.setColor(color_group, color_role, color)
+        view.setPalette(palette)
+        view.viewport().setPalette(palette)
+        view.setStyleSheet("""
+            QAbstractItemView {
+                background-color: #F0F5FA;
+                color: #243040;
+                border: 1px solid #AABBCC;
                 outline: 0;
+                selection-background-color: #C5D9EE;
+                selection-color: #1A3050;
             }
-            QComboBox QAbstractItemView::item {
-                min-height: 24px;
+            QAbstractItemView::item {
+                background-color: #F0F5FA;
+                color: #243040;
                 padding: 4px 8px;
+                min-height: 30px;
             }
-            QComboBox QAbstractItemView::item:hover {
-                background-color: #e9f2fb;
-                color: #1f2d3d;
+            QAbstractItemView::item:hover,
+            QAbstractItemView::item:selected,
+            QAbstractItemView::item:selected:active,
+            QAbstractItemView::item:selected:!active {
+                background-color: #C5D9EE;
+                color: #1A3050;
             }
-            QComboBox QAbstractItemView::item:selected {
-                background-color: #dbe8f6;
-                color: #1f2d3d;
-            }
-            """
-        )
+        """)
 
     def _ensure_summary_tab(self):
         if self.tabs.indexOf(self.summary_tab) == -1:

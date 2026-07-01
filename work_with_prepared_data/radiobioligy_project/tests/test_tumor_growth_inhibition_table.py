@@ -14,12 +14,13 @@ for path in (str(WORKSPACE_ROOT), str(REPO_ROOT)):
         sys.path.insert(0, path)
 
 import pandas as pd
+from PyQt6.QtGui import QPalette
 from PyQt6.QtWidgets import QApplication
 
 import gui.main_window as main_window_module
 from draw_abs_rel_graph_compare import TumorDataComparatorAdvanced
 from gui.main_window import MainWindow
-from gui.tgi_table_window import TumorGrowthInhibitionTableWindow
+from gui.tgi_table_window import TumorGrowthInhibitionTableWindow, _ComboPopupItemDelegate
 
 
 TIME_COLUMN = "Время (сут)"
@@ -442,5 +443,10 @@ class TumorGrowthInhibitionTableGuiSmokeTests(unittest.TestCase):
         self.assertEqual(table_window.main_table.item(1, 0).text(), "1")
         self.assertEqual(table_window.summary_table.item(0, 0).text(), "Э1 vs Э2")
         self.assertNotEqual(table_window.tabs.indexOf(table_window.summary_tab), -1)
-        self.assertIn("QComboBox QAbstractItemView::item:hover", table_window.mode_selector.styleSheet())
-        self.assertIn("selection-background-color: #dbe8f6", table_window.mode_selector.styleSheet())
+        # Регрессия: чистый QSS (background-color: palette(base)) на popup-списке QComboBox
+        # рендерил чёрный фон в этом отдельном top-level окне (стиль MainWindow сюда не
+        # каскадируется) — исправлено явной палитрой + кастомным item delegate по образцу
+        # main_window._fix_combo_palette, поэтому проверяем именно их, а не QSS на самом комбобоксе.
+        popup_view = table_window.mode_selector.view()
+        self.assertIsInstance(popup_view.itemDelegate(), _ComboPopupItemDelegate)
+        self.assertEqual(popup_view.palette().color(QPalette.ColorRole.Base).name(), "#f0f5fa")
