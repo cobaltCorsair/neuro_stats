@@ -10,6 +10,7 @@ for path in (str(WORKSPACE_ROOT), str(REPO_ROOT)):
         sys.path.insert(0, path)
 
 from stats_methods.support_stats_methods import SupportingFunctions as SF
+from data_processing.excel_data_processor import RatSurvivalEvent
 
 
 class TestCalculateStdDev(unittest.TestCase):
@@ -158,6 +159,52 @@ class TestCalculateTgdThresholdDay(unittest.TestCase):
         # порог 15 между (0,10) и (2,20): t = 0 + (15-10)/(20-10)*(2-0) = 1.0
         self.assertAlmostEqual(day, 1.0, places=9)
         self.assertFalse(censored)
+
+
+class TestBuildTgdEvents(unittest.TestCase):
+    def test_one_event_per_animal_matches_calculate_tgd_threshold_day(self):
+        time_data = [0, 2, 4, 6]
+        curve_crossing = [10, 15, 8, 20]  # первое пересечение на дне 2 (см. тест немонотонности выше)
+        curve_censored = [10, 11, 12, 13]  # никогда не достигает порога 15
+        events = SF.build_tgd_events(time_data, [curve_crossing, curve_censored], k=1.5)
+
+        self.assertEqual(len(events), 2)
+        expected_day_0, expected_censored_0 = SF.calculate_tgd_threshold_day(time_data, curve_crossing, k=1.5)
+        expected_day_1, expected_censored_1 = SF.calculate_tgd_threshold_day(time_data, curve_censored, k=1.5)
+        self.assertAlmostEqual(events[0].day, expected_day_0, places=9)
+        self.assertEqual(events[0].event_observed, not expected_censored_0)
+        self.assertAlmostEqual(events[1].day, expected_day_1, places=9)
+        self.assertEqual(events[1].event_observed, not expected_censored_1)
+
+    def test_returns_rat_survival_event_instances(self):
+        events = SF.build_tgd_events([0, 2, 4], [[10, 12, 20]], k=1.5)
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], RatSurvivalEvent)
+
+    def test_default_labels_are_hash_indexed(self):
+        events = SF.build_tgd_events([0, 2, 4], [[10, 20, 30], [10, 11, 12]], k=1.5)
+        self.assertEqual(events[0].label, "#1")
+        self.assertEqual(events[1].label, "#2")
+
+    def test_custom_labels_and_source_file_propagate(self):
+        events = SF.build_tgd_events(
+            [0, 2, 4], [[10, 20, 30], [10, 11, 12]], k=1.5,
+            labels=["rat_A", "rat_B"], source_file="exp1.xlsx"
+        )
+        self.assertEqual(events[0].label, "rat_A")
+        self.assertEqual(events[0].source_file, "exp1.xlsx")
+        self.assertEqual(events[1].label, "rat_B")
+        self.assertEqual(events[1].source_file, "exp1.xlsx")
+
+    def test_animal_with_all_nan_volumes_is_skipped_not_raised(self):
+        events = SF.build_tgd_events(
+            [0, 2, 4], [[10, 20, 30], [float("nan"), float("nan"), float("nan")]], k=1.5
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].label, "#1")
+
+    def test_empty_input_returns_empty_list(self):
+        self.assertEqual(SF.build_tgd_events([0, 2, 4], [], k=1.5), [])
 
 
 class TestAggregateRtogGrades(unittest.TestCase):

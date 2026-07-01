@@ -38,10 +38,15 @@ class StubProcessor:
 
 
 class StubVisualizer:
-    def __init__(self, time_data, mean_tumor_volumes, experiment_name):
+    def __init__(self, time_data, mean_tumor_volumes, experiment_name, tumor_volumes=None, rat_labels=None):
         self.time_data = list(time_data)
         self.data_processor = StubProcessor(mean_tumor_volumes)
         self.experiment_params = [experiment_name]
+        # По умолчанию — один "виртуальный" зверёк с самой средней кривой, чтобы тесты,
+        # которым не важна межживотная изменчивость (обычная таблица ТРО), не должны были
+        # знать про per-animal данные. Тесты лог-ранга по TGD передают tumor_volumes явно.
+        self.tumor_volumes = tumor_volumes if tumor_volumes is not None else [list(mean_tumor_volumes)]
+        self.rat_labels = rat_labels if rat_labels is not None else [experiment_name]
 
 
 class TumorGrowthInhibitionTableTests(unittest.TestCase):
@@ -189,7 +194,8 @@ class TgdTableTests(unittest.TestCase):
 
         self.assertEqual(
             list(tgd_df.columns),
-            ["Группа", "TGD, сут", "Цензурировано (эксперимент)", "Цензурировано (контроль)"]
+            ["Группа", "TGD, сут", "Цензурировано (эксперимент)", "Цензурировано (контроль)",
+             "Лог-ранг p (по животным)"]
         )
         row = tgd_df.iloc[0]
         self.assertEqual(row["Группа"], "exp1")
@@ -224,6 +230,54 @@ class TgdTableTests(unittest.TestCase):
         self.assertFalse(row["Цензурировано (эксперимент)"])
         self.assertTrue(row["Цензурировано (контроль)"])
         self.assertAlmostEqual(row["TGD, сут"], 2.5 - 15.0, places=6)
+
+    @patch("draw_abs_rel_graph_compare.format_experiment_params", side_effect=lambda params: params[0])
+    def test_tgd_table_log_rank_column_is_valid_probability(self, _format_params):
+        control = self._build_control([0, 5, 10, 15], [10, 12, 16, 24])
+        experiment = self._build_experiment([0, 5, 10, 15], [10, 11, 12, 20], "exp1")
+
+        comparator = TumorDataComparatorAdvanced(experiment)
+        tgd_df = comparator.create_tgd_table(control, [experiment])
+
+        p = tgd_df.iloc[0]["Лог-ранг p (по животным)"]
+        self.assertGreaterEqual(p, 0.0)
+        self.assertLessEqual(p, 1.0)
+
+    @patch("draw_abs_rel_graph_compare.format_experiment_params", side_effect=lambda params: params[0])
+    def test_tgd_table_log_rank_uses_individual_animals_not_group_mean(self, _format_params):
+        # Контроль: все 4 животных цензурированы (порог 15 не достигнут -> день 15, событие не
+        # наступило). Эксперимент: все 4 животных пересекают порог рано (день 2.5, событие).
+        # Максимальное разделение времени-до-события -> лог-ранг должен уверенно отличить
+        # группы. Это возможно только если функция реально берёт tumor_volumes ПО ЖИВОТНЫМ,
+        # а не молча использует одну (среднюю) кривую на группу.
+        control = StubVisualizer(
+            [0, 5, 10, 15], [10, 10, 10, 10], "control",
+            tumor_volumes=[[10, 10, 10, 10]] * 4, rat_labels=["c1", "c2", "c3", "c4"]
+        )
+        experiment = StubVisualizer(
+            [0, 5, 10, 15], [10, 20, 30, 40], "exp1",
+            tumor_volumes=[[10, 20, 30, 40]] * 4, rat_labels=["e1", "e2", "e3", "e4"]
+        )
+
+        comparator = TumorDataComparatorAdvanced(experiment)
+        tgd_df = comparator.create_tgd_table(control, [experiment])
+
+        p = tgd_df.iloc[0]["Лог-ранг p (по животным)"]
+        self.assertLess(p, 0.05)
+
+    @patch("draw_abs_rel_graph_compare.format_experiment_params", side_effect=lambda params: params[0])
+    def test_tgd_table_log_rank_identical_groups_not_significant(self, _format_params):
+        curves = [[10, 20, 30, 40]] * 3
+        control = StubVisualizer([0, 5, 10, 15], [10, 20, 30, 40], "control",
+                                  tumor_volumes=curves, rat_labels=["c1", "c2", "c3"])
+        experiment = StubVisualizer([0, 5, 10, 15], [10, 20, 30, 40], "exp1",
+                                     tumor_volumes=curves, rat_labels=["e1", "e2", "e3"])
+
+        comparator = TumorDataComparatorAdvanced(experiment)
+        tgd_df = comparator.create_tgd_table(control, [experiment])
+
+        p = tgd_df.iloc[0]["Лог-ранг p (по животным)"]
+        self.assertAlmostEqual(p, 1.0, places=6)
 
 
 class TumorGrowthInhibitionTableGuiSmokeTests(unittest.TestCase):

@@ -64,6 +64,7 @@ class TestBuildSignificanceTestLegendLabel(unittest.TestCase):
         # значит легенда обязана объяснять оба, а не только основной.
         self.assertTrue(any(line.startswith("*") for line in lines))
         self.assertTrue(any(line.startswith("(*)") for line in lines))
+        self.assertIn("изменчивость", joined)
 
     def test_label_mentions_no_holm_when_disabled(self):
         graph_manager.set_holm_correction_enabled(False)
@@ -74,6 +75,10 @@ class TestBuildSignificanceTestLegendLabel(unittest.TestCase):
         # Без поправки Холма маркер '(*)' не используется вообще (только '*'),
         # поэтому его объяснение в легенде не нужно.
         self.assertFalse(any(line.startswith("(*)") for line in lines))
+        # Предупреждение о внутригрупповой изменчивости не зависит от поправки Холма —
+        # оно объясняет разрыв между визуальной разницей средних и отсутствием маркера
+        # независимо от того, каким критерием и как считалась значимость.
+        self.assertIn("изменчивость", joined)
 
 
 class TestTumorVolumeSignificanceLegend(unittest.TestCase):

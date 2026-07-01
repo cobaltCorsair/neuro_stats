@@ -9,6 +9,7 @@ from draw_base_graphs import TumorDataVisualizer
 from controls import ControlGroupVisualizer
 from utils.plotting_helpers import custom_fill_between, format_experiment_params, MatplotlibConfigurator
 from stats_methods.support_stats_methods import SupportingFunctions
+from stats_methods.kaplan_meier import log_rank_test
 from utils.visualizer import GraphVisualizer
 from work_with_prepared_data.radiobioligy_project.gui import graph_manager
 
@@ -393,6 +394,12 @@ class TumorDataComparatorAdvanced:
         визуализаторов — повторный вызов на уже сдвинутых данных безопасен лишь случайно
         (минимум после первого сдвига равен 0), поэтому явный флаг лучше, чем полагаться на эту
         случайную идемпотентность.
+
+        Столбец "Лог-ранг p (по животным)" сравнивает не средние кривые, а TGD КАЖДОГО
+        животного отдельно (build_tgd_events + log_rank_test) — в отличие от поточечного
+        сравнения объёмов (Манна-Уитни/Стьюдента) он не теряет мощность на смешанных
+        популяциях (часть животных регрессировала, часть — нет), потому что цензурированных
+        животных трактует как цензурированные наблюдения, а не как обычный разброс.
         """
         if normalize_time:
             SupportingFunctions.normalize_time_data_min([control_visualizer] + experiment_visualizers)
@@ -401,6 +408,10 @@ class TumorDataComparatorAdvanced:
         control_mean = SupportingFunctions.to_float_list(control_visualizer.data_processor.get_mean_tumor_volumes())
         control_day, control_censored = SupportingFunctions.calculate_tgd_threshold_day(
             control_times, control_mean, k
+        )
+        control_events = SupportingFunctions.build_tgd_events(
+            control_times, control_visualizer.tumor_volumes, k,
+            labels=control_visualizer.rat_labels, source_file="control"
         )
 
         experiment_names = self._build_experiment_names(experiment_visualizers)
@@ -411,11 +422,17 @@ class TumorDataComparatorAdvanced:
                 experiment_visualizer.data_processor.get_mean_tumor_volumes()
             )
             exp_day, exp_censored = SupportingFunctions.calculate_tgd_threshold_day(exp_times, exp_mean, k)
+            exp_events = SupportingFunctions.build_tgd_events(
+                exp_times, experiment_visualizer.tumor_volumes, k,
+                labels=experiment_visualizer.rat_labels, source_file=experiment_name
+            )
+            _, log_rank_p = log_rank_test(control_events, exp_events)
             rows.append({
                 'Группа': experiment_name,
                 'TGD, сут': exp_day - control_day,
                 'Цензурировано (эксперимент)': exp_censored,
                 'Цензурировано (контроль)': control_censored,
+                'Лог-ранг p (по животным)': log_rank_p,
             })
 
         return pd.DataFrame(rows)

@@ -12,6 +12,7 @@ from sklearn.ensemble import IsolationForest
 from scipy.stats import chi2
 from scipy.spatial.distance import mahalanobis
 from work_with_prepared_data.radiobioligy_project.gui import graph_manager
+from data_processing.excel_data_processor import RatSurvivalEvent
 
 
 class ExtractOutliers:
@@ -751,6 +752,43 @@ class SupportingFunctions:
                 return t_cross, False
 
         return pairs[-1][0], True
+
+    @staticmethod
+    def build_tgd_events(time_data: List[float], volumes_per_animal: List[List[float]], k: float = 1.5,
+                          labels: Optional[List[str]] = None, source_file: str = "") -> List[RatSurvivalEvent]:
+        """
+        Строит по одному событию TGD (день пересечения k*V0, либо цензурирование) НА КАЖДОЕ
+        животное — в отличие от calculate_tgd_threshold_day, которая обычно применяется к одной
+        (чаще средней по группе) кривой.
+
+        Нужно для лог-рангового теста (stats_methods.kaplan_meier.log_rank_test): в отличие от
+        поточечного сравнения объёмов (Манна-Уитни/Стьюдента) он трактует животных, не достигших
+        порога, как цензурированные наблюдения, а не как обычный разброс — поэтому не теряет
+        мощность на смешанных популяциях (часть животных регрессировала, часть — нет).
+
+        Args:
+            time_data: Временные точки наблюдения, общие для всех животных группы.
+            volumes_per_animal: Список кривых объёма опухоли, по одной на животное.
+            k: Кратность исходного объёма, определяющая порог. По умолчанию 1.5.
+            labels: Метки животных; если не заданы, используются "#1", "#2", ...
+            source_file: Значение поля source_file для всех созданных событий.
+
+        Returns:
+            List[RatSurvivalEvent]: По одному событию на животное с хотя бы одним валидным
+                измерением объёма (животные без единого валидного измерения пропускаются).
+        """
+        events = []
+        for index, volumes in enumerate(volumes_per_animal):
+            label = labels[index] if labels else f"#{index + 1}"
+            try:
+                day, censored = SupportingFunctions.calculate_tgd_threshold_day(time_data, volumes, k)
+            except ValueError:
+                continue
+            events.append(RatSurvivalEvent(
+                label=label, day=day, event_observed=not censored,
+                reason="" if censored else f"TGD (k={k})", source_file=source_file,
+            ))
+        return events
 
     @staticmethod
     def trim_data_to_timepoint(time_data, values, last_timepoint):
