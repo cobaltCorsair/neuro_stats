@@ -628,11 +628,12 @@ class GraphVisualizer:
                                    linestyle=line.get_linestyle(), linewidth=line.get_linewidth())
                         for line in self.lines[:len(labels)]
                     ]
+                    extra_legend = plt.legend(handles=extra_handles, title=title, loc=loc, fontsize=legend_fontsize)
                 else:
-                    # Если маркер не нужен, создаем элементы легенды без маркера
-                    extra_handles = [plt.Line2D([], [], color="none", marker=None, linestyle="None", label=label) for label
-                                     in labels]
-                extra_legend = plt.legend(handles=extra_handles, title=title, loc=loc, fontsize=legend_fontsize)
+                    extra_handles = [plt.Line2D([], [], color="none", marker=None, linestyle="None", label=label)
+                                     for label in labels]
+                    extra_legend = plt.legend(handles=extra_handles, title=title, loc=loc,
+                                              fontsize=legend_fontsize, handlelength=0)
                 ax.add_artist(extra_legend)
 
         plt.tight_layout()

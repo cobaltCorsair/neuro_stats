@@ -32,7 +32,7 @@ def build_significance_test_legend_label(test_name: str) -> str:
     маркеры '*'/'(*)' без объяснения, что они означают.
     """
     holm_status = "с поправкой Холма" if holm_correction_enabled else "без поправки Холма"
-    return f"{test_name}, {holm_status}"
+    return f"* {test_name}, {holm_status}"
 
 
 def register_visualizer(visualizer):

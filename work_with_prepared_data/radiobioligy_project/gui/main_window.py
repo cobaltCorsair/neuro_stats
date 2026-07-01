@@ -741,6 +741,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 background-color: #C5D9EE;
                 color: #1A3050;
             }
+
+            /* ── Группы в панели управления ── */
+            QGroupBox {
+                background: rgba(255,255,255,0.35);
+                border: 1px solid rgba(150,170,195,0.55);
+                border-radius: 6px;
+                margin-top: 12px;
+                padding: 10px 8px 6px 8px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                top: -1px;
+                padding: 1px 8px;
+                color: #2C3E52;
+                font-size: 11px;
+                font-weight: 600;
+                background: rgba(222,232,242,0.95);
+                border: 1px solid rgba(150,170,195,0.55);
+                border-radius: 4px;
+            }
         """)
 
         self.setWindowTitle("Радиобиология — анализ опухолей")
@@ -800,13 +822,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.use_AUC = False
 
     def replace_combobox_4(self):
-        index = self.horizontalLayout_7.indexOf(self.comboBox_4)
+        index = self.horizontalLayout_groups.indexOf(self.comboBox_4)
         if self.comboBox_4 is not None:
-            self.horizontalLayout_7.removeWidget(self.comboBox_4)
+            self.horizontalLayout_groups.removeWidget(self.comboBox_4)
+            # deleteLater() only schedules destruction for the next event-loop pass —
+            # until then the widget stays a visible child at its old (layout-assigned)
+            # geometry, which collapses to (0, 0) once it's no longer layout-managed.
+            # Hide it immediately so it doesn't render on top of the group box title.
+            self.comboBox_4.hide()
             self.comboBox_4.deleteLater()
 
-        self.comboBox_4 = CheckableComboBox(self)
-        self.horizontalLayout_7.insertWidget(index, self.comboBox_4)
+        self.comboBox_4 = CheckableComboBox(self.groupBox_groups)
+        self.horizontalLayout_groups.insertWidget(index, self.comboBox_4)
 
     def update_combobox_with_labels(self):
         # Сохраняем индексы выбранных элементов перед обновлением
