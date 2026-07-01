@@ -454,15 +454,15 @@ class TumorDataVisualizer:
                                yerr=(auc_sem or None), capsize=8, zorder=2,
                                error_kw={'ecolor': 'black', 'linewidth': 2, 'zorder': 3})
 
-                        # Подпись AUC НАД столбцом (над error bar)
-                        label_y = bottom + segment_height + auc_sem + 0.02 * max_auc_in_group
+                        # Подпись AUC внутри сегмента (по центру высоты), чтобы не прилипать
+                        # к блоку легенды внизу при стопке столбцов с разными экспериментами
+                        label_y = bottom + segment_height / 2
                         plt.text(dose, label_y, f"{data['auc_mean']:.2f}",
-                                ha='center', va='bottom', fontsize=value_label_fontsize,
+                                ha='center', va='center', fontsize=value_label_fontsize,
                                 fontweight='bold', color='black', zorder=10)
-                        max_annotation_top = max(max_annotation_top, label_y)
-
-                        # Обновляем максимальную высоту для Mann-Whitney
+                        # Для расширения верхней границы оси считаем по физическому верху сегмента
                         current_top = bottom + segment_height + auc_sem
+                        max_annotation_top = max(max_annotation_top, current_top)
                         if current_top > max_height_with_error:
                             max_height_with_error = current_top
 
