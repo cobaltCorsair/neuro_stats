@@ -1194,54 +1194,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QTimer.singleShot(50, self._fit_splitter_to_table)
 
     def _fit_splitter_to_table(self):
-        """
-        Расширяет верхнюю панель сплиттера, чтобы таблица вмещала все строки без скролла.
+        """Подстраивает позицию сплиттера под число строк таблицы.
 
-        Если строк много и текущей высоты окна не хватает даже с учётом минимума графика
-        снизу (frame.minimumHeight()) — сначала пробуем вырастить само окно (в пределах
-        доступной области экрана), а не сжимать нижнюю панель ниже её минимума: явный
-        tableView.setMinimumHeight(desired) больше, чем реально способен выдать сплиттер,
-        не приводит к ошибке — QSplitter не может дать виджету меньше его minimumHeight,
-        поэтому виджет просто визуально перекрывает соседнюю панель, а не скроллится.
-
-        Вызывается только при изменении списка экспериментов (после open_files). При обычном
-        изменении размера окна пользователем растить окно в ответ было бы навязчиво — для
-        этого случая пересчёт без попытки роста делает _clamp_table_height_to_splitter,
-        вызываемая из resizeEvent.
-        """
-        row_height = 36
-        header_h = self.tableView.horizontalHeader().height()
-        desired = header_h + self.model.rowCount() * row_height + 6
-        min_bottom = self.frame.minimumHeight()
-
-        total = self.splitter_2.height()
-        if total <= 0:
-            # Виджет ещё не отрисован — повторим чуть позже
-            QTimer.singleShot(100, self._fit_splitter_to_table)
-            return
-
-        shortfall = (desired + min_bottom) - total
-        if shortfall > 0:
-            screen = self.screen()
-            max_height = screen.availableGeometry().height() if screen else self.height()
-            new_height = min(self.height() + shortfall, max_height)
-            if new_height > self.height():
-                self.resize(self.width(), new_height)
-                # Геометрия сплиттера после resize() обновится не сразу — пересчитываем
-                # на следующем проходе событийного цикла, а не на непрогретых размерах.
-                QTimer.singleShot(0, self._fit_splitter_to_table)
-                return
-
-        self._clamp_table_height_to_splitter()
-
-    def _clamp_table_height_to_splitter(self):
-        """
-        Пересчитывает минимальную высоту таблицы под ТЕКУЩИЙ размер сплиттера, не пытаясь
-        вырастить окно — вызывается на каждый resizeEvent (в т.ч. когда пользователь сам
-        вручную ужимает окно), поэтому не должна конкурировать с его же намерением сделать
-        окно меньше. Без этого пересчёта после ручного ужатия окна старое (большее)
-        tableView.setMinimumHeight, выставленное при последнем добавлении файлов, не даёт
-        сплиттеру honestly распределить пространство — таблица перекрывает график/кнопки.
+        Если места недостаточно для всех строк — таблица прокручивается, окно
+        не растягивается принудительно. setMinimumHeight на tableView не выставляется:
+        это приводило к визуальному артефакту (граница таблицы отрывалась от содержимого),
+        когда ограничение не вмещалось в текущий размер сплиттера.
         """
         if self.model.rowCount() == 0:
             return
@@ -1253,12 +1211,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         total = self.splitter_2.height()
         if total <= 0:
+            QTimer.singleShot(100, self._fit_splitter_to_table)
             return
 
+        # Сбрасываем minimumHeight — мог остаться от предыдущей версии кода.
+        self.tableView.setMinimumHeight(0)
+
         table_height = min(desired, max(total - min_bottom, 0))
-        self.tableView.setMinimumHeight(table_height)
-        bottom = max(total - table_height, min_bottom)
-        self.splitter_2.setSizes([table_height, bottom])
+        self.splitter_2.setSizes([table_height, total - table_height])
+
+    def _clamp_table_height_to_splitter(self):
+        """Вызывается из resizeEvent — делегирует в _fit_splitter_to_table."""
+        self._fit_splitter_to_table()
 
     def on_table_data_changed(self, *args):
         """
@@ -2333,8 +2297,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def resizeEvent(self, event):
         """Вызывается при изменении размера окна."""
         super(MainWindow, self).resizeEvent(event)
+        # QWidget::event() вызывает d->layout->activate() ПОСЛЕ возврата из resizeEvent,
+        # поэтому splitter_2.height() ещё не обновлён здесь. Откладываем пересчёт на
+        # следующий такт цикла событий, к этому моменту layout уже пересчитан.
         if hasattr(self, 'model'):
-            self._clamp_table_height_to_splitter()
+            QTimer.singleShot(0, self._clamp_table_height_to_splitter)
         self.create_graphic()
 
     def clear_layout(self, layout):

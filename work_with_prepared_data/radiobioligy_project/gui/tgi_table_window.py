@@ -4,7 +4,10 @@ from PyQt6.QtGui import QBrush, QColor, QPalette
 from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QHBoxLayout, QLabel, QListView, QStyle, \
     QStyledItemDelegate, QStyleOptionViewItem, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
 
-from gui.dataframe_table_widget import DataFrameTableMixin
+try:
+    from gui.dataframe_table_widget import DataFrameTableMixin
+except ImportError:
+    from work_with_prepared_data.radiobioligy_project.gui.dataframe_table_widget import DataFrameTableMixin
 
 
 class _ComboPopupItemDelegate(QStyledItemDelegate):

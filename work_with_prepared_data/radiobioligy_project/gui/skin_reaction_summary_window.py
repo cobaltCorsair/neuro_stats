@@ -2,7 +2,10 @@ import pandas as pd
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QLabel, QTableWidget, QVBoxLayout
 
-from gui.dataframe_table_widget import DataFrameTableMixin
+try:
+    from gui.dataframe_table_widget import DataFrameTableMixin
+except ImportError:
+    from work_with_prepared_data.radiobioligy_project.gui.dataframe_table_widget import DataFrameTableMixin
 
 SUMMARY_COLUMNS = [
     "Группа",
