@@ -322,33 +322,39 @@ class ExtractOutliers:
             percentile_threshold (float): Процентиль для определения выбросов (на основе дивергенции).
         """
         data_list = self._get_data()
-        # Преобразуем данные в массив numpy для обработки
-        data = np.array(data_list)
+        if not data_list:
+            return
 
-        # Убедимся, что данные имеют двумерную форму (n_samples, 1)
-        data_reshaped = data.reshape(-1, 1)
+        # Каждую кривую (временной ряд) сводим к одному скаляру — среднему объёму —
+        # чтобы KDE работал в одномерном пространстве. nanmean устойчив к NaN
+        # (пропущенным замерам умерших крыс).
+        per_rat_means = np.array([
+            np.nanmean(np.asarray(curve, dtype=float)) for curve in data_list
+        ])
 
-        # Оценка плотности распределения данных с помощью KDE (Ядерная оценка плотности)
+        if np.all(np.isnan(per_rat_means)):
+            return
+
+        # Крысы с полностью пустым рядом (все NaN) подставляем глобальный минимум,
+        # чтобы sklearn не упал. Такие крысы получат высокое KL-расстояние.
+        fill_val = float(np.nanmin(per_rat_means))
+        per_rat_means_filled = np.where(np.isnan(per_rat_means), fill_val, per_rat_means)
+
+        data_reshaped = per_rat_means_filled.reshape(-1, 1)
+
         kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth).fit(data_reshaped)
         log_dens = kde.score_samples(data_reshaped)
         dens = np.exp(log_dens)
 
-        # Рассчитываем среднюю плотность всех элементов
         global_density_mean = np.mean(dens)
+        kl_divergences = np.abs(dens - global_density_mean)
 
-        # Вычисляем "аномальность" каждого элемента на основе его отклонения от средней плотности
-        kl_divergences = []
-        for i in range(len(data)):
-            kl_divergence = abs(dens[i] - global_density_mean)  # Простая разница плотности
-            kl_divergences.append(kl_divergence)
-
-        # Определяем выбросы на основе заданного процентиля
         threshold = np.percentile(kl_divergences, percentile_threshold)
-        outlier_indices = np.where(np.array(kl_divergences) > threshold)[0]
+        outlier_indices = np.where(kl_divergences > threshold)[0]
 
-        # Удаляем выбросы на основе "аномальной" плотности
-        self.base_class.rat_labels = [label for i, label in enumerate(self.base_class.rat_labels) if
-                                      i not in outlier_indices]
+        self.base_class.rat_labels = [
+            label for i, label in enumerate(self.base_class.rat_labels) if i not in outlier_indices
+        ]
         self._set_data([volume for i, volume in enumerate(data_list) if i not in outlier_indices])
 
         print(f'Выбросы удалены. Количество выбросов: {len(outlier_indices)}')

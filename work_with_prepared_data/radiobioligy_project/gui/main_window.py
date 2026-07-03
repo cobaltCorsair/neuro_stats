@@ -34,6 +34,7 @@ from work_with_prepared_data.radiobioligy_project.gui.checkable_combobox import 
 from work_with_prepared_data.radiobioligy_project.gui.legend_window import LegendManager
 from work_with_prepared_data.radiobioligy_project.gui.tgi_table_window import TumorGrowthInhibitionTableWindow
 from work_with_prepared_data.radiobioligy_project.gui.skin_reaction_summary_window import SkinReactionSummaryWindow
+from work_with_prepared_data.radiobioligy_project.gui.bed_table_window import BedTableWindow
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -213,6 +214,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tumor_3d_viewer_window = None
         self.tgi_table_window = None
         self.skin_reaction_summary_window = None
+        self.bed_table_window = None
         self.kaplan_meier_window = None
         self.kaplan_meier_calculator_window = None
         self.cached_visualizer = None  # Кеш для модифицированного визуализатора
@@ -292,6 +294,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.action_skin_reaction_summary = QAction("Сводка кожных реакций (пик/длительность/нормализация)", self)
         self.action_skin_reaction_summary.triggered.connect(self.handle_skin_reaction_summary_table)
         self.tools_menu.addAction(self.action_skin_reaction_summary)
+        self.action_bed_table = QAction("BED / EQD2 по группам", self)
+        self.action_bed_table.triggered.connect(self.handle_bed_table)
+        self.tools_menu.addAction(self.action_bed_table)
         self.action_about_docs = QAction("О программе", self)
         self.action_about_docs.triggered.connect(self.open_project_documentation)
         self.menubar.addAction(self.action_about_docs)
@@ -1914,6 +1919,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.skin_reaction_summary_window.raise_()
         self.skin_reaction_summary_window.activateWindow()
 
+    def handle_bed_table(self):
+        selected_paths = self.get_selected_experiments()
+        if len(selected_paths) < 1:
+            QMessageBox.warning(self, "Нет данных", "Выберите хотя бы один эксперимент.")
+            return
+
+        groups = []
+        for path in selected_paths:
+            try:
+                vis = TumorDataVisualizer(path)
+                groups.append((path, vis.experiment_params))
+            except Exception as exc:
+                print(f"Не удалось прочитать параметры из {path}: {exc}")
+
+        if not groups:
+            QMessageBox.warning(
+                self, "Нет данных",
+                "Ни один из выбранных файлов не содержит параметров дозы."
+            )
+            return
+
+        if self.bed_table_window is None:
+            self.bed_table_window = BedTableWindow(self)
+
+        self.bed_table_window.set_groups(groups)
+        self.bed_table_window.show()
+        self.bed_table_window.raise_()
+        self.bed_table_window.activateWindow()
+
     def handle_pushButton_4(self):
         # Определяем тип графика в зависимости от выбранных чекбоксов
         if self.checkBox_5.isChecked():  # Если выбран "индивидуальные"
@@ -2399,15 +2433,37 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 FitAlphaBetaWindow,
             )
             self._show_child_window("fit_alpha_beta_window", FitAlphaBetaWindow)
+            self._send_files_to_fitter()
         except Exception as error:
             self._show_tool_open_error("LQ fitter и радиобиология", error)
+
+    def _send_files_to_fitter(self) -> None:
+        """Отправляет выбранные эксперименты и контроль в LQ-фиттер (идемпотентно)."""
+        if self.fit_alpha_beta_window is None:
+            return
+        paths = list(self.get_selected_experiments())
+        if self.control_path:
+            paths.append(self.control_path)
+        if paths:
+            self.fit_alpha_beta_window.add_paths(paths)
 
     def open_growth_predictor(self):
         try:
             from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predictor_gui import (
                 TumorGrowthPredictorWindow,
             )
-            self._show_child_window("growth_predictor_window", TumorGrowthPredictorWindow)
+            fitter = self.fit_alpha_beta_window
+            run_results = getattr(fitter, "run_results", None) if fitter is not None else None
+
+            if self.growth_predictor_window is None:
+                self.growth_predictor_window = TumorGrowthPredictorWindow(run_results or [])
+            elif run_results:
+                self.growth_predictor_window.run_results = list(run_results)
+                self.growth_predictor_window.populate_fit_results()
+
+            self.growth_predictor_window.show()
+            self.growth_predictor_window.raise_()
+            self.growth_predictor_window.activateWindow()
         except Exception as error:
             self._show_tool_open_error("Предсказание роста опухоли", error)
 
@@ -2494,18 +2550,51 @@ sys.excepthook = excepthook
 
 
 def _apply_application_palette(app: QApplication):
-    """Фиксирует светлые цвета выделения для Fusion и popup-списков."""
+    """Фиксирует светлые цвета для Fusion: выделение, фон popup-списков и текстовых полей."""
     palette = app.palette()
+    app_colors = {
+        QPalette.ColorRole.Base: QColor('#F0F5FA'),
+        QPalette.ColorRole.AlternateBase: QColor('#F0F5FA'),
+        QPalette.ColorRole.Highlight: QColor('#C5D9EE'),
+        QPalette.ColorRole.HighlightedText: QColor('#1A3050'),
+        QPalette.ColorRole.Text: QColor('#243040'),
+    }
     for color_group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
-        palette.setColor(color_group, QPalette.ColorRole.Highlight, QColor('#C5D9EE'))
-        palette.setColor(color_group, QPalette.ColorRole.HighlightedText, QColor('#1A3050'))
+        for role, color in app_colors.items():
+            palette.setColor(color_group, role, color)
     app.setPalette(palette)
+
+
+_APP_GLOBAL_STYLESHEET = """
+    /* Применяется ко всем окнам приложения, в т.ч. QDialog и QInputDialog —
+       MainWindow.setStyleSheet() не каскадируется на top-level окна. */
+    QComboBox QAbstractItemView {
+        background-color: #F0F5FA;
+        color: #243040;
+        border: 1px solid #AABBCC;
+        outline: 0;
+        selection-background-color: #C5D9EE;
+        selection-color: #1A3050;
+    }
+    QComboBox QAbstractItemView::item {
+        background-color: #F0F5FA;
+        color: #243040;
+        padding: 4px 8px;
+        min-height: 30px;
+    }
+    QComboBox QAbstractItemView::item:hover,
+    QComboBox QAbstractItemView::item:selected {
+        background-color: #C5D9EE;
+        color: #1A3050;
+    }
+"""
 
 
 def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     _apply_application_palette(app)
+    app.setStyleSheet(_APP_GLOBAL_STYLESHEET)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

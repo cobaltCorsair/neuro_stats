@@ -94,6 +94,27 @@ def get_schedule_from_params(experiment_params: List[str]) -> List[float]:
     return []
 
 
+def extract_dose_fractions_from_params(experiment_params: List[str]) -> Tuple[List[float], List[float]]:
+    """Извлекает дозы фракций и межфракционные интервалы из experiment_params.
+
+    Returns:
+        (fraction_doses, schedule_hours) —
+            fraction_doses: список доз отдельных фракций (Гр), напр. [23.0, 23.0]
+            schedule_hours: интервалы между фракциями (часы), длина = len(fraction_doses) - 1
+    """
+    _DOSE_RE = re.compile(r'^[a-zA-Z]\s*=\s*([\d]+(?:[.,][\d]+)?)', )
+    fraction_doses: List[float] = []
+    for p in experiment_params:
+        m = _DOSE_RE.match(p.strip())
+        if m:
+            try:
+                fraction_doses.append(float(m.group(1).replace(',', '.')))
+            except ValueError:
+                pass
+    schedule_hours = get_schedule_from_params(experiment_params)
+    return fraction_doses, schedule_hours
+
+
 def _process_header_row(raw_params: List[str]) -> Tuple[List[str], List[float]]:
     """
     Обрабатывает сырой список ячеек первой строки Excel:

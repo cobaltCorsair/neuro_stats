@@ -705,6 +705,29 @@ def export_bed_eqd2_table(
     return frame
 
 
+def compute_bed(
+    dose_total: float,
+    n_fractions: int,
+    alpha_beta: float,
+    *,
+    rbe_factor: float = 1.0,
+) -> float:
+    """BED = n·d_phys·(1 + d_phys/α/β), where d_phys = (dose_total/n) / rbe_factor.
+
+    For groups prescribed in RBE-weighted units (Гр·ОБЭ), pass rbe_factor=RBE (e.g. 1.1)
+    so the function converts back to physical dose before applying the LQ formula.
+    Physical-dose groups use the default rbe_factor=1.0.
+    """
+    if n_fractions <= 0:
+        raise ValueError("n_fractions must be positive.")
+    if alpha_beta <= 0.0:
+        raise ValueError("alpha_beta must be positive.")
+    if rbe_factor <= 0.0:
+        raise ValueError("rbe_factor must be positive.")
+    d_phys = float(dose_total) / n_fractions / float(rbe_factor)
+    return n_fractions * d_phys * (1.0 + d_phys / float(alpha_beta))
+
+
 def _result_alpha_beta_ratio_for_export(
     result: LQFitResult,
     family_label: str,

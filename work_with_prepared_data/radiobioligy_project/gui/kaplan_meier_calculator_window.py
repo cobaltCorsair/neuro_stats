@@ -1,10 +1,11 @@
 import io
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QBrush, QColor, QPalette, QPixmap
 from PyQt6.QtWidgets import (
-    QComboBox, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPlainTextEdit,
-    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QComboBox, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QListView, QMessageBox,
+    QPlainTextEdit, QPushButton, QStyle, QStyledItemDelegate, QStyleOptionViewItem,
+    QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
 from work_with_prepared_data.radiobioligy_project.data_processing.excel_data_processor import RatSurvivalEvent
@@ -25,6 +26,44 @@ from work_with_prepared_data.radiobioligy_project.stats_methods.kaplan_meier imp
 
 EVENT_DEATH = "Смерть"
 EVENT_CENSORED = "Цензурирован"
+EVENT_ALIVE = "Жив"
+
+
+class _ComboPopupItemDelegate(QStyledItemDelegate):
+    """Исключает нативную чёрную подсветку в popup-списках QComboBox.
+    Это отдельное top-level окно (QDialog), стиль MainWindow сюда не каскадируется."""
+
+    _base_color = QColor('#F0F5FA')
+    _text_color = QColor('#243040')
+    _highlight_color = QColor('#C5D9EE')
+    _highlight_text_color = QColor('#1A3050')
+
+    def paint(self, painter, option, index):
+        item_option = QStyleOptionViewItem(option)
+        self.initStyleOption(item_option, index)
+
+        is_highlighted = bool(
+            item_option.state & QStyle.StateFlag.State_MouseOver
+            or item_option.state & QStyle.StateFlag.State_Selected
+        )
+        background = self._highlight_color if is_highlighted else self._base_color
+        foreground = self._highlight_text_color if is_highlighted else self._text_color
+
+        painter.fillRect(item_option.rect, background)
+        item_option.backgroundBrush = QBrush(background)
+        item_option.palette.setColor(QPalette.ColorRole.Base, background)
+        item_option.palette.setColor(QPalette.ColorRole.Window, background)
+        item_option.palette.setColor(QPalette.ColorRole.Text, foreground)
+        item_option.palette.setColor(QPalette.ColorRole.WindowText, foreground)
+        item_option.state &= ~QStyle.StateFlag.State_Selected
+        item_option.state &= ~QStyle.StateFlag.State_MouseOver
+        item_option.state &= ~QStyle.StateFlag.State_HasFocus
+        super().paint(painter, item_option, index)
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setHeight(max(size.height() + 8, 30))
+        return size
 
 
 class KaplanMeierCalculatorWindow(QDialog):
@@ -129,13 +168,69 @@ class KaplanMeierCalculatorWindow(QDialog):
         self.steps_text.setMaximumHeight(160)
         layout.addWidget(self.steps_text)
 
+    @staticmethod
+    def _fix_event_combo(combo_box: QComboBox) -> None:
+        """Устанавливает явную палитру и делегат для popup QComboBox в QDialog.
+        QDialog не наследует QSS из MainWindow, поэтому palette(base) не разрешается
+        в светлый цвет и popup рендерится с чёрным фоном."""
+        combo_box.setView(QListView(combo_box))
+        view = combo_box.view()
+        view.setMouseTracking(True)
+        view.setSpacing(0)
+        view.setUniformItemSizes(True)
+        view.setAutoFillBackground(True)
+        view.viewport().setAutoFillBackground(True)
+        view.viewport().setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        view.setItemDelegate(_ComboPopupItemDelegate(view))
+
+        palette = view.palette()
+        combo_colors = {
+            QPalette.ColorRole.Base: QColor('#F0F5FA'),
+            QPalette.ColorRole.AlternateBase: QColor('#F0F5FA'),
+            QPalette.ColorRole.Window: QColor('#F0F5FA'),
+            QPalette.ColorRole.Text: QColor('#243040'),
+            QPalette.ColorRole.WindowText: QColor('#243040'),
+            QPalette.ColorRole.ButtonText: QColor('#243040'),
+            QPalette.ColorRole.Highlight: QColor('#C5D9EE'),
+            QPalette.ColorRole.HighlightedText: QColor('#1A3050'),
+        }
+        for color_group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+            for color_role, color in combo_colors.items():
+                palette.setColor(color_group, color_role, color)
+        view.setPalette(palette)
+        view.viewport().setPalette(palette)
+        view.setStyleSheet("""
+            QAbstractItemView {
+                background-color: #F0F5FA;
+                color: #243040;
+                border: 1px solid #AABBCC;
+                outline: 0;
+                selection-background-color: #C5D9EE;
+                selection-color: #1A3050;
+            }
+            QAbstractItemView::item {
+                background-color: #F0F5FA;
+                color: #243040;
+                padding: 4px 8px;
+                min-height: 30px;
+            }
+            QAbstractItemView::item:hover,
+            QAbstractItemView::item:selected,
+            QAbstractItemView::item:selected:active,
+            QAbstractItemView::item:selected:!active {
+                background-color: #C5D9EE;
+                color: #1A3050;
+            }
+        """)
+
     def _add_input_row(self):
         row = self.input_table.rowCount()
         self.input_table.setRowCount(row + 1)
         self.input_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
         self.input_table.setItem(row, 1, QTableWidgetItem(""))
         event_combo = QComboBox()
-        event_combo.addItems([EVENT_DEATH, EVENT_CENSORED])
+        event_combo.addItems([EVENT_DEATH, EVENT_CENSORED, EVENT_ALIVE])
+        self._fix_event_combo(event_combo)
         self.input_table.setCellWidget(row, 2, event_combo)
 
     def _remove_selected_row(self):
@@ -198,8 +293,14 @@ class KaplanMeierCalculatorWindow(QDialog):
             day_text = "" if event.day is None else f"{event.day:g}"
             self.input_table.setItem(row, 1, QTableWidgetItem(day_text))
             event_combo = QComboBox()
-            event_combo.addItems([EVENT_DEATH, EVENT_CENSORED])
-            event_combo.setCurrentText(EVENT_DEATH if event.event_observed else EVENT_CENSORED)
+            event_combo.addItems([EVENT_DEATH, EVENT_CENSORED, EVENT_ALIVE])
+            if event.event_observed:
+                event_combo.setCurrentText(EVENT_DEATH)
+            elif event.reason == EVENT_ALIVE:
+                event_combo.setCurrentText(EVENT_ALIVE)
+            else:
+                event_combo.setCurrentText(EVENT_CENSORED)
+            self._fix_event_combo(event_combo)
             self.input_table.setCellWidget(row, 2, event_combo)
 
     def _read_input_events(self):
@@ -225,8 +326,9 @@ class KaplanMeierCalculatorWindow(QDialog):
                 raise ValueError(f"Строка {row + 1}: время не может быть отрицательным.")
 
             label = label_item.text().strip() if label_item and label_item.text().strip() else str(row + 1)
-            is_death = event_widget.currentText() == EVENT_DEATH if event_widget else True
-            events.append(RatSurvivalEvent(label, day, is_death, EVENT_DEATH if is_death else EVENT_CENSORED))
+            current_text = event_widget.currentText() if event_widget else EVENT_DEATH
+            is_death = current_text == EVENT_DEATH
+            events.append(RatSurvivalEvent(label, day, is_death, current_text))
         return events
 
     def _handle_calculate(self):

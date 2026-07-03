@@ -30,6 +30,7 @@ try:
     from survival.fit_alpha_beta_using_processor import LQFitResult, TumorExperiment
     from survival.let_parametrization import LETDependentParams, fit_let_dependence
     from survival.mixed_field_model import FieldComponent, compute_mixed_field_sf
+    from survival.radiobiology_analysis import compute_bed
     from survival.tumor_growth_predictor import (
         GeometryReference,
         GrowthModelParameters,
@@ -51,6 +52,9 @@ except ModuleNotFoundError:
     from work_with_prepared_data.radiobioligy_project.survival.mixed_field_model import (
         FieldComponent,
         compute_mixed_field_sf,
+    )
+    from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis import (
+        compute_bed,
     )
     from work_with_prepared_data.radiobioligy_project.survival.tumor_growth_predictor import (
         GeometryReference,
@@ -881,6 +885,76 @@ class BiologicalPlausibilityTests(unittest.TestCase):
                         msg=f"α/β(γ)={ab_gamma:.1f} должен быть < α/β(n)={ab_neutron:.1f}")
         self.assertLess(ab_neutron, ab_carbon,
                         msg=f"α/β(n)={ab_neutron:.1f} должен быть < α/β(C)={ab_carbon:.1f}")
+
+
+# ===========================================================================
+# 10. compute_bed: standalone BED с поправкой на ОБЭ
+# ===========================================================================
+
+class ComputeBEDTests(unittest.TestCase):
+    """
+    Верификация функции compute_bed(dose_total, n_fractions, alpha_beta, *, rbe_factor).
+
+    Аналитический контроль: BED = n·d_phys·(1 + d_phys/α/β), d_phys = dose/n/rbe.
+    Группы 1–7 (физическая доза): rbe_factor=1.0 (по умолчанию).
+    Группы 3 и 8 (ОБЭ-взвешенная доза): rbe_factor=1.1.
+    """
+
+    def test_single_fraction_physical_dose(self) -> None:
+        """
+        Однократная доза 32 Гр (группа 1), α/β=10 Гр:
+        BED = 32·(1 + 32/10) = 32·4.2 = 134.4 Гр.
+        """
+        result = compute_bed(32.0, 1, 10.0)
+        self.assertAlmostEqual(result, 134.4, delta=1e-8)
+
+    def test_group3_rbe_weighted_dose(self) -> None:
+        """
+        Группа 3: 38 Гр·ОБЭ однократно, ОБЭ=1.1, α/β=10 Гр.
+        d_phys = 38/1.1 ≈ 34.5455 Гр
+        BED = 34.5455·(1 + 34.5455/10) ≈ 153.89 Гр.
+        """
+        d_phys = 38.0 / 1.1
+        expected = d_phys * (1.0 + d_phys / 10.0)
+        result = compute_bed(38.0, 1, 10.0, rbe_factor=1.1)
+        self.assertAlmostEqual(result, expected, delta=1e-6)
+
+    def test_group8_rbe_weighted_two_fractions(self) -> None:
+        """
+        Группа 8: 2×25,1 Гр·ОБЭ, ОБЭ=1.1, α/β=10 Гр.
+        d_phys = 25.1/1.1 ≈ 22.8182 Гр
+        BED = 2·22.8182·(1 + 22.8182/10) ≈ 149.8 Гр.
+        """
+        d_phys = 25.1 / 1.1
+        expected = 2 * d_phys * (1.0 + d_phys / 10.0)
+        result = compute_bed(2 * 25.1, 2, 10.0, rbe_factor=1.1)
+        self.assertAlmostEqual(result, expected, delta=1e-6)
+
+    def test_rbe_factor_one_equals_no_rbe(self) -> None:
+        """rbe_factor=1.0 — поведение идентично вызову без rbe_factor."""
+        self.assertAlmostEqual(
+            compute_bed(40.0, 1, 10.0, rbe_factor=1.0),
+            compute_bed(40.0, 1, 10.0),
+            delta=1e-12,
+        )
+
+    def test_rbe_correction_lowers_bed(self) -> None:
+        """ОБЭ-поправка уменьшает физическую дозу → BED должен быть меньше."""
+        bed_phys = compute_bed(38.0, 1, 10.0)
+        bed_rbe = compute_bed(38.0, 1, 10.0, rbe_factor=1.1)
+        self.assertGreater(bed_phys, bed_rbe)
+
+    def test_invalid_n_fractions_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            compute_bed(30.0, 0, 10.0)
+
+    def test_invalid_alpha_beta_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            compute_bed(30.0, 1, 0.0)
+
+    def test_invalid_rbe_factor_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            compute_bed(30.0, 1, 10.0, rbe_factor=0.0)
 
 
 if __name__ == "__main__":

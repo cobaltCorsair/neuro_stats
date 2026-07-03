@@ -79,6 +79,7 @@ from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis
     build_tcp_curve,
     compare_sf_metric_sensitivity,
     compute_tcp,
+    export_bed_eqd2_table,
     fit_ntcp_lkb_from_groups,
     summarize_skin_reaction_file,
 )
@@ -1019,6 +1020,7 @@ class FitAlphaBetaWindow(QMainWindow):
         self.detail_tabs.addTab(self._build_analysis_panel(), "Analysis")
         self.detail_tabs.addTab(self._build_tcp_panel(), "TCP")
         self.detail_tabs.addTab(self._build_ntcp_panel(), "NTCP")
+        self.detail_tabs.addTab(self._build_bed_eqd2_panel(), "BED/EQD2")
 
         layout.addWidget(self.detail_tabs, 1)
         return panel
@@ -1203,6 +1205,54 @@ class FitAlphaBetaWindow(QMainWindow):
         self.ntcp_content_splitter.setStretchFactor(3, 1)
         self.ntcp_content_splitter.setSizes([180, 230, 180, 120])
         layout.addWidget(self.ntcp_content_splitter, 1)
+        return panel
+
+    def _build_bed_eqd2_panel(self) -> QWidget:
+        panel = QWidget(self)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        controls_group = QGroupBox("BED/EQD2 reference table", self)
+        controls_layout = QGridLayout(controls_group)
+        controls_layout.setHorizontalSpacing(8)
+        controls_layout.setVerticalSpacing(6)
+
+        controls_layout.addWidget(QLabel("Fitted α/β (Gy)"), 0, 0)
+        self.bed_alpha_beta_label = QLabel("—", self)
+        controls_layout.addWidget(self.bed_alpha_beta_label, 0, 1)
+
+        controls_layout.addWidget(QLabel("Reference α/β for EQD2 (Gy)"), 0, 2)
+        self.bed_reference_ab_spin = QDoubleSpinBox(self)
+        self.bed_reference_ab_spin.setRange(0.1, 100.0)
+        self.bed_reference_ab_spin.setDecimals(1)
+        self.bed_reference_ab_spin.setSingleStep(0.5)
+        self.bed_reference_ab_spin.setValue(2.0)
+        controls_layout.addWidget(self.bed_reference_ab_spin, 0, 3)
+
+        controls_layout.addWidget(QLabel("Dose grid (Gy)"), 1, 0)
+        self.bed_dose_grid_edit = QLineEdit(
+            "2, 4, 6, 8, 10, 12, 15, 18, 20, 25, 30, 40, 50, 60", self
+        )
+        controls_layout.addWidget(self.bed_dose_grid_edit, 1, 1, 1, 3)
+
+        controls_layout.addWidget(QLabel("Fractions (n)"), 2, 0)
+        self.bed_fractions_edit = QLineEdit("1, 3, 5, 10, 15, 20, 30", self)
+        controls_layout.addWidget(self.bed_fractions_edit, 2, 1, 1, 2)
+
+        self.bed_build_button = QPushButton("Build")
+        self.bed_build_button.clicked.connect(self.refresh_bed_eqd2_view)
+        controls_layout.addWidget(self.bed_build_button, 2, 3)
+
+        self.bed_export_button = QPushButton("Export CSV")
+        self.bed_export_button.clicked.connect(self.export_bed_eqd2_csv)
+        controls_layout.addWidget(self.bed_export_button, 2, 4)
+
+        layout.addWidget(controls_group)
+
+        self.bed_table = self._create_table(["D (Gy)", "n", "d (Gy)", "BED (Gy)", "EQD2 (Gy)"])
+        layout.addWidget(self.bed_table, 1)
+
         return panel
 
     def _build_tcp_panel(self) -> QWidget:
@@ -1906,6 +1956,8 @@ class FitAlphaBetaWindow(QMainWindow):
         self.sf_metric_table.setRowCount(0)
         self.tcp_table.setRowCount(0)
         self.ntcp_table.setRowCount(0)
+        self.bed_table.setRowCount(0)
+        self.bed_alpha_beta_label.setText("—")
         self.analysis_text.clear()
         self.refresh_analysis_plot()
         self.tcp_text.clear()
@@ -2727,6 +2779,96 @@ class FitAlphaBetaWindow(QMainWindow):
         else:
             self.statusBar().showMessage(f"NTCP CSV export complete: {output_path}")
 
+    def refresh_bed_eqd2_view(self) -> None:
+        self.bed_table.setRowCount(0)
+
+        current_index = self.run_selector.currentIndex()
+        if current_index < 0 or current_index >= len(self.run_results):
+            self.bed_alpha_beta_label.setText("—")
+            return
+
+        run = self.run_results[current_index]
+        if run.fit_result is None:
+            self.bed_alpha_beta_label.setText("—")
+            return
+
+        ab_ratio = run.summary.alpha_beta_ratio
+        if ab_ratio is None or not math.isfinite(float(ab_ratio)) or float(ab_ratio) <= 0.0:
+            self.bed_alpha_beta_label.setText("—")
+            return
+
+        self.bed_alpha_beta_label.setText(f"{float(ab_ratio):.2f}")
+
+        try:
+            _default_doses = (2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 15.0, 18.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0)
+            _default_fracs = (1.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0)
+            dose_grid = parse_positive_float_csv(self.bed_dose_grid_edit.text(), default=_default_doses)
+            fractions = [int(f) for f in parse_positive_float_csv(
+                self.bed_fractions_edit.text(), default=_default_fracs
+            )]
+            reference_ab = self.bed_reference_ab_spin.value()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid input", str(exc))
+            return
+
+        df = export_bed_eqd2_table(
+            {run.label: run.fit_result},
+            dose_grid=np.array(dose_grid),
+            fractions=fractions,
+            reference_ab=reference_ab,
+        )
+        if df.empty:
+            return
+
+        self.bed_table.setRowCount(len(df))
+        for row_index, row_data in df.iterrows():
+            self._fill_row(self.bed_table, row_index, [
+                f"{row_data['total_dose_gy']:.1f}",
+                str(int(row_data['n_fractions'])),
+                f"{row_data['dose_per_fraction_gy']:.2f}",
+                f"{row_data['bed']:.2f}",
+                f"{row_data['eqd2']:.2f}",
+            ])
+
+    def export_bed_eqd2_csv(self) -> None:
+        if self.bed_table.rowCount() == 0:
+            QMessageBox.information(self, "Nothing to export", "Build the BED/EQD2 table first.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export BED/EQD2 table", str(Path.cwd() / "bed_eqd2.csv"), "CSV files (*.csv)"
+        )
+        if not path:
+            return
+
+        current_index = self.run_selector.currentIndex()
+        if current_index < 0 or current_index >= len(self.run_results):
+            return
+        run = self.run_results[current_index]
+        if run.fit_result is None:
+            return
+
+        try:
+            _default_doses = (2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 15.0, 18.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0)
+            _default_fracs = (1.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0)
+            dose_grid = parse_positive_float_csv(self.bed_dose_grid_edit.text(), default=_default_doses)
+            fractions = [int(f) for f in parse_positive_float_csv(
+                self.bed_fractions_edit.text(), default=_default_fracs
+            )]
+            reference_ab = self.bed_reference_ab_spin.value()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid input", str(exc))
+            return
+
+        export_bed_eqd2_table(
+            {run.label: run.fit_result},
+            dose_grid=np.array(dose_grid),
+            fractions=fractions,
+            reference_ab=reference_ab,
+            output_csv=Path(path),
+        )
+        self.statusBar().showMessage(f"BED/EQD2 table exported to {path}")
+
     def clear_inventory(self) -> None:
         self.inventory_report = None
         self.inventory_stale = False
@@ -2835,6 +2977,7 @@ class FitAlphaBetaWindow(QMainWindow):
         self.refresh_analysis_views()
         self.refresh_tcp_view()
         self.refresh_ntcp_view()
+        self.refresh_bed_eqd2_view()
 
     def populate_train_table(self, run: AnalysisRunResult) -> None:
         experiments = run.train
