@@ -146,7 +146,10 @@ def parse_fractions(experiment_params: List[str]) -> List[float]:
     for token in experiment_params:
         token_lower = token.lower()
         if GR_SUFFIX.search(token_lower):
-            for num in NUMBER.findall(token_lower):
+            # Strip particle-type label prefix (e.g. "c12", "с12") that appears
+            # before "=" — the isotope number must not be treated as a dose fraction.
+            search_in = token_lower.split("=", 1)[1] if "=" in token_lower else token_lower
+            for num in NUMBER.findall(search_in):
                 fractions.append(float(num.replace(",", ".")))
     return fractions
 
@@ -621,8 +624,7 @@ def infer_radiation_family(path: Path) -> Optional[str]:
     if is_proton:
         if any(marker in stem for marker in PROTON_PEAK_TOKENS):
             return "p_peak"
-        if any(marker in stem for marker in PROTON_THROUGH_TOKENS):
-            return "p_through"
+        return "p_through"  # all non-peak protons are through-going
 
     for token in tokens:
         if token in KNOWN_FAMILIES:

@@ -6,7 +6,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -1077,3 +1077,133 @@ def compare_treatment_scenarios(
 
     rows.sort(key=lambda row: (row.final_total_volume, row.auc_total_volume, row.min_total_volume))
     return ScenarioComparisonReport(rows=tuple(rows))
+
+
+# ---------------------------------------------------------------------------
+# Isoeffect pair analysis
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class IsoeffectPair:
+    """Analytic α/β estimate from one matched single-dose + fractionated pair.
+
+    For a pair (s = single, f = fractionated) with similar total dose, solve:
+
+        [D_s  Q_s] [α]   [-ln SF_s]
+        [D_f  Q_f] [β] = [-ln SF_f]
+
+    where Q = Σdᵢ².  Valid iff α > 0 and β > 0.
+    """
+
+    family: str
+    single_path: Path
+    frac_path: Path
+    D_single: float
+    D_frac: float
+    fracs_frac: Tuple[float, ...]
+    sf_single: float
+    sf_frac: float
+    alpha: float
+    beta: float
+    alpha_beta: float
+    valid: bool
+    invalid_reason: str
+
+
+@dataclass(frozen=True)
+class IsoeffectFamilySummary:
+    """Aggregated α/β statistics from valid isoeffect pairs for one radiation family."""
+
+    family: str
+    n_valid: int
+    mean_alpha_beta: float
+    sd_alpha_beta: float
+    min_alpha_beta: float
+    max_alpha_beta: float
+
+
+def find_isoeffect_pairs(
+    experiments: Sequence[TumorExperiment],
+    *,
+    dose_tol_gy: float = 2.0,
+    min_dq: float = 1.0,
+) -> Tuple[List["IsoeffectPair"], List["IsoeffectFamilySummary"]]:
+    """Find single+fractionated pairs and solve the 2×2 isoeffect system for each.
+
+    Pairs where |D_single − D_frac| > dose_tol_gy are skipped.
+    Pairs where ΔQ = Q_single − Q_frac < min_dq cannot separate α and β and are
+    also skipped.  Pairs with α ≤ 0 or β ≤ 0 are kept but flagged as invalid.
+
+    Returns (all_pairs, per-family summaries from valid pairs only).
+    """
+    from collections import defaultdict
+
+    by_family: dict[str, list[TumorExperiment]] = defaultdict(list)
+    for exp in experiments:
+        by_family[(exp.family or "unknown").lower()].append(exp)
+
+    all_pairs: list[IsoeffectPair] = []
+
+    for family, recs in sorted(by_family.items()):
+        singles = [r for r in recs if r.regimen_kind == "single"]
+        fracs   = [r for r in recs if r.regimen_kind == "fractionated"]
+
+        for s in singles:
+            for f in fracs:
+                if abs(s.dose_sum - f.dose_sum) > dose_tol_gy:
+                    continue
+                dq = s.dose2_sum - f.dose2_sum
+                if dq < min_dq:
+                    continue
+
+                y_s = -math.log(max(float(s.sf), 1e-12))
+                y_f = -math.log(max(float(f.sf), 1e-12))
+                mat = np.array([[s.dose_sum, s.dose2_sum],
+                                [f.dose_sum, f.dose2_sum]], dtype=float)
+                try:
+                    theta = np.linalg.solve(mat, np.array([y_s, y_f]))
+                except np.linalg.LinAlgError:
+                    continue
+
+                alpha, beta = float(theta[0]), float(theta[1])
+                ab = alpha / beta if beta > 1e-10 else float("nan")
+                valid = alpha > 0 and beta > 0
+                reasons: list[str] = []
+                if alpha <= 0:
+                    reasons.append("α≤0")
+                if beta <= 0:
+                    reasons.append("β≤0")
+                all_pairs.append(IsoeffectPair(
+                    family=family,
+                    single_path=s.path,
+                    frac_path=f.path,
+                    D_single=s.dose_sum,
+                    D_frac=f.dose_sum,
+                    fracs_frac=f.fractions,
+                    sf_single=s.sf,
+                    sf_frac=f.sf,
+                    alpha=alpha,
+                    beta=beta,
+                    alpha_beta=ab,
+                    valid=valid,
+                    invalid_reason=" ".join(reasons),
+                ))
+
+    valid_ab: dict[str, list[float]] = defaultdict(list)
+    for p in all_pairs:
+        if p.valid and math.isfinite(p.alpha_beta):
+            valid_ab[p.family].append(p.alpha_beta)
+
+    summaries = [
+        IsoeffectFamilySummary(
+            family=family,
+            n_valid=len(vals),
+            mean_alpha_beta=float(np.mean(vals)),
+            sd_alpha_beta=float(np.std(vals, ddof=1)) if len(vals) > 1 else float("nan"),
+            min_alpha_beta=float(np.min(vals)),
+            max_alpha_beta=float(np.max(vals)),
+        )
+        for family, vals in sorted(valid_ab.items())
+    ]
+
+    return all_pairs, summaries

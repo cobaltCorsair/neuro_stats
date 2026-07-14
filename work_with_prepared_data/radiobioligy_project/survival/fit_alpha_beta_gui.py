@@ -67,6 +67,8 @@ from work_with_prepared_data.radiobioligy_project.survival.gui_csv_export import
     write_csv_rows,
 )
 from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis import (
+    IsoeffectFamilySummary,
+    IsoeffectPair,
     NTCPFitGroup,
     NTCPFitResult,
     NTCPPoint,
@@ -80,6 +82,7 @@ from work_with_prepared_data.radiobioligy_project.survival.radiobiology_analysis
     compare_sf_metric_sensitivity,
     compute_tcp,
     export_bed_eqd2_table,
+    find_isoeffect_pairs,
     fit_ntcp_lkb_from_groups,
     summarize_skin_reaction_file,
 )
@@ -231,6 +234,22 @@ SF_METRIC_HEADERS = [
     "Delta alpha %",
     "Delta beta %",
     "Delta ratio %",
+]
+
+ISOEFFECT_PAIR_HEADERS = [
+    "Family", "Single file", "Frac file",
+    "D single (Gy)", "D frac (Gy)", "Fractions",
+    "SF single", "SF frac", "α", "β", "α/β (Gy)",
+]
+
+ISOEFFECT_SUMMARY_HEADERS = [
+    "Family", "Valid pairs", "Mean α/β (Gy)", "SD", "Min α/β", "Max α/β",
+]
+
+ISOEFFECT_REJECTED_HEADERS = [
+    "Family", "Single file", "Frac file",
+    "D single (Gy)", "D frac (Gy)", "Fractions",
+    "SF single", "SF frac", "α", "β", "Reason",
 ]
 
 LET_ALPHA_HEADERS = [
@@ -615,6 +634,8 @@ class FitAlphaBetaWindow(QMainWindow):
         self.ntcp_curve_rows: List[NTCPPoint] = []
         self.ntcp_fit_groups: List[NTCPFitGroup] = []
         self.ntcp_fit_result: Optional[NTCPFitResult] = None
+        self.isoeffect_pairs: List[IsoeffectPair] = []
+        self.isoeffect_family_summaries: List[IsoeffectFamilySummary] = []
         self.setWindowTitle("Survival LQ fitter")
         self.resize(1260, 780)
         self.setMinimumSize(1080, 680)
@@ -1021,6 +1042,7 @@ class FitAlphaBetaWindow(QMainWindow):
         self.detail_tabs.addTab(self._build_tcp_panel(), "TCP")
         self.detail_tabs.addTab(self._build_ntcp_panel(), "NTCP")
         self.detail_tabs.addTab(self._build_bed_eqd2_panel(), "BED/EQD2")
+        self.detail_tabs.addTab(self._build_isoeffect_panel(), "Isoeffect pairs")
 
         layout.addWidget(self.detail_tabs, 1)
         return panel
@@ -1958,6 +1980,13 @@ class FitAlphaBetaWindow(QMainWindow):
         self.ntcp_table.setRowCount(0)
         self.bed_table.setRowCount(0)
         self.bed_alpha_beta_label.setText("—")
+        self.isoeffect_pairs = []
+        self.isoeffect_family_summaries = []
+        self.isoeffect_valid_table.setRowCount(0)
+        self.isoeffect_summary_table.setRowCount(0)
+        self.isoeffect_rejected_table.setRowCount(0)
+        self.isoeffect_figure.clear()
+        self.isoeffect_canvas.draw_idle()
         self.analysis_text.clear()
         self.refresh_analysis_plot()
         self.tcp_text.clear()
@@ -2868,6 +2897,339 @@ class FitAlphaBetaWindow(QMainWindow):
             output_csv=Path(path),
         )
         self.statusBar().showMessage(f"BED/EQD2 table exported to {path}")
+
+    # -----------------------------------------------------------------------
+    # Isoeffect pairs panel
+    # -----------------------------------------------------------------------
+
+    def _build_isoeffect_panel(self) -> QWidget:
+        panel = QWidget(self)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        controls_group = QGroupBox("Isoeffect pair analysis", self)
+        controls_layout = QHBoxLayout(controls_group)
+        controls_layout.setSpacing(8)
+
+        controls_layout.addWidget(QLabel("Dose tolerance (Gy)"))
+        self.isoeffect_tol_spin = QDoubleSpinBox(self)
+        self.isoeffect_tol_spin.setRange(0.1, 20.0)
+        self.isoeffect_tol_spin.setDecimals(1)
+        self.isoeffect_tol_spin.setSingleStep(0.5)
+        self.isoeffect_tol_spin.setValue(2.0)
+        self.isoeffect_tol_spin.setToolTip(
+            "Maximum difference in total dose (Gy) between a single-dose and a "
+            "fractionated experiment to count as a matched isoeffect pair."
+        )
+        controls_layout.addWidget(self.isoeffect_tol_spin)
+
+        self.isoeffect_run_button = QPushButton("Analyze pairs")
+        self.isoeffect_run_button.setObjectName("PrimaryAction")
+        self.isoeffect_run_button.clicked.connect(self.refresh_isoeffect_view)
+        controls_layout.addWidget(self.isoeffect_run_button)
+
+        self.isoeffect_export_button = QPushButton("Export CSV")
+        self.isoeffect_export_button.clicked.connect(self.export_isoeffect_csv)
+        controls_layout.addWidget(self.isoeffect_export_button)
+        controls_layout.addStretch(1)
+        layout.addWidget(controls_group)
+
+        self.isoeffect_figure = Figure(figsize=COMPACT_PLOT_FIGSIZE)
+        self.isoeffect_canvas = FigureCanvasQTAgg(self.isoeffect_figure)
+        self.isoeffect_canvas.setMinimumHeight(COMPACT_PLOT_MIN_HEIGHT)
+        layout.addWidget(self.isoeffect_canvas)
+
+        self.isoeffect_detail_tabs = QTabWidget(self)
+
+        self.isoeffect_valid_table = self._create_table(ISOEFFECT_PAIR_HEADERS)
+        self.isoeffect_detail_tabs.addTab(self.isoeffect_valid_table, "Valid pairs")
+
+        self.isoeffect_summary_table = self._create_table(ISOEFFECT_SUMMARY_HEADERS)
+        self.isoeffect_detail_tabs.addTab(self.isoeffect_summary_table, "Family summary")
+
+        self.isoeffect_rejected_table = self._create_table(ISOEFFECT_REJECTED_HEADERS)
+        self.isoeffect_detail_tabs.addTab(self.isoeffect_rejected_table, "Rejected pairs")
+
+        layout.addWidget(self.isoeffect_detail_tabs, 1)
+        return panel
+
+    def _collect_all_experiments(self) -> List[TumorExperiment]:
+        """Return unique experiments from all run_results, deduplicated by file path."""
+        seen: set[Path] = set()
+        out: List[TumorExperiment] = []
+        for run in self.run_results:
+            for exp in (*run.train, *run.validation):
+                if exp.path not in seen:
+                    seen.add(exp.path)
+                    out.append(exp)
+        return out
+
+    def refresh_isoeffect_view(self) -> None:
+        experiments = self._collect_all_experiments()
+        if not experiments:
+            QMessageBox.information(
+                self, "No data", "Run the fit first so experiments are loaded."
+            )
+            return
+
+        tol = self.isoeffect_tol_spin.value()
+        try:
+            pairs, summaries = find_isoeffect_pairs(experiments, dose_tol_gy=tol)
+        except Exception as exc:
+            QMessageBox.critical(self, "Isoeffect analysis failed", str(exc))
+            return
+
+        self.isoeffect_pairs = pairs
+        self.isoeffect_family_summaries = summaries
+
+        valid    = [p for p in pairs if p.valid]
+        rejected = [p for p in pairs if not p.valid]
+
+        self.isoeffect_valid_table.setRowCount(len(valid))
+        for i, p in enumerate(valid):
+            self._fill_row(self.isoeffect_valid_table, i, [
+                p.family,
+                p.single_path.name,
+                p.frac_path.name,
+                f"{p.D_single:.1f}",
+                f"{p.D_frac:.1f}",
+                format_fractions(p.fracs_frac),
+                f"{p.sf_single:.4f}",
+                f"{p.sf_frac:.4f}",
+                f"{p.alpha:.5f}",
+                f"{p.beta:.5f}",
+                f"{p.alpha_beta:.2f}" if math.isfinite(p.alpha_beta) else "—",
+            ])
+
+        self.isoeffect_summary_table.setRowCount(len(summaries))
+        for i, s in enumerate(summaries):
+            self._fill_row(self.isoeffect_summary_table, i, [
+                s.family,
+                str(s.n_valid),
+                f"{s.mean_alpha_beta:.2f}",
+                f"{s.sd_alpha_beta:.2f}" if math.isfinite(s.sd_alpha_beta) else "—",
+                f"{s.min_alpha_beta:.2f}",
+                f"{s.max_alpha_beta:.2f}",
+            ])
+
+        self.isoeffect_rejected_table.setRowCount(len(rejected))
+        for i, p in enumerate(rejected):
+            self._fill_row(self.isoeffect_rejected_table, i, [
+                p.family,
+                p.single_path.name,
+                p.frac_path.name,
+                f"{p.D_single:.1f}",
+                f"{p.D_frac:.1f}",
+                format_fractions(p.fracs_frac),
+                f"{p.sf_single:.4f}",
+                f"{p.sf_frac:.4f}",
+                f"{p.alpha:.5f}",
+                f"{p.beta:.5f}",
+                p.invalid_reason,
+            ])
+
+        self._draw_isoeffect_plot(pairs, summaries, experiments)
+        self.statusBar().showMessage(
+            f"Isoeffect pairs: {len(valid)} valid, {len(rejected)} rejected "
+            f"across {len(summaries)} famil{'y' if len(summaries) == 1 else 'ies'}."
+        )
+
+    _ISOEFFECT_COLORS = {
+        "y": "#1f77b4", "e": "#ff7f0e", "p": "#2ca02c",
+        "p_peak": "#d62728", "n": "#9467bd", "c": "#8c564b",
+        "p_through": "#e377c2", "unknown": "#7f7f7f",
+    }
+    _ISOEFFECT_FALLBACK = [
+        "#17becf", "#bcbd22", "#aec7e8", "#ffbb78", "#98df8a",
+    ]
+
+    @classmethod
+    def _iso_color(cls, family: str) -> str:
+        return cls._ISOEFFECT_COLORS.get(
+            family,
+            cls._ISOEFFECT_FALLBACK[hash(family) % len(cls._ISOEFFECT_FALLBACK)],
+        )
+
+    def _draw_isoeffect_plot(
+        self,
+        pairs: List[IsoeffectPair],
+        summaries: List[IsoeffectFamilySummary],
+        experiments: List[TumorExperiment],
+    ) -> None:
+        self.isoeffect_figure.clear()
+
+        pair_families = sorted({p.family for p in pairs})
+        if not pair_families:
+            ax = self.isoeffect_figure.add_subplot(111)
+            ax.axis("off")
+            ax.text(0.5, 0.5, "No pairs found", ha="center", va="center",
+                    fontsize=COMPACT_PLOT_LABEL_FONT, color="#5f6b7a",
+                    transform=ax.transAxes)
+            self.isoeffect_canvas.draw_idle()
+            return
+
+        gs = self.isoeffect_figure.add_gridspec(1, 2, width_ratios=[2, 1])
+        ax_scatter = self.isoeffect_figure.add_subplot(gs[0, 0])
+        ax_bar     = self.isoeffect_figure.add_subplot(gs[0, 1])
+
+        exp_by_family: dict[str, list[TumorExperiment]] = {}
+        for exp in experiments:
+            fam = (exp.family or "unknown").lower()
+            exp_by_family.setdefault(fam, []).append(exp)
+
+        valid_by_family: dict[str, list[IsoeffectPair]] = {}
+        for p in pairs:
+            if p.valid:
+                valid_by_family.setdefault(p.family, []).append(p)
+
+        for fam in pair_families:
+            color = self._iso_color(fam)
+            fam_exps = exp_by_family.get(fam, [])
+            singles = [e for e in fam_exps if e.regimen_kind == "single"]
+            fracs   = [e for e in fam_exps if e.regimen_kind == "fractionated"]
+
+            if singles:
+                ax_scatter.scatter(
+                    [e.dose_sum for e in singles],
+                    [-math.log(max(e.sf, 1e-12)) for e in singles],
+                    color=color, marker="o", s=50, zorder=3,
+                    label=f"{fam} (1 fr.)",
+                )
+            if fracs:
+                ax_scatter.scatter(
+                    [e.dose_sum for e in fracs],
+                    [-math.log(max(e.sf, 1e-12)) for e in fracs],
+                    color=color, marker="^", s=50, zorder=3,
+                    label=f"{fam} (frac.)",
+                )
+
+            fam_valid_pairs = valid_by_family.get(fam, [])
+            if fam_valid_pairs and fam_exps:
+                alpha_m = float(np.mean([p.alpha for p in fam_valid_pairs]))
+                beta_m  = float(np.mean([p.beta  for p in fam_valid_pairs]))
+                max_d   = max(e.dose_sum for e in fam_exps) * 1.05
+                d_curve = np.linspace(0.0, max_d, 200)
+                ax_scatter.plot(
+                    d_curve, alpha_m * d_curve + beta_m * d_curve ** 2,
+                    color=color, linewidth=COMPACT_PLOT_SECONDARY_LINE_WIDTH,
+                    linestyle="--", alpha=0.75,
+                )
+
+        ax_scatter.set_xlabel("Total dose D, Гр", fontsize=COMPACT_PLOT_LABEL_FONT)
+        ax_scatter.set_ylabel("−ln(SF)", fontsize=COMPACT_PLOT_LABEL_FONT)
+        ax_scatter.set_title(
+            "○ = однодоза   △ = фракц.   -- = LQ(mean α, β)",
+            fontsize=COMPACT_PLOT_TICK_FONT,
+        )
+        ax_scatter.tick_params(axis="both", labelsize=COMPACT_PLOT_TICK_FONT)
+        ax_scatter.legend(fontsize=COMPACT_PLOT_LEGEND_FONT, loc="upper left")
+        ax_scatter.grid(True, alpha=0.25)
+
+        if summaries:
+            fam_labels = [s.family for s in summaries]
+            means = [s.mean_alpha_beta for s in summaries]
+            sds   = [
+                s.sd_alpha_beta if math.isfinite(s.sd_alpha_beta) else 0.0
+                for s in summaries
+            ]
+            colors = [self._iso_color(f) for f in fam_labels]
+            x_pos  = list(range(len(fam_labels)))
+            bars   = ax_bar.bar(x_pos, means, color=colors, width=0.6, zorder=3)
+            ax_bar.errorbar(
+                x_pos, means, yerr=sds,
+                fmt="none", color="black",
+                capsize=5, linewidth=1.5, zorder=4,
+            )
+            offset = max(sds) * 0.15 if max(sds) > 0 else 0.5
+            for bar, val in zip(bars, means):
+                ax_bar.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    bar.get_height() + offset,
+                    f"{val:.1f}",
+                    ha="center", va="bottom",
+                    fontsize=COMPACT_PLOT_TICK_FONT,
+                )
+            ax_bar.set_xticks(x_pos)
+            ax_bar.set_xticklabels(fam_labels, fontsize=COMPACT_PLOT_TICK_FONT)
+            ax_bar.set_ylabel("α/β, Гр", fontsize=COMPACT_PLOT_LABEL_FONT)
+            ax_bar.set_title("Mean α/β ± SD (валидные пары)", fontsize=COMPACT_PLOT_LABEL_FONT)
+            ax_bar.tick_params(axis="both", labelsize=COMPACT_PLOT_TICK_FONT)
+            ax_bar.grid(True, axis="y", alpha=0.25)
+        else:
+            ax_bar.axis("off")
+            ax_bar.text(0.5, 0.5, "Нет валидных пар", ha="center", va="center",
+                        fontsize=COMPACT_PLOT_LABEL_FONT, color="#5f6b7a",
+                        transform=ax_bar.transAxes)
+
+        self.isoeffect_figure.tight_layout()
+        self.isoeffect_canvas.draw_idle()
+
+    def export_isoeffect_csv(self) -> None:
+        if not self.isoeffect_pairs:
+            QMessageBox.information(
+                self, "Nothing to export", "Run 'Analyze pairs' first."
+            )
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export isoeffect pairs",
+            str(Path.cwd() / "isoeffect_pairs.csv"),
+            "CSV files (*.csv)",
+        )
+        if not path:
+            return
+
+        base_path = Path(path)
+        all_headers = [
+            "family", "valid", "single_file", "frac_file", "fracs_frac",
+            "D_single_gy", "D_frac_gy", "sf_single", "sf_frac",
+            "alpha", "beta", "alpha_beta_gy", "invalid_reason",
+        ]
+        pair_rows = [
+            [
+                p.family,
+                "yes" if p.valid else "no",
+                p.single_path.name,
+                p.frac_path.name,
+                format_fractions(p.fracs_frac),
+                f"{p.D_single:.2f}",
+                f"{p.D_frac:.2f}",
+                f"{p.sf_single:.6f}",
+                f"{p.sf_frac:.6f}",
+                f"{p.alpha:.6f}",
+                f"{p.beta:.6f}",
+                f"{p.alpha_beta:.4f}" if math.isfinite(p.alpha_beta) else "",
+                p.invalid_reason,
+            ]
+            for p in self.isoeffect_pairs
+        ]
+        write_csv_rows(base_path, all_headers, pair_rows)
+        written = [base_path]
+
+        if self.isoeffect_family_summaries:
+            summary_path = related_csv_path(base_path, "summary")
+            summary_headers = [
+                "family", "n_valid", "mean_alpha_beta_gy",
+                "sd_gy", "min_gy", "max_gy",
+            ]
+            summary_rows = [
+                [
+                    s.family,
+                    str(s.n_valid),
+                    f"{s.mean_alpha_beta:.4f}",
+                    f"{s.sd_alpha_beta:.4f}" if math.isfinite(s.sd_alpha_beta) else "",
+                    f"{s.min_alpha_beta:.4f}",
+                    f"{s.max_alpha_beta:.4f}",
+                ]
+                for s in self.isoeffect_family_summaries
+            ]
+            write_csv_rows(summary_path, summary_headers, summary_rows)
+            written.append(summary_path)
+
+        self.statusBar().showMessage(
+            "Isoeffect CSV exported: " + ", ".join(str(p) for p in written)
+        )
 
     def clear_inventory(self) -> None:
         self.inventory_report = None
