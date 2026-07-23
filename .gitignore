@@ -147,3 +147,10 @@ cython_debug/
 # Executable files
 *.exe
 exe/
+
+# Local dissertation imaging and generated voxel-scale outputs.
+# These files are large reproducible artifacts and are not suitable for
+# ordinary Git/GitHub storage.
+/work_with_prepared_data/radiobioligy_project/.claude/
+/work_with_prepared_data/radiobioligy_project/survival/*.dcm
+/work_with_prepared_data/radiobioligy_project/survival/rt_dose_smoke_output/

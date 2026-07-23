@@ -1,0 +1,19 @@
+{
+  "exps_dir": "C:\\dev\\neuro_stats\\work_with_prepared_data\\radiobioligy_project\\survival\\exps",
+  "output_dir": "C:\\dev\\neuro_stats\\work_with_prepared_data\\radiobioligy_project\\survival\\alpha_beta_eff_results",
+  "animal_bootstrap_iterations": 500,
+  "hierarchical_bootstrap_iterations": 1000,
+  "sigma_log_floor": 0.05,
+  "seed": 20260710,
+  "control_map": {
+    "2016-01-27": "control_13.01.2016.xlsx",
+    "2025-10-22": "control_17.11.2025.xlsx"
+  },
+  "control_policy": "nearest",
+  "preferred_date_conflict_files": [
+    "16.05.2018_y32.xlsx"
+  ],
+  "proton_family_rule": "proton files without explicit peak marker are p_through",
+  "sf_eff_definition": "min_t>0 [(Vexp(t)/Vexp(0))/(Vctrl(t)/Vctrl(0))]",
+  "primary_control_policy": "same date or explicit map preferred; otherwise nearest available calendar-date proxy"
+}
