@@ -74,15 +74,54 @@ def ceiling(cells: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def _between_ss(frame: pd.DataFrame, column: str, response: str) -> float:
+    grand = frame[response].mean()
+    return float(
+        sum(
+            len(group) * (group.mean() - grand) ** 2
+            for _, group in frame.groupby(column)[response]
+        )
+    )
+
+
 def eta_squared(frame: pd.DataFrame, column: str, response: str) -> float:
     """Share of variance lying between levels of a categorical factor."""
     grand = frame[response].mean()
-    between = sum(
-        len(group) * (group.mean() - grand) ** 2
-        for _, group in frame.groupby(column)[response]
-    )
     total = float(((frame[response] - grand) ** 2).sum())
-    return float(between / total)
+    return _between_ss(frame, column, response) / total
+
+
+def omega_squared(frame: pd.DataFrame, column: str, response: str) -> float:
+    """Bias-corrected share of variance.
+
+    ``eta_squared`` is inflated by the number of levels: even random labels
+    absorb roughly ``(k-1)/(N-1)`` of the total sum of squares. With 12 calendar
+    years over about a hundred series that inflation is not negligible, so the
+    corrected value is what should be quoted.
+    """
+    grand = frame[response].mean()
+    total = float(((frame[response] - grand) ** 2).sum())
+    between = _between_ss(frame, column, response)
+    levels = int(frame[column].nunique())
+    within_ms = (total - between) / (len(frame) - levels)
+    return float((between - (levels - 1) * within_ms) / (total + within_ms))
+
+
+def permutation_share(
+    frame: pd.DataFrame, column: str, response: str, draws: int, seed: int
+) -> tuple[float, float]:
+    """Expected share under random relabelling, and the permutation p-value."""
+    rng = np.random.default_rng(seed)
+    grand = frame[response].mean()
+    total = float(((frame[response] - grand) ** 2).sum())
+    observed = _between_ss(frame, column, response) / total
+    labels = frame[column].to_numpy()
+    shuffled = frame[[response]].copy()
+    null = np.empty(draws)
+    for index in range(draws):
+        shuffled["_perm"] = rng.permutation(labels)
+        null[index] = _between_ss(shuffled, "_perm", response) / total
+    return float(null.mean()), float((null >= observed).mean())
 
 
 def write_csv(path: Path, rows: list[dict], columns: list[str]) -> None:
@@ -98,6 +137,8 @@ def main() -> None:
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--endpoint-day", type=int, default=21)
+    parser.add_argument("--permutations", type=int, default=2000)
+    parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
     frame = load_treated(args.input, args.endpoint_day)
@@ -131,25 +172,32 @@ def main() -> None:
         .reset_index()
         .rename(columns={RESPONSE: "series_mean"})
     )
-    factor_rows = [
-        {
-            "factor": name,
-            "levels": int(series[name].nunique()),
-            "eta_squared": eta_squared(series, name, "series_mean"),
-        }
-        for name in FACTORS
-    ]
     series["year_family"] = series["year"].astype(str) + "|" + series["family"]
-    factor_rows.append(
-        {
-            "factor": "year_family",
-            "levels": int(series["year_family"].nunique()),
-            "eta_squared": eta_squared(series, "year_family", "series_mean"),
-        }
-    )
+    factor_rows = []
+    for name in (*FACTORS, "year_family"):
+        null_mean, p_value = permutation_share(
+            series, name, "series_mean", args.permutations, args.seed
+        )
+        factor_rows.append(
+            {
+                "factor": name,
+                "levels": int(series[name].nunique()),
+                "eta_squared": eta_squared(series, name, "series_mean"),
+                "omega_squared": omega_squared(series, name, "series_mean"),
+                "eta_squared_null_mean": null_mean,
+                "permutation_p": p_value,
+            }
+        )
     dose_r = float(np.corrcoef(series["total_dose_gy"], series["series_mean"])[0, 1])
     factor_rows.append(
-        {"factor": "total_dose_gy", "levels": 0, "eta_squared": dose_r**2}
+        {
+            "factor": "total_dose_gy",
+            "levels": 0,
+            "eta_squared": dose_r**2,
+            "omega_squared": float("nan"),
+            "eta_squared_null_mean": float("nan"),
+            "permutation_p": float("nan"),
+        }
     )
 
     args.output.mkdir(parents=True, exist_ok=True)
@@ -166,7 +214,14 @@ def main() -> None:
     write_csv(
         args.output / "variance_attribution.csv",
         factor_rows,
-        ["factor", "levels", "eta_squared"],
+        [
+            "factor",
+            "levels",
+            "eta_squared",
+            "omega_squared",
+            "eta_squared_null_mean",
+            "permutation_p",
+        ],
     )
 
     print(f"series at day {args.endpoint_day}: {len(series)}")
@@ -177,7 +232,11 @@ def main() -> None:
             f"R2_max={row['r2_max']:.3f}"
         )
     for row in factor_rows:
-        print(f"  {row['factor']:<16} eta2={row['eta_squared']:.3f}")
+        print(
+            f"  {row['factor']:<16} eta2={row['eta_squared']:.3f} "
+            f"omega2={row['omega_squared']:.3f} "
+            f"null={row['eta_squared_null_mean']:.3f} p={row['permutation_p']:.4f}"
+        )
     print(f"written to {args.output}")
 
 
