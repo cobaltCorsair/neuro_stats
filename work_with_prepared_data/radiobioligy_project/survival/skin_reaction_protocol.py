@@ -474,7 +474,7 @@ def auc_without_extrapolation(
     inside = (x > first) & (x < last)
     x_eval = np.concatenate(([first], x[inside], [last]))
     y_eval = np.interp(x_eval, x, y)
-    trapezoid = getattr(np, "trapezoid", np.trapz)
+    trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
     auc = float(trapezoid(y_eval, x_eval))
     duration = float(last - first)
     return auc, auc / duration, duration, first, last
