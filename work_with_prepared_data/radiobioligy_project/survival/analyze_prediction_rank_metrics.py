@@ -45,10 +45,20 @@ PREDICTED = "predicted_log_relative"
 
 
 def load_endpoint(run_dir: Path) -> pd.DataFrame:
+    """Day-21 rows for treated series only.
+
+    Control series enter the cohort as dose-zero rows and are ordered trivially --
+    an untreated tumour outgrows every irradiated one -- so including them inflates
+    the coefficient in whatever years happen to have a digitised control. Adding
+    the 2020 control moved that year from -1.000 to -0.086 without any change in
+    how the treated series were predicted. The question the measure is meant to
+    answer concerns the ordering of irradiated regimens, so controls are dropped.
+    """
     frame = pd.read_csv(
         run_dir / "outer_cv_series_day_predictions.csv", sep=";", encoding="utf-8-sig"
     )
-    return frame.loc[frame["day"] == ENDPOINT_DAY].copy()
+    endpoint = frame.loc[frame["day"] == ENDPOINT_DAY].copy()
+    return endpoint.loc[endpoint["family"].astype(str) != "control"]
 
 
 def within_year_rho(frame: pd.DataFrame) -> tuple[float, int, int]:
