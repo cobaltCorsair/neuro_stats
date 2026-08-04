@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import csv
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -93,12 +94,12 @@ def animal_rows(engine, path: Path, meta: dict, family: str) -> list[dict]:
                 continue
             rows.append(
                 {
-                    "series_key": f"{meta['date']}|{family}|{signature}|mixed|p_first",
+                    "series_key": f"{meta['date']}|{family}|{signature}|mixed_sequence|P_first",
                     "date": meta["date"],
                     "year": meta["date"][:4],
                     "family": family,
                     "family_label": family,
-                    "regimen_class": "mixed",
+                    "regimen_class": "mixed_sequence",
                     "dose_signature": signature,
                     "total_dose_gy": total,
                     "sum_d2_gy2": float(sum(v * v for v in meta["fractions"])),
@@ -106,7 +107,7 @@ def animal_rows(engine, path: Path, meta: dict, family: str) -> list[dict]:
                     "duration_hours": float(sum(meta["gaps_hours"])),
                     "mean_interval_hours": float(np.mean(meta["gaps_hours"])),
                     "timing_known": 1,
-                    "order": "p_first",
+                    "order": "P_first",
                     "is_mixed": 1,
                     "control_kind": "same_date",
                     "animal_id": f"{path.stem}::{index}",
@@ -135,9 +136,21 @@ def main() -> None:
     model = load_module("holdout_model", args.model)
 
     observed, evaluation, series, _ = model.build_longitudinal_tables()
-    categories = model.fixed_categories(observed)
-    print(f"training rows={len(observed)} series={series['series_key'].nunique()}")
-    families = set(observed["family"].astype(str))
+    # The pipeline models series means, not animal rows: main() collapses the
+    # interpolated animal grid before fitting and before deriving the category
+    # levels. Training on the animal frame instead fits a different model, so the
+    # collapse is reproduced here exactly as main() performs it.
+    modelling = model.collapse_animal_daily_to_series(evaluation)
+    categories = model.fixed_categories(modelling)
+    print(f"training series rows={len(modelling)} series={modelling['series_key'].nunique()}")
+
+    # The model to fit is the one the frozen run selected for itself, read from
+    # its own validation summary rather than assumed.
+    summary_path = args.model.parent / "validation_summary.json"
+    selected = json.loads(summary_path.read_text(encoding="utf-8"))["selected_model"]
+    print(f"selected model recorded by the frozen run: {selected}")
+
+    families = set(modelling["family"].astype(str))
     family = "mixed_n_p_through"
     if family not in families:
         raise RuntimeError(f"{family} absent from training families {sorted(families)}")
@@ -152,20 +165,23 @@ def main() -> None:
             raise RuntimeError(f"No usable animals parsed from {name}")
         rows.extend(produced)
         print(f"{name}: animals={len({r['animal_id'] for r in produced})}")
-    test = pd.DataFrame(rows)
+    test = model.collapse_animal_daily_to_series(pd.DataFrame(rows))
 
-    selected = "stacked_ensemble"
-    predicted, _, _, _ = model.fit_candidate(selected, observed, test, categories)
-    q90, q95 = model.calibration_quantiles(
-        observed, observed["log_relative_volume"].to_numpy(float), predicted[: len(observed)]
-    ) if False else (None, None)
-    # Interval widths come from the model's own out-of-fold calibration on the
-    # training data, matching how the cross-validated contours were reported.
-    _, oof, _, _ = model.fit_candidate(selected, observed, observed, categories)
-    q90, q95 = model.calibration_quantiles(
-        observed, observed["log_relative_volume"].to_numpy(float), oof
-    )
-    aggregated = model.aggregate_predictions(test, predicted, q90=q90, q95=q95)
+    # Categorical features enter as exact string matches against the training
+    # levels, so a label that merely looks right silently zeroes the indicator
+    # instead of raising. The first version of this script wrote "mixed" and
+    # "p_first" where the cohort uses "mixed_sequence" and "P_first", which
+    # switched off the mixed-schedule and component-order features for the whole
+    # held-out set and made the forecast look better than it is.
+    for column, key in (("family", "families"), ("regimen_class", "regimens"), ("order", "orders")):
+        unseen = set(test[column].astype(str)) - set(categories[key])
+        if unseen:
+            raise RuntimeError(
+                f"{column} values {sorted(unseen)} are absent from the training "
+                f"levels {sorted(categories[key])}; their indicators would be zero"
+            )
+
+    aggregated, _, _ = model.full_fit_selected(modelling, test, categories, selected)
 
     args.output.mkdir(parents=True, exist_ok=True)
     aggregated.to_csv(args.output / "holdout_predictions.csv", sep=";", index=False)
