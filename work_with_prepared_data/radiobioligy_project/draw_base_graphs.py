@@ -206,10 +206,9 @@ class TumorDataVisualizer:
 
         Использует:
             GraphVisualizer: Класс для упрощения процесса создания и настройки графиков.
-            get_relative_tumor_volumes и get_mean_relative_tumor_volumes: Методы для вычисления относительных и средних
-            относительных значений объемов опухолей.
-            SupportingFunctions.calculate_std_dev и calculate_error_margin: Функции для расчета стандартного отклонения
-            и доверительного интервала.
+            get_mean_relative_tumor_volumes: Кривая mean V(t) / mean V(0).
+            get_mean_relative_tumor_volume_errors: SEM этой же кривой, SE(V(t)) / mean V(0). SD индивидуальных
+            V_i(t)/V_i(0) вокруг mean V(t)/mean V(0) здесь не годится — это среднее другой величины.
 
         Результат:
             Создает и отображает график с динамикой изменения средних относительных объемов опухолей всех крыс из эксперимента,
@@ -218,13 +217,8 @@ class TumorDataVisualizer:
         drawgraph = GraphVisualizer("(V отн.)", "Время, сут.", "Относительный объем опухоли, отн. ед.", figsize=(12, 7))
         drawgraph.setup_figure()
 
-        relative_tumor_volumes = self.data_processor.get_relative_tumor_volumes()
         mean_relative_volumes = self.data_processor.get_mean_relative_tumor_volumes()
-        relative_volumes_by_time = np.transpose(relative_tumor_volumes)
-        std_dev_rel = [SupportingFunctions.calculate_std_dev(volumes, mean_volume) for volumes, mean_volume in
-                       zip(relative_volumes_by_time, mean_relative_volumes)]
-        error_margin_rel = [SupportingFunctions.calculate_error_margin(std, SupportingFunctions.count_at_risk(volumes))
-                            for std, volumes in zip(std_dev_rel, relative_volumes_by_time)]
+        error_margin_rel = self.data_processor.get_mean_relative_tumor_volume_errors()
 
         # Форматируем параметры эксперимента для уникальной метки
         formatted_params = format_experiment_params(self.experiment_params)
@@ -246,9 +240,10 @@ class TumorDataVisualizer:
         Построение графика среднего относительного объема опухоли, усредненного по всем крысам, с отображением доверительных
         интервалов.
 
-        Этот метод вычисляет средний относительный объем опухоли на каждой временной точке, основываясь на данных всех
-        крыс в эксперименте.
-        Также рассчитывает стандартное отклонение и доверительные интервалы для этих средних значений.
+        Этот метод вычисляет средний относительный объем опухоли mean V(t) / mean V(0) на каждой временной точке,
+        основываясь на данных всех крыс в эксперименте, и SEM этой кривой: SE(V(t)) / mean V(0), n_t — число
+        животных, измеренных в t. Разброс точек самой кривой по времени для полосы не годится: он отражает рост
+        опухоли, а не неопределенность среднего в точке.
 
         Атрибуты:
             time_data (List[float]): Список временных точек измерений.
@@ -258,8 +253,7 @@ class TumorDataVisualizer:
         Использует:
             GraphVisualizer: Класс для упрощения процесса создания и настройки графиков.
             get_mean_relative_tumor_volumes: Метод для вычисления средних относительных значений объемов опухолей.
-            SupportingFunctions.calculate_std_dev и calculate_error_margin: Функции для расчета стандартного отклонения
-            и доверительного интервала.
+            get_mean_relative_tumor_volume_errors: SEM этой же кривой в отн. ед.
 
         Результат:
             Создает и отображает график с динамикой изменения среднего относительного объема опухолей со всеми крысами,
@@ -271,9 +265,7 @@ class TumorDataVisualizer:
 
         # Вычисление среднего относительного объема опухоли и его доверительного интервала
         relative_mean_volumes = self.data_processor.get_mean_relative_tumor_volumes()
-        mean_volumes = self.data_processor.get_mean_tumor_volumes(relative_mean_volumes)
-        std_dev_rel_mean = SupportingFunctions.calculate_std_dev(relative_mean_volumes, mean_volumes)
-        error_margin_rel_mean = SupportingFunctions.calculate_error_margin(std_dev_rel_mean, len(relative_mean_volumes))
+        error_margin_rel_mean = self.data_processor.get_mean_relative_tumor_volume_errors()
 
         # Форматируем параметры эксперимента для уникальной метки
         formatted_params = format_experiment_params(self.experiment_params)

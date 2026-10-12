@@ -56,6 +56,34 @@ class TumorDataProcessor:
 
         return mean_rel_volumes
 
+    def get_mean_tumor_volume_errors(self) -> np.ndarray:
+        """
+        SEM кривой get_mean_tumor_volumes() в каждой временной точке: SD(V(t)) / sqrt(n_t),
+        где n_t — число животных, давших измерение в t (count_at_risk).
+
+        Returns:
+            np.ndarray: Массив SEM абсолютного среднего объема (в абс. ед.).
+        """
+        mean_volumes = self.get_mean_tumor_volumes()
+        volumes_by_time = np.transpose(self.tumor_volumes)
+        std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
+                   for volumes, mean_volume in zip(volumes_by_time, mean_volumes)]
+        return np.array([SupportingFunctions.calculate_error_margin(std, SupportingFunctions.count_at_risk(volumes))
+                         for std, volumes in zip(std_dev, volumes_by_time)])
+
+    def get_mean_relative_tumor_volume_errors(self) -> np.ndarray:
+        """
+        SEM кривой get_mean_relative_tumor_volumes() = mean V(t) / mean V(0):
+        SE(V(t)) / mean V(0), т.е. SEM абсолютного среднего в тех же отн. ед., что и сама кривая.
+
+        mean V(0) рассматривается как фиксированный нормирующий множитель, поэтому в t=0 полоса
+        равна SE(V(0)) / mean V(0), а не нулю.
+
+        Returns:
+            np.ndarray: Массив SEM среднего относительного объема (в отн. ед.).
+        """
+        return self.get_mean_tumor_volume_errors() / self.get_mean_tumor_volumes()[0]
+
 
 class SkinReactionsDataProcessor:
     """

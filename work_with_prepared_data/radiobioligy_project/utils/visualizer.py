@@ -85,7 +85,7 @@ class GraphVisualizer:
     def prepare_and_add_data_to_graph(visualizers, value_extractor_func, graph_visualizer, label_prefix,
                                       calculate_auc=False, perform_stat_test=False, experiments_to_compare=None,
                                       annotation_offset_direction='up', annotation_multiplier=0.0, use_ttest=False,
-                                      use_shapiro=False):
+                                      use_shapiro=False, error_extractor_func=None):
         """
         Подготавливает данные от нескольких экспериментов и добавляет их на график.
 
@@ -104,6 +104,11 @@ class GraphVisualizer:
             use_ttest (bool, optional): Если True, выполняется t-тест, иначе используется тест Манна-Уитни.
             use_shapiro (bool, optional): Если True, добавляет на график аннотацию теста Шапиро–Уилка
                 для каждой группы (на основе AUC индивидуальных животных).
+            error_extractor_func (Callable, optional): Функция, возвращающая погрешность (SEM) в тех же
+                единицах, что и value_extractor_func. Обязательна для неабсолютных кривых — например,
+                для относительных: lambda v: v.data_processor.get_mean_relative_tumor_volume_errors().
+                Если None, считается SEM абсолютных объемов visualizer.tumor_volumes вокруг values —
+                это корректно только для абсолютной кривой get_mean_tumor_volumes().
 
         Примечание:
             Для расчета стандартного отклонения и погрешности используются функции `calculate_std_dev` и
@@ -125,11 +130,14 @@ class GraphVisualizer:
         # Добавляем графики и вычисляем верхние границы
         for index, visualizer in enumerate(visualizers):
             values = value_extractor_func(visualizer)
-            volumes_by_time = np.transpose(visualizer.tumor_volumes)
-            std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
-                       for volumes, mean_volume in zip(volumes_by_time, values)]
-            error_margin = [SupportingFunctions.calculate_error_margin(std, SupportingFunctions.count_at_risk(volumes))
-                            for std, volumes in zip(std_dev, volumes_by_time)]
+            if error_extractor_func is not None:
+                error_margin = list(error_extractor_func(visualizer))
+            else:
+                volumes_by_time = np.transpose(visualizer.tumor_volumes)
+                std_dev = [SupportingFunctions.calculate_std_dev(volumes, mean_volume)
+                           for volumes, mean_volume in zip(volumes_by_time, values)]
+                error_margin = [SupportingFunctions.calculate_error_margin(std, SupportingFunctions.count_at_risk(volumes))
+                                for std, volumes in zip(std_dev, volumes_by_time)]
 
             # Форматируем параметры эксперимента для текста легенды
             formatted_params = format_experiment_params(visualizer.experiment_params)

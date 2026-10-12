@@ -196,6 +196,8 @@ class TumorDataComparatorAdvanced:
             self.annotation_multiplier,
             self.use_ttest,
             self.use_shapiro,
+            # SEM в отн. ед.: SE(V(t)) / mean V(0), а не SD абсолютных объемов вокруг относительного среднего
+            error_extractor_func=lambda visualizer: visualizer.data_processor.get_mean_relative_tumor_volume_errors(),
         )
         # Добавляем легенду с интервалами (при необходимости)
         time_labels = [f"Интервал: {interval}" for interval in time_intervals]
@@ -240,6 +242,8 @@ class TumorDataComparatorAdvanced:
 
         # Функция для извлечения значений средних относительных объемов из визуализатора
         value_extractor = lambda visualizer: visualizer.data_processor.get_mean_relative_tumor_volumes()
+        # SEM в тех же отн. ед.: SE(V(t)) / mean V(0)
+        error_extractor = lambda visualizer: visualizer.data_processor.get_mean_relative_tumor_volume_errors()
 
         # Добавляем данные контрольных групп
         GraphVisualizer.prepare_and_add_data_to_graph(
@@ -248,6 +252,7 @@ class TumorDataComparatorAdvanced:
             drawgraph,
             "Контроль: без облучения",
             self._use_AUC,  # Указываем, что нужно рассчитать AUC
+            error_extractor_func=error_extractor,
         )
 
         # Добавляем данные экспериментальных групп
@@ -265,6 +270,7 @@ class TumorDataComparatorAdvanced:
             self.annotation_multiplier,
             self.use_ttest,
             self.use_shapiro,
+            error_extractor_func=error_extractor,
         )
 
         self._add_significance_test_legend_if_active(drawgraph)
